@@ -2,45 +2,248 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0d1b33">
 <title>SANASAI 沙那賽</title>
 <style>
-  html, body { margin: 0; padding: 0; overflow: hidden; background: #050510; height: 100%; }
-  #hud {
-    position: fixed; top: 12px; left: 14px; z-index: 10;
-    color: #7ff7ff; font-family: "Courier New", monospace;
-    text-shadow: 0 0 8px #00e5ff; pointer-events: none; user-select: none;
+  :root {
+    --paper: #fbf7ef; --paper-2: #f3ede1; --paper-3: #e6ddcb;
+    --glass: rgba(251, 247, 239, .94);
+    --ink: #16213a; --ink-2: #4b556b; --ink-3: #8b91a1;
+    --line: rgba(22, 33, 58, .1); --line-2: rgba(22, 33, 58, .18);
+    --sea: #1d7d8b; --gold: #b8841f;
+    --copper: #b87333; --jade: #12a072; --crystal: #3fa9c4;
+    --shadow: 0 12px 32px rgba(15, 22, 42, .16), 0 2px 6px rgba(15, 22, 42, .08);
+    --shadow-s: 0 4px 14px rgba(15, 22, 42, .13);
+    --r-lg: 22px;
+    --ui: "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", "Heiti TC", system-ui, sans-serif;
+    --display: "Futura", "Avenir Next", "Century Gothic", "Helvetica Neue", Arial, sans-serif;
+    --side-w: 340px;
+    --st: env(safe-area-inset-top, 0px); --sb: env(safe-area-inset-bottom, 0px);
   }
-  #hud h1 { margin: 0 0 4px 0; font-size: 20px; letter-spacing: 4px; }
-  #hud p { margin: 0; font-size: 12px; opacity: .8; }
-  #keys {
-    position: fixed; top: 12px; right: 14px; z-index: 10;
-    font-family: "Courier New", monospace; font-size: 15px;
-    pointer-events: none; user-select: none; text-align: right;
-  }
-  #keys span { margin-left: 10px; opacity: .25; }
-  #keys span.owned { opacity: 1; }
-  #keys .copper.owned { color: #e09a5a; text-shadow: 0 0 8px #b87333; }
-  #keys .jade.owned   { color: #4be8a8; text-shadow: 0 0 8px #00a86b; }
-  #keys .crystal.owned{ color: #c9f6ff; text-shadow: 0 0 8px #a5f2f3; }
-  #keys span:not(.owned) { color: #8899aa; }
-  #prompt {
-    position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
-    z-index: 10; color: #ffe97f; font-family: "Courier New", monospace;
-    font-size: 15px; text-shadow: 0 0 10px #ffb300; text-align: center;
-    background: rgba(10,10,30,.65); border: 1px solid #ffe97f66;
-    padding: 8px 18px; border-radius: 8px; display: none;
-    pointer-events: none; user-select: none; line-height: 1.6;
-  }
-  #banner {
-    position: fixed; top: 30%; left: 50%; transform: translate(-50%, -50%);
-    z-index: 15; color: #fff; font-family: "Courier New", monospace;
-    font-size: 30px; letter-spacing: 3px; text-shadow: 0 0 18px #ffe97f;
-    opacity: 0; transition: opacity .5s; pointer-events: none; user-select: none;
-    white-space: nowrap;
-  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #0d1b33; }
+  body { font-family: var(--ui); color: var(--ink); -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--sea); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+  svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  #stage { position: fixed; inset: 0; touch-action: none; }
+  #stage canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .panel { background: var(--glass); -webkit-backdrop-filter: blur(14px) saturate(1.15); backdrop-filter: blur(14px) saturate(1.15); border: 1px solid rgba(255, 255, 255, .7); box-shadow: var(--shadow); }
+  .eyebrow { font-family: var(--display); font-size: 10.5px; font-weight: 600; letter-spacing: .26em; text-transform: uppercase; color: var(--sea); }
+
+  /* ---------- 上方列 ---------- */
+  .topbar { position: fixed; z-index: 12; top: calc(16px + var(--st)); left: 16px; right: calc(var(--side-w) + 16px); display: flex; align-items: flex-start; gap: 10px; pointer-events: none; transition: right .35s ease; }
+  body.side-closed .topbar, body.log-open .topbar { right: 16px; }
+  body.log-open .topbar { right: 362px; }
+  .topbar > * { pointer-events: auto; }
+  .brand { display: flex; align-items: center; gap: 14px; padding: 11px 12px 11px 20px; border-radius: var(--r-lg); flex: none; }
+  .wordmark { font-family: var(--display); font-weight: 500; font-size: 21px; letter-spacing: .36em; margin-right: -.36em; color: var(--ink); text-decoration: none; line-height: 1; }
+  .brand-keys { display: flex; gap: 5px; padding-left: 14px; border-left: 1px solid var(--line-2); }
+  .kchip { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--paper-2); color: #b4b9c5; border: 0; padding: 0; transition: background .4s, color .4s, box-shadow .4s; }
+  .kchip svg.i { width: 16px; height: 16px; stroke-width: 1.9; }
+  .kchip.owned { color: #fff; }
+  .kchip.owned.copper { background: var(--copper); box-shadow: 0 0 0 3px rgba(184, 115, 51, .18), 0 0 14px rgba(224, 154, 90, .55); }
+  .kchip.owned.jade { background: var(--jade); box-shadow: 0 0 0 3px rgba(18, 160, 114, .18), 0 0 14px rgba(75, 232, 168, .5); }
+  .kchip.owned.crystal { background: var(--crystal); box-shadow: 0 0 0 3px rgba(63, 169, 196, .2), 0 0 14px rgba(165, 242, 243, .7); }
+  .kchip.ready { color: var(--gold); background: #fbf0d8; animation: ready 1.8s ease-in-out infinite; }
+  @keyframes ready { 50% { box-shadow: 0 0 0 4px rgba(184, 132, 31, .25); } }
+  .hud { display: flex; gap: 8px; flex: none; }
+  .seg { display: flex; align-items: center; gap: 2px; padding: 5px; border-radius: 999px; }
+  .seg button { border: 0; background: transparent; height: 40px; min-width: 40px; border-radius: 999px; display: grid; place-items: center; color: var(--ink-2); padding: 0 10px; transition: background .2s, color .2s; }
+  .seg button:hover { background: rgba(22, 33, 58, .06); color: var(--ink); }
+  .seg button.active, .seg button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+  .seg2 button { gap: 2px; height: 46px; padding: 5px 9px 4px; align-content: center; }
+  .seg2 button span { font-size: 10.5px; line-height: 1; }
+  .seg2 svg.i { width: 17px; height: 17px; }
+  .spacer { flex: 1; }
+  .toolbar { display: flex; gap: 8px; flex: none; }
+  .tb { height: 46px; padding: 0 15px; border-radius: 15px; border: 1px solid rgba(255, 255, 255, .7); background: var(--glass); box-shadow: var(--shadow-s); display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 500; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); white-space: nowrap; }
+  .tb svg.i { width: 15px; height: 15px; stroke-width: 1.9; }
+  .tb:hover { background: #fff; }
+  .tb[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .tb.help { width: 46px; padding: 0; justify-content: center; font-family: var(--display); font-size: 16px; }
+  .tb.help span { display: none; }
+  .mob-only { display: none !important; }
+
+  /* ---------- 右側清單 ---------- */
+  .sidebar { position: fixed; z-index: 11; top: 0; right: 0; bottom: 0; width: var(--side-w); background: var(--paper); border-left: 1px solid var(--line); display: flex; flex-direction: column; transition: transform .35s ease; box-shadow: -10px 0 30px rgba(15, 22, 42, .07); }
+  body.side-closed .sidebar { transform: translateX(104%); }
+  .sheet-handle { display: none; }
+  .side-head { padding: calc(28px + var(--st)) 24px 14px; }
+  .side-head h2 { margin: 9px 0 8px; font-size: 25px; line-height: 1.25; font-weight: 700; }
+  .side-head p { margin: 0; font-size: 13px; line-height: 1.7; color: var(--ink-2); }
+  .side-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 18px; }
+  .side-tabs button { height: 42px; border-radius: 12px; border: 1px solid var(--line-2); background: transparent; font-size: 13.5px; font-weight: 500; }
+  .side-tabs button.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .side-tabs b { font-family: var(--display); font-weight: 500; margin-left: 6px; opacity: .75; }
+  .side-body { flex: 1; overflow-y: auto; padding: 4px 14px 18px; overscroll-behavior: contain; }
+  .idx { display: grid; grid-template-columns: 50px 1fr auto; align-items: center; width: 100%; text-align: left; border: 0; background: transparent; padding: 15px 10px; border-radius: 14px; }
+  .idx + .idx { box-shadow: 0 -1px 0 var(--line); }
+  .idx:hover, .idx.active { background: var(--paper-2); box-shadow: none; }
+  .idx .no { font-family: var(--display); font-size: 22px; font-weight: 500; color: var(--c, var(--sea)); }
+  .idx b { display: block; font-size: 15px; font-weight: 600; }
+  .idx small { display: block; margin-top: 3px; font-size: 12px; color: var(--ink-3); }
+  .idx .go { color: var(--ink-3); }
+  .idx .go svg.i { width: 15px; height: 15px; }
+  .side-note { margin: 14px 10px 0; font-size: 12px; color: var(--ink-3); line-height: 1.7; }
+  .keyrow { padding: 15px 10px; }
+  .keyrow + .keyrow { border-top: 1px solid var(--line); }
+  .keyrow-top { display: flex; align-items: center; gap: 10px; }
+  .keyrow-top b { font-size: 15px; }
+  .state { margin-left: auto; font-size: 11.5px; padding: 3px 10px; border-radius: 999px; background: var(--paper-2); color: var(--ink-2); white-space: nowrap; font-weight: 500; }
+  .state.ok { background: #e2f3eb; color: #0d7552; }
+  .state.ready { background: #fbefd5; color: #8f620c; }
+  .keyrow p { margin: 8px 0 0 40px; font-size: 12.5px; line-height: 1.65; color: var(--ink-2); }
+  .bar { height: 6px; border-radius: 99px; background: var(--paper-3); overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: inherit; background: var(--c, var(--sea)); transition: width .6s ease; }
+  .keyrow .bar { margin: 10px 0 0 40px; }
+  .side-foot { display: none; padding: 12px 18px calc(14px + var(--sb)); border-top: 1px solid var(--line); }
+  .foot-toggles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .foot-toggles button { height: 38px; border-radius: 11px; border: 1px solid var(--line-2); background: #fff; font-size: 12.5px; }
+  .foot-toggles button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+  /* ---------- 地點卡片 ---------- */
+  .card { position: fixed; z-index: 10; top: calc(100px + var(--st)); left: 16px; bottom: 16px; width: 372px; border-radius: var(--r-lg); display: flex; flex-direction: column; overflow: hidden; animation: cardIn .35s ease; }
+  @keyframes cardIn { from { opacity: 0; transform: translateX(-14px); } }
+  .card-scroll { overflow-y: auto; padding: 22px 22px 18px; flex: 1; overscroll-behavior: contain; }
+  .close { position: absolute; top: 14px; right: 14px; width: 36px; height: 36px; border-radius: 50%; border: 0; background: transparent; font-size: 24px; line-height: 1; color: var(--ink-2); z-index: 2; }
+  .close:hover { background: rgba(22, 33, 58, .07); }
+  .card-head { display: flex; gap: 14px; align-items: center; padding-right: 34px; }
+  .tile { width: 56px; height: 56px; border-radius: 17px; display: grid; place-items: center; flex: none; color: var(--c); background: var(--cs); }
+  .tile svg.i { width: 27px; height: 27px; stroke-width: 1.6; }
+  .card h3 { margin: 5px 0 0; font-size: 22px; line-height: 1.25; font-weight: 700; }
+  .card h3 small { font-family: var(--display); font-size: 11px; letter-spacing: .2em; font-weight: 500; color: var(--ink-3); margin-left: 8px; }
+  .lead { margin: 16px 0 0; font-size: 14px; line-height: 1.8; color: var(--ink-2); }
+  .quote { margin: 14px 0 0; padding: 2px 0 2px 14px; border-left: 3px solid var(--c, var(--sea)); font-size: 14px; line-height: 1.75; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+  .chip { font-size: 12px; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line-2); background: #fff; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
+  .chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+  .sec { margin: 22px 0 10px; font-size: 12px; font-weight: 600; color: var(--ink-3); letter-spacing: .06em; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .stat { background: #fff; border: 1px solid var(--line); border-radius: 13px; padding: 10px 11px 9px; min-width: 0; }
+  .stat small { display: block; font-size: 11px; color: var(--ink-3); white-space: nowrap; }
+  .stat b { display: block; margin-top: 3px; font-family: var(--display); font-weight: 500; font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stat.hero { grid-column: span 3; display: flex; align-items: baseline; justify-content: space-between; padding: 13px 14px; }
+  .stat.hero b { font-size: 26px; margin: 0; }
+  .stat.dim b { color: var(--ink-3); }
+  .empty { font-size: 13px; color: var(--ink-2); background: var(--paper-2); border-radius: 13px; padding: 12px 14px; line-height: 1.7; }
+  .keybox { border-radius: 14px; padding: 13px 14px; background: #fff; border: 1px solid var(--line); }
+  .keybox .top { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; }
+  .keybox .kchip { width: 28px; height: 28px; }
+  .keybox p { margin: 9px 0 0; font-size: 12.5px; color: var(--ink-2); line-height: 1.65; }
+  .keybox .bar { margin-top: 10px; }
+  .keybox .btn { margin-top: 10px; height: 38px; width: 100%; font-size: 13px; }
+  .chapters { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .chap { font-size: 12.5px; border-radius: 11px; padding: 9px 10px; background: var(--paper-2); color: var(--ink-3); display: flex; align-items: center; gap: 7px; }
+  .chap.done { background: #fff3d9; color: #845a06; font-weight: 600; }
+  .chap i { width: 8px; height: 8px; border-radius: 50%; background: #cbc4b5; flex: none; }
+  .chap.done i { background: #f0a500; box-shadow: 0 0 8px #ffbf3f; }
+  .note { margin: 10px 0 0; font-size: 12px; color: var(--ink-3); line-height: 1.65; }
+  .actions { display: flex; gap: 8px; padding: 14px 22px 16px; border-top: 1px solid var(--line); background: rgba(251, 247, 239, .75); }
+  .actions:empty { display: none; }
+  .btn { height: 46px; border-radius: 13px; border: 1px solid var(--line-2); background: #fff; padding: 0 16px; font-size: 14.5px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; color: var(--ink); white-space: nowrap; }
+  .btn:hover { border-color: var(--ink-3); }
+  .btn.primary { flex: 1; background: var(--ink); color: #fff; border-color: var(--ink); }
+  .btn.primary:hover { background: #24304f; }
+  .btn svg.i { width: 16px; height: 16px; }
+
+  /* ---------- 3D 名牌 ---------- */
+  .pin-wrap { padding-bottom: 6px; }
+  .pin { pointer-events: auto; border: 0; display: inline-flex; align-items: center; gap: 7px; padding: 5px 13px 5px 5px; border-radius: 999px; background: rgba(255, 253, 248, .96); box-shadow: 0 4px 14px rgba(15, 22, 42, .2); font-size: 13px; font-weight: 600; color: var(--ink); white-space: nowrap; transition: transform .2s, background .2s, color .2s; }
+  .pin .no { font-family: var(--display); font-size: 11px; font-weight: 600; color: #fff; background: var(--c); border-radius: 999px; min-width: 25px; height: 22px; display: grid; place-items: center; padding: 0 6px; letter-spacing: .04em; }
+  .pin:hover { transform: translateY(-3px); }
+  .pin.active { background: var(--ink); color: #fff; }
+  .pin.key { font-size: 12px; padding: 4px 11px 4px 4px; }
+  .pin.key .no { min-width: 22px; height: 20px; padding: 0; }
+  .pin.key .no svg.i { width: 12px; height: 12px; stroke-width: 2.2; }
+  .pin.me { background: #0f9fb5; color: #fff; font-size: 11.5px; padding: 3px 10px; box-shadow: 0 3px 10px rgba(15, 159, 181, .4); }
+  body.names-off .pin:not(.active) { display: none; }
+
+  /* ---------- 日誌 ---------- */
+  .log { position: fixed; z-index: 11; top: calc(16px + var(--st)); right: 16px; bottom: 16px; width: 330px; border-radius: var(--r-lg); display: flex; flex-direction: column; overflow: hidden; animation: cardIn .3s ease; }
+  .log-head { position: relative; padding: 20px 20px 12px; }
+  .log-head h3 { margin: 5px 0 0; font-size: 19px; }
+  .log-tabs { margin: 0 16px; display: grid; grid-template-columns: 1fr 1fr; background: var(--paper-2); border-radius: 12px; padding: 4px; }
+  .log-tabs button { border: 0; background: transparent; height: 36px; border-radius: 9px; font-size: 13px; color: var(--ink-2); }
+  .log-tabs button.active { background: #fff; color: var(--ink); box-shadow: 0 1px 4px rgba(15, 22, 42, .1); font-weight: 600; }
+  .log-list { list-style: none; margin: 8px 0 0; padding: 0 16px 16px; overflow-y: auto; flex: 1; overscroll-behavior: contain; }
+  .log-list li { display: grid; grid-template-columns: 44px 1fr; gap: 10px; padding: 11px 2px; border-bottom: 1px solid var(--line); font-size: 13px; line-height: 1.6; }
+  .log-list li.empty-row { display: block; color: var(--ink-3); border: 0; }
+  .tag { font-size: 11px; font-weight: 600; text-align: center; border-radius: 7px; padding: 3px 0; height: fit-content; background: var(--paper-2); color: var(--ink-2); }
+  .tag.rec { background: #e3eff8; color: #1f6c96; }
+  .tag.key { background: #fbefd5; color: #8f620c; }
+  .tag.land { background: #e4f2e8; color: #2d7744; }
+  .tag.play { background: #eee8f8; color: #5a4695; }
+  .tag.gate { background: #fff0c4; color: #7a5200; }
+  .log-list time { font-family: var(--display); font-size: 11.5px; color: var(--ink-3); margin-right: 6px; }
+  .log-overview { padding: 14px 16px 16px; overflow-y: auto; flex: 1; }
+  .ov-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .ov-grid .stat b { font-size: 20px; }
+  .ov-line { display: flex; justify-content: space-between; gap: 10px; padding: 11px 2px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .ov-line span:last-child { color: var(--ink-2); text-align: right; }
+
+  /* ---------- 底部：快速前往、提示 ---------- */
+  .dock { position: fixed; z-index: 9; bottom: calc(18px + var(--sb)); left: calc((100% - var(--side-w)) / 2); transform: translateX(-50%); display: flex; gap: 3px; padding: 6px; border-radius: 20px; transition: left .35s ease; }
+  body.side-closed .dock { left: 50%; }
+  body.card-open .dock { left: calc(392px + (100% - 392px - var(--side-w)) / 2); }
+  body.card-open.side-closed .dock { left: calc(392px + (100% - 392px) / 2); }
+  body.log-open .dock { left: calc((100% - 346px) / 2); }
+  .dock button { border: 0; background: transparent; display: flex; align-items: center; gap: 9px; height: 46px; padding: 0 14px 0 7px; border-radius: 14px; font-size: 13.5px; font-weight: 600; white-space: nowrap; }
+  .dock button i { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: var(--cs); color: var(--c); }
+  .dock button i svg.i { width: 18px; height: 18px; }
+  .dock button:hover { background: rgba(22, 33, 58, .06); }
+  .dock button.active { background: var(--ink); color: #fff; }
+  .hint { position: fixed; z-index: 9; left: 16px; bottom: calc(18px + var(--sb)); display: flex; align-items: center; gap: 10px; padding: 8px 16px 8px 8px; border-radius: 999px; font-size: 13px; color: var(--ink); max-width: min(440px, calc(50vw - 200px)); border: 1px solid rgba(255, 255, 255, .7); text-align: left; transition: opacity .3s, background .3s, color .3s; }
+  .hint .halo { width: 28px; height: 28px; border-radius: 50%; flex: none; background: radial-gradient(circle at 50% 50%, #fff 0 22%, #19c2d8 24% 100%); box-shadow: 0 0 0 3px rgba(25, 194, 216, .2); }
+  .hint.prompt { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .hint.lore { background: #2a2a33; color: #f1e6c8; border-color: #2a2a33; }
+  body.card-open .hint { opacity: 0; pointer-events: none; }
+  .toast { position: fixed; z-index: 30; top: calc(90px + var(--st)); left: 50%; transform: translate(-50%, -8px); opacity: 0; pointer-events: none; background: var(--ink); color: #fff; padding: 11px 20px; border-radius: 999px; font-size: 14px; font-weight: 600; box-shadow: var(--shadow); transition: opacity .35s, transform .35s; white-space: nowrap; max-width: calc(100vw - 32px); overflow: hidden; text-overflow: ellipsis; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .toast.gold { background: linear-gradient(90deg, #a8740f, #d29d33); }
+  #joystick { position: fixed; z-index: 9; left: 18px; bottom: calc(92px + var(--sb)); width: 104px; height: 104px; border-radius: 50%; background: rgba(251, 247, 239, .3); border: 1.5px solid rgba(255, 255, 255, .8); box-shadow: var(--shadow-s); touch-action: none; display: none; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+  #stick { position: absolute; left: 32px; top: 32px; width: 40px; height: 40px; border-radius: 50%; background: rgba(255, 255, 255, .94); box-shadow: 0 3px 10px rgba(15, 22, 42, .28); }
+  body.touch #joystick { display: block; }
+  body.sheet-open #joystick, body.sheet-open .dock { display: none; }
+
+  /* ---------- 導覽說明 ---------- */
+  .intro { position: fixed; inset: 0; z-index: 35; display: grid; place-items: center; padding: 16px; background: rgba(14, 20, 36, .3); -webkit-backdrop-filter: blur(7px); backdrop-filter: blur(7px); animation: fade .3s ease; }
+  .intro-box { width: min(440px, 100%); background: var(--paper); border-radius: 24px; padding: 30px 30px 24px; box-shadow: 0 24px 60px rgba(10, 15, 30, .3); }
+  .intro-box h2 { margin: 12px 0 10px; font-size: 25px; line-height: 1.3; }
+  .intro-box p { margin: 0; font-size: 14px; line-height: 1.85; color: var(--ink-2); min-height: 4.2em; }
+  .intro-dots { display: flex; gap: 6px; margin-top: 20px; }
+  .intro-dots i { width: 6px; height: 6px; border-radius: 99px; background: var(--paper-3); transition: width .3s, background .3s; }
+  .intro-dots i.on { width: 22px; background: var(--ink); }
+  .intro-actions { display: flex; justify-content: space-between; margin-top: 20px; }
+  .intro-actions .btn.primary { flex: none; }
+  @keyframes fade { from { opacity: 0; } }
+
+  /* ---------- 進遊戲 ---------- */
+  #overlay { position: fixed; inset: 0; z-index: 40; background: #0b1020; display: flex; flex-direction: column; }
+  .ov-bar { height: calc(58px + var(--st)); padding: var(--st) 12px 0; display: flex; align-items: center; gap: 10px; background: var(--paper); border-bottom: 1px solid var(--line); flex: none; }
+  .ov-title { flex: 1; text-align: center; font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ov-title small { font-family: var(--display); letter-spacing: .2em; font-size: 11px; color: var(--ink-3); margin-left: 8px; font-weight: 500; }
+  .ov-bar .btn { height: 40px; font-size: 13.5px; padding: 0 14px; }
+  .ov-bar .btn.ink { background: var(--ink); color: #fff; border-color: var(--ink); }
+  #game-frame { flex: 1; width: 100%; border: 0; background: #000; }
+
+  /* ---------- 結局 ---------- */
+  #ending { position: fixed; inset: 0; z-index: 45; display: grid; place-items: center; padding: 16px; background: radial-gradient(ellipse at 50% 40%, rgba(54, 40, 8, .82), rgba(5, 8, 18, .95)); animation: fade .8s ease; }
+  .ending-box { text-align: center; color: #f6ecd2; max-width: 520px; }
+  .ending-box .eyebrow { color: #e7c873; letter-spacing: .5em; }
+  .ending-box h2 { font-size: clamp(26px, 5vw, 38px); margin: 18px 0 8px; font-weight: 700; letter-spacing: .04em; text-shadow: 0 0 24px rgba(255, 200, 80, .45); }
+  .ending-box .sign { color: #e7c873; margin: 0; }
+  .coin3d { width: 118px; height: 118px; margin: 28px auto 20px; display: block; animation: spin 3.4s ease-in-out infinite; filter: drop-shadow(0 0 18px rgba(255, 196, 70, .55)); }
+  @keyframes spin { 50% { transform: rotateY(180deg); } }
+  .ending-box p { line-height: 1.85; color: rgba(246, 236, 210, .88); margin: 0; }
+  .ending-box .btn { margin-top: 24px; background: #f6ecd2; color: #1c1608; border: 0; padding: 0 26px; }
+
+  /* ---------- 開場：渡海 ---------- */
   #splash {
-    position: fixed; inset: 0; z-index: 40; overflow: hidden; cursor: pointer;
+    position: fixed; inset: 0; z-index: 50; overflow: hidden; cursor: pointer;
     background: linear-gradient(#0d1b33 0%, #0a1628 55%, #071120 100%);
     transition: opacity 1.2s;
   }
@@ -96,70 +299,196 @@
   @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
   #splash .hint {
     position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 2;
-    color: rgba(232,227,208,.7);
+    color: rgba(232,227,208,.7); background: none; border: 0; padding: 0; max-width: none;
     font-family: "Futura", "Avenir Next", "Helvetica Neue", sans-serif;
     font-size: 12px; letter-spacing: .5em; padding-left: .5em; white-space: nowrap;
     animation: blink 2.6s ease-in-out infinite;
   }
   @keyframes blink { 0%, 100% { opacity: .25; } 50% { opacity: .85; } }
-  @media (max-width: 600px) {
+
+  /* ---------- 中尺寸：顯示切換移到清單底部 ---------- */
+  @media (max-width: 1240px) {
+    .seg2 button span { display: none; }
+    .seg2 button { height: 40px; padding: 0 10px; }
+  }
+  @media (max-width: 1120px) {
+    .hud .seg2 { display: none; }
+    .side-foot { display: block; }
+  }
+  @media (max-width: 980px) and (min-width: 821px) {
+    .hud { display: none; }
+  }
+
+  /* ---------- 手機：清單、卡片、日誌改成底部抽屜 ---------- */
+  @media (max-width: 820px) {
+    :root { --side-w: 0px; }
+    .topbar { top: calc(12px + var(--st)); left: 12px; right: 12px; }
+    body.log-open .topbar { right: 12px; }
+    .hud { display: none; }
+    .brand { padding: 9px 9px 9px 14px; gap: 10px; border-radius: 18px; }
+    .wordmark { font-size: 15px; letter-spacing: .3em; margin-right: -.3em; }
+    .brand-keys { padding-left: 10px; gap: 4px; }
+    .kchip { width: 26px; height: 26px; }
+    .kchip svg.i { width: 14px; height: 14px; }
+    .toolbar { flex-direction: column; align-items: stretch; gap: 6px; }
+    .tb { height: 42px; padding: 0 13px; font-size: 12.5px; border-radius: 13px; }
+    .tb.help { width: auto; padding: 0 13px; justify-content: flex-start; font-family: var(--ui); font-size: 12.5px; }
+    .tb.help span { display: inline; }
+    .tb.help b { font-family: var(--display); font-size: 15px; width: 15px; text-align: center; }
+    .mob-only { display: inline-flex !important; }
+    .sheet-handle { display: flex; justify-content: center; align-items: center; width: 100%; height: 26px; border: 0; background: transparent; padding: 0; flex: none; }
+    .sheet-handle i { width: 44px; height: 5px; border-radius: 99px; background: #d3c9b6; }
+    .sidebar { top: auto; left: 0; right: 0; bottom: 0; width: auto; height: min(74vh, 640px); border-radius: 22px 22px 0 0; border: 0; box-shadow: 0 -12px 34px rgba(15, 22, 42, .22); }
+    body.side-closed .sidebar { transform: translateY(104%); }
+    .side-head { padding: 4px 22px 12px; }
+    .side-head h2 { font-size: 22px; margin-top: 7px; }
+    .side-foot { display: block; }
+    .card { top: auto; left: 0; right: 0; bottom: 0; width: auto; height: 55vh; border-radius: 22px 22px 0 0; animation: sheetIn .35s ease; box-shadow: 0 -12px 34px rgba(15, 22, 42, .22); }
+    .card.full { height: calc(100% - 64px - var(--st)); }
+    .card .close { top: 22px; }
+    .card-scroll { padding-top: 6px; }
+    .actions { padding-bottom: calc(14px + var(--sb)); }
+    @keyframes sheetIn { from { transform: translateY(40px); opacity: 0; } }
+    .log { top: auto; left: 0; right: 0; bottom: 0; width: auto; height: 70vh; border-radius: 22px 22px 0 0; animation: sheetIn .3s ease; }
+    .log-head { padding-top: 4px; }
+    .log .close { top: 4px; }
+    .log-list { padding-bottom: calc(16px + var(--sb)); }
+    .dock { left: 50%; bottom: calc(12px + var(--sb)); padding: 5px; gap: 2px; border-radius: 19px; }
+    body.side-closed .dock, body.log-open .dock { left: 50%; }
+    .dock button { flex-direction: column; justify-content: center; height: 58px; padding: 5px 9px 4px; gap: 3px; font-size: 10.5px; min-width: 64px; border-radius: 14px; }
+    .dock button i { width: 30px; height: 30px; }
+    .hint { left: 12px; top: calc(66px + var(--st)); bottom: auto; max-width: calc(100vw - 132px); font-size: 12px; padding: 6px 13px 6px 6px; }
+    .hint .halo { width: 22px; height: 22px; }
+    body.sheet-open .hint { display: none; }
+    .toast { top: calc(66px + var(--st)); left: 12px; transform: translateY(-8px); max-width: calc(100vw - 130px); font-size: 13px; }
+    .toast.show { transform: none; }
     #splash .moon { width: 84px; height: 84px; top: 7%; left: 10%; }
     #splash .title { top: 28%; }
   }
-  #ending {
-    position: fixed; inset: 0; z-index: 30; background: rgba(2,3,10,.94);
-    display: none; flex-direction: column; align-items: center; justify-content: center;
-    color: #ffe97f; font-family: "Courier New", monospace; text-align: center;
+  @media (prefers-reduced-motion: reduce) {
+    .card, .log, .intro, #ending { animation: none; }
+    .coin3d { animation: none; }
   }
-  #ending h2 { font-size: 30px; letter-spacing: 4px; text-shadow: 0 0 16px #ffb300; margin: 0 0 14px; }
-  #ending p { color: #9fdcff; font-size: 15px; margin: 6px 0; }
-  #ending .coin { font-size: 46px; margin: 18px 0; filter: drop-shadow(0 0 12px #ffd23f); }
-  #ending button {
-    margin-top: 22px; background: none; border: 1px solid #ffe97f; color: #ffe97f;
-    font-family: inherit; font-size: 15px; padding: 8px 22px; border-radius: 6px; cursor: pointer;
-  }
-  #overlay {
-    position: fixed; inset: 0; z-index: 20; background: #000;
-    display: none; flex-direction: column;
-  }
-  #overlay-bar {
-    height: 44px; display: flex; align-items: center; gap: 12px;
-    background: #0a0a20; color: #7ff7ff; font-family: "Courier New", monospace;
-    padding: 0 12px; border-bottom: 1px solid #00e5ff44; flex: 0 0 auto;
-  }
-  #overlay-bar button {
-    background: none; border: 1px solid #7ff7ff; color: #7ff7ff;
-    font-family: inherit; font-size: 14px; padding: 6px 14px;
-    border-radius: 6px; cursor: pointer;
-  }
-  #overlay-bar button:active { background: #7ff7ff33; }
-  #overlay iframe { flex: 1 1 auto; border: 0; width: 100%; }
-  #joystick {
-    position: fixed; left: 24px; bottom: 24px; z-index: 10;
-    width: 110px; height: 110px; border-radius: 50%;
-    border: 2px solid #00e5ff55; background: rgba(0,229,255,.06);
-    touch-action: none; display: none;
-  }
-  #stick {
-    position: absolute; left: 35px; top: 35px; width: 40px; height: 40px;
-    border-radius: 50%; background: rgba(0,229,255,.35);
-    box-shadow: 0 0 12px #00e5ff88;
-  }
-  @media (pointer: coarse) { #joystick { display: block; } }
 </style>
 </head>
 <body>
-<div id="hud">
-  <h1>SANASAI</h1>
-  <p>方向鍵 / WASD 走動．走近機台按 Enter（或點機台）進入遊戲</p>
+<main id="app">
+<div id="stage" role="img" aria-label="SANASAI 島的 3D 場景：三個遊戲分布在島上，完整操作請用清單"></div>
+<div id="labels"></div>
+
+<div class="topbar">
+  <header class="brand panel">
+    <a class="wordmark" href="./" aria-label="SANASAI 沙那賽">SANASAI</a>
+    <div class="brand-keys" id="brand-keys" role="group" aria-label="鑰匙進度"></div>
+  </header>
+  <div class="hud" id="hud">
+    <div class="seg panel" role="group" aria-label="時段">
+      <button data-time="auto" class="active" title="跟著現在的時間" aria-label="跟著現在的時間"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/></svg></button>
+      <button data-time="390" title="清晨" aria-label="清晨"><svg class="i" viewBox="0 0 24 24"><path d="M3 18h18M7.5 18a4.5 4.5 0 0 1 9 0M12 9v2.4M6.4 11.5l1.6 1.4M17.6 11.5 16 12.9M9.6 5.6 12 3.2l2.4 2.4"/></svg></button>
+      <button data-time="720" title="白天" aria-label="白天"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.6"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/></svg></button>
+      <button data-time="1070" title="黃昏" aria-label="黃昏"><svg class="i" viewBox="0 0 24 24"><path d="M3 18h18M7.5 18a4.5 4.5 0 0 1 9 0M12 9v2.4M6.4 11.5l1.6 1.4M17.6 11.5 16 12.9M9.6 3.4 12 5.8l2.4-2.4"/></svg></button>
+      <button data-time="1290" title="夜晚" aria-label="夜晚"><svg class="i" viewBox="0 0 24 24"><path d="M18.5 14.6A7.5 7.5 0 0 1 9.4 5.5a7.5 7.5 0 1 0 9.1 9.1z"/><path d="M17 4.2v2.6M15.7 5.5h2.6"/></svg></button>
+    </div>
+    <div class="seg seg2 panel" role="group" aria-label="顯示選項">
+      <button data-toggle="names" aria-pressed="true" title="名牌"><svg class="i" viewBox="0 0 24 24"><path d="M4 7.5h10.5L19 12l-4.5 4.5H4z"/><circle cx="8" cy="12" r="1.2"/></svg><span>名牌</span></button>
+      <button data-toggle="freeze" aria-pressed="false" title="暫停動畫"><svg class="i" viewBox="0 0 24 24"><path d="M8.5 6v12M15.5 6v12"/></svg><span>暫停</span></button>
+      <button data-toggle="bird" aria-pressed="false" title="鳥瞰"><svg class="i" viewBox="0 0 24 24"><path d="M12 4 20 8.5 12 13 4 8.5z"/><path d="M4 12.5 12 17l8-4.5"/></svg><span>鳥瞰</span></button>
+      <button data-toggle="log" aria-pressed="false" title="島嶼日誌"><svg class="i" viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M8.5 8h7M8.5 12h7M8.5 16h4"/></svg><span>日誌</span></button>
+    </div>
+  </div>
+  <div class="spacer"></div>
+  <nav class="toolbar" aria-label="地圖操作">
+    <button class="tb" id="btn-home" title="回到全景"><svg class="i" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span>全景</span></button>
+    <button class="tb" id="btn-index" aria-pressed="true"><svg class="i" viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h9"/></svg><span>清單</span></button>
+    <button class="tb mob-only" id="btn-time"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/></svg><span id="btn-time-label">自動</span></button>
+    <button class="tb help" id="btn-help" aria-label="操作說明"><b>?</b><span>說明</span></button>
+  </nav>
 </div>
-<div id="keys">
-  <span class="copper" id="key-copper">⚿ 銅</span>
-  <span class="jade" id="key-jade">⚿ 玉</span>
-  <span class="crystal" id="key-crystal">⚿ 晶</span>
+
+<aside class="sidebar" id="sidebar" aria-label="島上地點與鑰匙清單">
+  <button class="sheet-handle" id="side-handle" aria-label="收合清單"><i></i></button>
+  <div class="side-head">
+    <div class="eyebrow">THE ISLAND INDEX</div>
+    <h2>三個遊戲，一座島。</h2>
+    <p>點一個地方，分身會走過去；<br>按「開始玩」就進遊戲。</p>
+    <div class="side-tabs" role="tablist">
+      <button id="tab-places" class="active" role="tab" aria-selected="true">地點</button>
+      <button id="tab-keys" role="tab" aria-selected="false">鑰匙<b id="keys-count">0/3</b></button>
+    </div>
+  </div>
+  <div class="side-body" id="side-body"></div>
+  <div class="side-foot">
+    <div class="foot-toggles" role="group" aria-label="顯示選項">
+      <button data-toggle="names" aria-pressed="true">名牌</button>
+      <button data-toggle="freeze" aria-pressed="false">暫停</button>
+      <button data-toggle="bird" aria-pressed="false">鳥瞰</button>
+      <button data-toggle="log" aria-pressed="false">日誌</button>
+    </div>
+  </div>
+</aside>
+
+<article class="card panel" id="card" hidden aria-label="地點介紹">
+  <button class="sheet-handle" id="card-handle" aria-label="展開或收合"><i></i></button>
+  <button class="close" id="card-close" aria-label="關閉">×</button>
+  <div class="card-scroll" id="card-body"></div>
+  <div class="actions" id="card-actions"></div>
+</article>
+
+<aside class="log panel" id="log" hidden aria-label="島嶼日誌">
+  <button class="sheet-handle" id="log-handle" aria-label="收合日誌"><i></i></button>
+  <div class="log-head">
+    <div class="eyebrow">ISLAND LOG</div>
+    <h3>島嶼日誌</h3>
+    <button class="close" id="log-close" aria-label="關閉日誌">×</button>
+  </div>
+  <div class="log-tabs" role="tablist">
+    <button data-logtab="overview" role="tab">島嶼概況</button>
+    <button data-logtab="log" class="active" role="tab">日誌</button>
+  </div>
+  <div class="log-overview" id="log-overview" hidden></div>
+  <ol class="log-list" id="log-list"></ol>
+</aside>
+
+<nav class="dock panel" id="dock" aria-label="快速前往"></nav>
+<button class="hint panel" id="hint" type="button"><span class="halo" aria-hidden="true"></span><span id="hint-text">點地面走路・點建築看介紹</span></button>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div id="joystick" aria-hidden="true"><div id="stick"></div></div>
+
+<div class="intro" id="intro" hidden>
+  <div class="intro-box" role="dialog" aria-modal="true" aria-labelledby="intro-title">
+    <div class="eyebrow" id="intro-count">WELCOME ASHORE / 01</div>
+    <h2 id="intro-title"></h2>
+    <p id="intro-body"></p>
+    <div class="intro-dots" id="intro-dots"></div>
+    <div class="intro-actions"><button class="btn" id="intro-skip">略過</button><button class="btn primary" id="intro-next">下一步 →</button></div>
+  </div>
 </div>
-<div id="prompt"></div>
-<div id="banner"></div>
+
+<div id="overlay" hidden>
+  <div class="ov-bar">
+    <button class="btn ink" id="btn-back">← 回到島上</button>
+    <div class="ov-title" id="overlay-title"></div>
+    <a class="btn" id="ov-newtab" href="#" target="_blank" rel="noopener">↗ 新分頁</a>
+  </div>
+  <iframe id="game-frame" title="遊戲" src="about:blank" allow="fullscreen; accelerometer; gyroscope"></iframe>
+</div>
+
+<div id="ending" hidden>
+  <div class="ending-box">
+    <div class="eyebrow">SANASAI</div>
+    <h2>謝謝你來玩我的遊戲。</h2>
+    <p class="sign">— 沙那賽館長</p>
+    <svg class="coin3d" viewBox="0 0 120 120" aria-hidden="true">
+      <defs><radialGradient id="cg" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="#fff2b8"/><stop offset=".55" stop-color="#f2c14e"/><stop offset="1" stop-color="#b9821c"/></radialGradient></defs>
+      <circle cx="60" cy="60" r="56" fill="url(#cg)"/>
+      <circle cx="60" cy="60" r="45" fill="none" stroke="#a87414" stroke-width="3" stroke-dasharray="4 5"/>
+      <text x="60" y="73" text-anchor="middle" font-family="Futura, Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="36" font-weight="600" fill="#7a520c">25¢</text>
+    </svg>
+    <p>獲得 25¢ 復活幣：從今以後，它會一直留在島的入口。</p>
+    <button class="btn" id="btn-ending">回到島上</button>
+  </div>
+</div>
+
 <div id="splash">
   <div class="seigaiha"></div>
   <div class="moon"></div>
@@ -203,21 +532,7 @@
   </div>
   <div class="hint">TAP TO LAND</div>
 </div>
-<div id="ending">
-  <h2>謝謝你來玩我的遊戲。</h2>
-  <p>— 沙那賽館長</p>
-  <div class="coin">🪙</div>
-  <p>獲得 25¢ 復活幣：從今以後，它會一直留在島的入口。</p>
-  <button id="btn-ending">回到大廳</button>
-</div>
-<div id="overlay">
-  <div id="overlay-bar">
-    <button id="btn-back">⟵ 返回大廳</button>
-    <span id="overlay-title"></span>
-  </div>
-  <iframe id="game-frame" src="about:blank" allow="fullscreen"></iframe>
-</div>
-<div id="joystick"><div id="stick"></div></div>
+</main>
 
 <script type="importmap">
 { "imports": {
@@ -225,580 +540,6 @@
   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module">
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-
-/* ---------- 遊戲清單：新遊戲上架只要加一行 ---------- */
-const GAMES = [
-  { name: '小蜜蜂',    en: 'BEE',        url: 'https://garychiang23-creator.github.io/bee/mobile.html', color: 0xffd23f },
-  { name: 'Blocks Pro', en: 'BLOCKS PRO', url: 'https://garychiang23-creator.github.io/blocks/',        color: 0x4fc3f7 },
-];
-
-/* 學堂：不是遊戲，是世界裡的學習場所（綠洲裡本來就有學校） */
-const SCHOOL = { name: '托福特訓', en: 'TOEFL GYM', url: 'https://garychiang23-creator.github.io/toefl/' };
-
-/* low-poly 換裝實驗：?classic=1 切回程式方塊版對照 */
-const CLASSIC = new URLSearchParams(location.search).get('classic') === '1';
-
-/* ---------- 三把鑰匙（同網域 localStorage 讀真實紀錄） ---------- */
-const BEE_TARGET = 20000;       // 銅：小蜜蜂最高分
-const MARATHON_TARGET = 15000;  // 玉：Blocks MARATHON 分數（或完成 SPRINT 40）
-const beeHi = () => parseInt(localStorage.getItem('bee_hi') || '0', 10);
-const marathonBest = () => parseFloat(localStorage.getItem('tetris2_best_marathon') || '0');
-const sprintDone = () => isFinite(parseFloat(localStorage.getItem('tetris2_best_sprint') || 'Infinity'));
-
-const KEYS = [
-  { id: 'copper',  name: '銅鑰匙', color: 0xb87333, glow: 0xe09a5a,
-    met: () => beeHi() >= BEE_TARGET,
-    quest: () => `銅鑰匙任務：小蜜蜂最高分 ${BEE_TARGET.toLocaleString()}（目前 ${beeHi().toLocaleString()}）`,
-    pos: [-4.2, -6.2] },
-  { id: 'jade',    name: '玉鑰匙', color: 0x00a86b, glow: 0x4be8a8,
-    met: () => marathonBest() >= MARATHON_TARGET || sprintDone(),
-    quest: () => `玉鑰匙任務：MARATHON ${MARATHON_TARGET.toLocaleString()} 分或完成 SPRINT 40（目前 ${Math.floor(marathonBest()).toLocaleString()}）`,
-    pos: [4.2, -6.2] },
-  { id: 'crystal', name: '水晶鑰匙', color: 0xa5f2f3, glow: 0xc9f6ff,
-    met: () => true,   // 藏在暗處，走到就算
-    quest: () => '',
-    pos: [0, 17.5] },
-];
-let keyState = { copper: false, jade: false, crystal: false, coin: false };
-try { Object.assign(keyState, JSON.parse(localStorage.getItem('sanasai_keys') || '{}')); } catch (e) {}
-const saveKeys = () => { try { localStorage.setItem('sanasai_keys', JSON.stringify(keyState)); } catch (e) {} };
-const allKeys = () => keyState.copper && keyState.jade && keyState.crystal;
-
-/* ---------- 場景 ---------- */
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x050510);
-scene.fog = new THREE.Fog(0x050510, 18, 55);
-
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 200);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(innerWidth, innerHeight);
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-document.body.appendChild(renderer.domElement);
-
-scene.add(new THREE.AmbientLight(0x8888aa, CLASSIC ? .6 : .95));
-const moon = new THREE.DirectionalLight(0xaaccff, CLASSIC ? .5 : .75);
-moon.position.set(5, 12, 6);
-scene.add(moon);
-
-const grid = new THREE.GridHelper(160, 80, 0x00e5ff, 0x123a55);
-scene.add(grid);
-const floor = new THREE.Mesh(
-  new THREE.PlaneGeometry(160, 160),
-  new THREE.MeshBasicMaterial({ color: 0x070718 })
-);
-floor.rotation.x = -Math.PI / 2;
-floor.position.y = -0.02;
-scene.add(floor);
-
-{
-  const n = 900, pos = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) {
-    const r = 70 + Math.random() * 60;
-    const a = Math.random() * Math.PI * 2, b = Math.acos(Math.random() * 2 - 1);
-    pos[i*3]   = r * Math.sin(b) * Math.cos(a);
-    pos[i*3+1] = Math.abs(r * Math.cos(b)) + 2;
-    pos[i*3+2] = r * Math.sin(b) * Math.sin(a);
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0xbfe8ff, size: .35 })));
-}
-
-/* ---------- 玩家分身 ---------- */
-const avatar = new THREE.Group();
-const body = new THREE.Mesh(
-  new THREE.CapsuleGeometry(.35, .7, 6, 14),
-  new THREE.MeshStandardMaterial({ color: 0x00e5ff, emissive: 0x0090aa, roughness: .3 })
-);
-body.position.y = .9;
-avatar.add(body);
-const halo = new THREE.Mesh(
-  new THREE.TorusGeometry(.55, .04, 10, 40),
-  new THREE.MeshBasicMaterial({ color: 0x00e5ff })
-);
-halo.rotation.x = Math.PI / 2;
-halo.position.y = .08;
-avatar.add(halo);
-scene.add(avatar);
-
-/* ---------- 街機機台 ---------- */
-function labelTexture(text, sub, colorHex) {
-  const c = document.createElement('canvas');
-  c.width = 256; c.height = 256;
-  const x = c.getContext('2d');
-  x.fillStyle = '#050a18'; x.fillRect(0, 0, 256, 256);
-  const col = '#' + colorHex.toString(16).padStart(6, '0');
-  x.strokeStyle = col; x.lineWidth = 8; x.strokeRect(8, 8, 240, 240);
-  x.fillStyle = col; x.textAlign = 'center';
-  x.font = 'bold 52px "PingFang TC", sans-serif';
-  x.fillText(text, 128, 118);
-  x.font = 'bold 26px "Courier New", monospace';
-  x.fillText(sub, 128, 170);
-  x.font = '20px sans-serif';
-  x.fillText('▶ PLAY', 128, 215);
-  return new THREE.CanvasTexture(c);
-}
-
-/* GLB 工具：載入後縮放到目標高度、置中、底部貼地 */
-const loader = new GLTFLoader();
-function fitToGround(obj, targetH) {
-  const box = new THREE.Box3().setFromObject(obj);
-  const size = box.getSize(new THREE.Vector3());
-  obj.scale.setScalar(targetH / size.y);
-  const box2 = new THREE.Box3().setFromObject(obj);
-  const ctr = box2.getCenter(new THREE.Vector3());
-  obj.position.x -= ctr.x;
-  obj.position.z -= ctr.z;
-  obj.position.y -= box2.min.y;
-}
-function makeNameSprite(text, colorHex) {
-  const c = document.createElement('canvas');
-  c.width = 512; c.height = 128;
-  const x = c.getContext('2d');
-  const col = '#' + colorHex.toString(16).padStart(6, '0');
-  x.textAlign = 'center';
-  x.shadowColor = col; x.shadowBlur = 24;
-  x.fillStyle = col;
-  x.font = 'bold 58px "PingFang TC", sans-serif';
-  x.fillText(text, 256, 82);
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true }));
-  sp.scale.set(3, .75, 1);
-  return sp;
-}
-
-const cabinets = [];
-GAMES.forEach((game, i) => {
-  const angle = (i - (GAMES.length - 1) / 2) * (Math.PI / 5);
-  const R = 9;
-  const gx = Math.sin(angle) * R, gz = -Math.cos(angle) * R;
-
-  const cab = new THREE.Group();
-  if (CLASSIC) {
-    const shell = new THREE.Mesh(
-      new THREE.BoxGeometry(1.6, 2.3, 1.0),
-      new THREE.MeshStandardMaterial({ color: 0x101028, roughness: .6 })
-    );
-    shell.position.y = 1.15;
-    cab.add(shell);
-
-    const screen = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.3, 1.3),
-      new THREE.MeshBasicMaterial({ map: labelTexture(game.name, game.en, game.color) })
-    );
-    screen.position.set(0, 1.35, 0.51);
-    cab.add(screen);
-
-    const marquee = new THREE.Mesh(
-      new THREE.BoxGeometry(1.7, .3, 1.05),
-      new THREE.MeshBasicMaterial({ color: game.color })
-    );
-    marquee.position.y = 2.45;
-    cab.add(marquee);
-  } else {
-    loader.load('assets/arcade.glb', g => {
-      const m = g.scene;
-      m.rotation.y = -Math.PI / 2;   // 模型正面朝 +X，轉到 +Z（面向玩家）
-      fitToGround(m, 2.3);
-      cab.add(m);
-    });
-    const label = makeNameSprite(game.name, game.color);
-    label.position.y = 3.05;
-    cab.add(label);
-  }
-
-  const glow = new THREE.PointLight(game.color, 6, 7);
-  glow.position.set(0, 1.6, 1.2);
-  cab.add(glow);
-
-  cab.position.set(gx, 0, gz);
-  cab.lookAt(0, 0, 0);
-  scene.add(cab);
-  cabinets.push({ game, group: cab });
-});
-
-/* ---------- 學堂（暖光，與霓虹街機區對比；GLB=三層寶塔） ---------- */
-const school = new THREE.Group();
-if (CLASSIC) {
-  const walls = new THREE.Mesh(
-    new THREE.BoxGeometry(2.6, 1.9, 2.2),
-    new THREE.MeshStandardMaterial({ color: 0x4a3222, roughness: .8 })
-  );
-  walls.position.y = .95;
-  school.add(walls);
-
-  const roof = new THREE.Mesh(
-    new THREE.ConeGeometry(2.3, 1.3, 4),
-    new THREE.MeshStandardMaterial({ color: 0x8b3a2e, roughness: .7 })
-  );
-  roof.rotation.y = Math.PI / 4;
-  roof.position.y = 2.55;
-  school.add(roof);
-
-  const door = new THREE.Mesh(
-    new THREE.PlaneGeometry(.7, 1.2),
-    new THREE.MeshBasicMaterial({ color: 0xffc87f })
-  );
-  door.position.set(0, .62, 1.11);
-  school.add(door);
-
-  const signCanvas = document.createElement('canvas');
-  signCanvas.width = 512; signCanvas.height = 160;
-  const sx = signCanvas.getContext('2d');
-  sx.fillStyle = '#2a1a10'; sx.fillRect(0, 0, 512, 160);
-  sx.strokeStyle = '#ffc87f'; sx.lineWidth = 10; sx.strokeRect(10, 10, 492, 140);
-  sx.fillStyle = '#ffc87f'; sx.textAlign = 'center';
-  sx.font = 'bold 78px "PingFang TC", sans-serif';
-  sx.fillText('學 堂', 256, 88);
-  sx.font = 'bold 30px "Courier New", monospace';
-  sx.fillText('TOEFL GYM', 256, 134);
-  const sign = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.7, .53),
-    new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(signCanvas) })
-  );
-  sign.position.set(0, 1.72, 1.12);
-  school.add(sign);
-
-  const lantern = new THREE.Mesh(
-    new THREE.SphereGeometry(.16, 12, 10),
-    new THREE.MeshStandardMaterial({ color: 0xffaa44, emissive: 0xff8822, emissiveIntensity: .9 })
-  );
-  lantern.position.set(1.15, 1.95, 1.2);
-  school.add(lantern);
-} else {
-  loader.load('assets/school.glb', g => {
-    const m = g.scene;
-    fitToGround(m, 4.4);
-    school.add(m);
-  });
-  const label = makeNameSprite('學堂', 0xffc87f);
-  label.position.y = 5.1;
-  school.add(label);
-}
-const warm = new THREE.PointLight(0xffb066, 6, 12);
-warm.position.set(0, 2, 2);
-school.add(warm);
-school.position.set(-13, 0, -1);
-school.lookAt(0, 0, 0);
-scene.add(school);
-
-/* ---------- 鑰匙基座與鑰匙 ---------- */
-function makeKeyMesh(k) {
-  const g = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({ color: k.color, emissive: k.color, emissiveIntensity: .55, roughness: .3, metalness: .6 });
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(.22, .06, 10, 24), mat);
-  ring.position.y = .3;
-  g.add(ring);
-  const shaft = new THREE.Mesh(new THREE.BoxGeometry(.1, .55, .1), mat);
-  shaft.position.y = -.15;
-  g.add(shaft);
-  const t1 = new THREE.Mesh(new THREE.BoxGeometry(.18, .09, .09), mat);
-  t1.position.set(.12, -.38, 0);
-  g.add(t1);
-  const t2 = new THREE.Mesh(new THREE.BoxGeometry(.13, .09, .09), mat);
-  t2.position.set(.1, -.24, 0);
-  g.add(t2);
-  return g;
-}
-
-const pedestals = {};   // id -> { group, key, k }
-function spawnPedestal(k) {
-  if (pedestals[k.id]) return;
-  const group = new THREE.Group();
-  const base = new THREE.Mesh(
-    new THREE.CylinderGeometry(.5, .65, .9, 8),
-    new THREE.MeshStandardMaterial({ color: 0x14142e, roughness: .5 })
-  );
-  base.position.y = .45;
-  group.add(base);
-  const key = makeKeyMesh(k);
-  key.position.y = 1.5;
-  group.add(key);
-  const light = new THREE.PointLight(k.glow, 7, 6);
-  light.position.y = 1.6;
-  group.add(light);
-  group.position.set(k.pos[0], 0, k.pos[1]);
-  scene.add(group);
-  pedestals[k.id] = { group, key, k };
-}
-function removePedestal(id) {
-  if (!pedestals[id]) return;
-  scene.remove(pedestals[id].group);
-  delete pedestals[id];
-}
-
-/* 石碑（水晶鑰匙的提示） */
-const stele = new THREE.Mesh(
-  new THREE.BoxGeometry(.7, 1.5, .25),
-  new THREE.MeshStandardMaterial({ color: 0x1a2a3a, emissive: 0x0a2a3a, emissiveIntensity: .4, roughness: .7 })
-);
-stele.position.set(2.6, .75, 1.8);
-stele.rotation.y = -.5;
-scene.add(stele);
-
-/* 沙那賽之門（集齊三鑰匙才出現） */
-let gate = null;
-function spawnGate() {
-  if (gate) return;
-  gate = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({ color: 0xffe97f, emissive: 0xffb300, emissiveIntensity: .6, roughness: .4 });
-  const l = new THREE.Mesh(new THREE.BoxGeometry(.4, 4, .4), mat); l.position.set(-1.5, 2, 0); gate.add(l);
-  const r = new THREE.Mesh(new THREE.BoxGeometry(.4, 4, .4), mat); r.position.set(1.5, 2, 0); gate.add(r);
-  const top = new THREE.Mesh(new THREE.BoxGeometry(3.8, .4, .5), mat); top.position.set(0, 4.1, 0); gate.add(top);
-  const light = new THREE.PointLight(0xffe97f, 10, 12); light.position.set(0, 2.5, 1); gate.add(light);
-  gate.position.set(0, 0, -13);
-  scene.add(gate);
-  banner('三鑰齊聚——沙那賽之門開啟');
-}
-
-/* 25¢ 復活幣（結局後常駐入口） */
-let coin = null;
-function spawnCoin() {
-  if (coin) return;
-  coin = new THREE.Mesh(
-    new THREE.CylinderGeometry(.35, .35, .07, 24),
-    new THREE.MeshStandardMaterial({ color: 0xffd23f, emissive: 0xaa7700, emissiveIntensity: .5, metalness: .8, roughness: .25 })
-  );
-  coin.rotation.x = Math.PI / 2;
-  coin.position.set(-2.4, 1.1, 2.2);
-  scene.add(coin);
-}
-if (keyState.coin) spawnCoin();
-
-/* ---------- 鑰匙狀態機 ---------- */
-function checkKeys() {
-  for (const k of KEYS) {
-    if (keyState[k.id]) { removePedestal(k.id); continue; }
-    if (k.met()) spawnPedestal(k);
-  }
-  for (const k of KEYS) {
-    const el = document.getElementById('key-' + k.id);
-    el.classList.toggle('owned', !!keyState[k.id]);
-  }
-  if (allKeys() && !keyState.coin) spawnGate();
-}
-setInterval(checkKeys, 4000);
-
-const bannerEl = document.getElementById('banner');
-let bannerTimer = null;
-function banner(text) {
-  bannerEl.textContent = text;
-  bannerEl.style.opacity = '1';
-  clearTimeout(bannerTimer);
-  bannerTimer = setTimeout(() => { bannerEl.style.opacity = '0'; }, 2600);
-}
-
-function collectKey(k) {
-  keyState[k.id] = true;
-  saveKeys();
-  removePedestal(k.id);
-  banner(`⚿ ${k.name}到手！`);
-  checkKeys();
-}
-
-/* ---------- 輸入 ---------- */
-const keys = {};
-addEventListener('keydown', e => {
-  keys[e.key.toLowerCase()] = true;
-  if (e.key === 'Enter' && !uiLock()) {
-    if (nearCabinet) enterGame(nearCabinet.game);
-    else if (nearSchool) enterGame(SCHOOL);
-  }
-  if (e.key === 'Escape') closeGame();
-  if (DEBUG) {
-    if (e.key === '7') { localStorage.setItem('bee_hi', String(BEE_TARGET + 500)); banner('DEBUG：偽造小蜜蜂紀錄'); checkKeys(); }
-    if (e.key === '8') { localStorage.setItem('tetris2_best_marathon', String(MARATHON_TARGET + 500)); banner('DEBUG：偽造 Blocks 紀錄'); checkKeys(); }
-    if (e.key === '9') { avatar.position.set(0, 0, 14); banner('DEBUG：傳送到暗處附近'); }
-  }
-});
-addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
-
-/* 觸控搖桿 */
-const joy = { x: 0, y: 0 };
-{
-  const pad = document.getElementById('joystick');
-  const stick = document.getElementById('stick');
-  let active = null;
-  pad.addEventListener('pointerdown', e => { active = e.pointerId; pad.setPointerCapture(e.pointerId); move(e); });
-  pad.addEventListener('pointermove', e => { if (e.pointerId === active) move(e); });
-  const end = e => {
-    if (e.pointerId !== active) return;
-    active = null; joy.x = 0; joy.y = 0;
-    stick.style.left = '35px'; stick.style.top = '35px';
-  };
-  pad.addEventListener('pointerup', end);
-  pad.addEventListener('pointercancel', end);
-  function move(e) {
-    const r = pad.getBoundingClientRect();
-    let dx = e.clientX - (r.left + 55), dy = e.clientY - (r.top + 55);
-    const len = Math.hypot(dx, dy), max = 38;
-    if (len > max) { dx = dx / len * max; dy = dy / len * max; }
-    joy.x = dx / max; joy.y = dy / max;
-    stick.style.left = 35 + dx + 'px';
-    stick.style.top = 35 + dy + 'px';
-  }
-}
-
-/* 點擊機台 */
-const ray = new THREE.Raycaster(), pointer = new THREE.Vector2();
-renderer.domElement.addEventListener('pointerup', e => {
-  if (uiLock()) return;
-  pointer.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
-  ray.setFromCamera(pointer, camera);
-  for (const c of cabinets) {
-    if (ray.intersectObject(c.group, true).length) { enterGame(c.game); return; }
-  }
-  if (ray.intersectObject(school, true).length) enterGame(SCHOOL);
-});
-
-/* ---------- 進出遊戲／結局 ---------- */
-const overlay = document.getElementById('overlay');
-const frame = document.getElementById('game-frame');
-const ending = document.getElementById('ending');
-let inGame = false, inEnding = false;
-const uiLock = () => inGame || inEnding;
-
-function enterGame(game) {
-  if (uiLock()) return;
-  inGame = true;
-  document.getElementById('overlay-title').textContent = `${game.name}  ${game.en}`;
-  frame.src = game.url;
-  overlay.style.display = 'flex';
-}
-function closeGame() {
-  if (!inGame) return;
-  inGame = false;
-  overlay.style.display = 'none';
-  frame.src = 'about:blank';
-  checkKeys();   // 回大廳立刻對帳：有沒有新鑰匙現世
-}
-document.getElementById('btn-back').addEventListener('click', closeGame);
-
-function openEnding() {
-  inEnding = true;
-  keyState.coin = true;
-  saveKeys();
-  spawnCoin();
-  ending.style.display = 'flex';
-}
-document.getElementById('btn-ending').addEventListener('click', () => {
-  inEnding = false;
-  ending.style.display = 'none';
-});
-
-/* ---------- DEBUG（僅本機測試；線上一律關閉） ---------- */
-const DEBUG = (location.protocol === 'file:' || location.hostname === 'localhost')
-  && new URLSearchParams(location.search).get('debug') === '1';
-if (DEBUG) document.querySelector('#hud p').textContent = 'DEBUG：7=偽造小蜜蜂 8=偽造Blocks 9=傳送暗處';
-
-/* ---------- 開場：渡海（點擊即登島，否則 5 秒後自動） ---------- */
-const splash = document.getElementById('splash');
-const hideSplash = () => {
-  splash.style.opacity = '0';
-  splash.style.pointerEvents = 'none';
-  setTimeout(() => { splash.style.display = 'none'; }, 1300);
-};
-setTimeout(hideSplash, 5200);
-splash.addEventListener('pointerdown', hideSplash, { once: true });
-
-/* ---------- 主迴圈 ---------- */
-const promptEl = document.getElementById('prompt');
-let nearCabinet = null, nearSchool = false;
-const vel = new THREE.Vector3();
-const clock = new THREE.Clock();
-
-function tick() {
-  requestAnimationFrame(tick);
-  const dt = Math.min(clock.getDelta(), .05);
-  const t = clock.elapsedTime;
-
-  if (!uiLock()) {
-    let ix = (keys['d'] || keys['arrowright'] ? 1 : 0) - (keys['a'] || keys['arrowleft'] ? 1 : 0) + joy.x;
-    let iz = (keys['s'] || keys['arrowdown'] ? 1 : 0) - (keys['w'] || keys['arrowup'] ? 1 : 0) + joy.y;
-    const len = Math.hypot(ix, iz);
-    if (len > 1) { ix /= len; iz /= len; }
-    vel.set(ix, 0, iz).multiplyScalar(6);
-    avatar.position.addScaledVector(vel, dt);
-    avatar.position.x = THREE.MathUtils.clamp(avatar.position.x, -20, 20);
-    avatar.position.z = THREE.MathUtils.clamp(avatar.position.z, -20, 20);
-    if (len > .1) {
-      const target = Math.atan2(ix, iz);
-      let d = target - avatar.rotation.y;
-      while (d > Math.PI) d -= Math.PI * 2;
-      while (d < -Math.PI) d += Math.PI * 2;
-      avatar.rotation.y += d * Math.min(1, dt * 10);
-    }
-  }
-
-  halo.rotation.z += dt * 2;
-  body.position.y = .9 + Math.sin(t * 2) * .04;
-  for (const id in pedestals) {
-    const p = pedestals[id];
-    p.key.rotation.y += dt * 1.5;
-    p.key.position.y = 1.5 + Math.sin(t * 2.2) * .12;
-  }
-  if (coin) coin.rotation.z += dt * 2;
-
-  /* 接近偵測：機台與學堂 */
-  nearCabinet = null;
-  let best = 3.2;
-  for (const c of cabinets) {
-    const d = avatar.position.distanceTo(c.group.position);
-    if (d < best) { best = d; nearCabinet = c; }
-  }
-  nearSchool = avatar.position.distanceTo(school.position) < 3.6;
-
-  /* 接近偵測：鑰匙拾取 */
-  for (const id in pedestals) {
-    const p = pedestals[id];
-    if (avatar.position.distanceTo(p.group.position) < 1.4) collectKey(p.k);
-  }
-
-  /* 接近偵測：門 */
-  if (gate && !keyState.coin && !inEnding && avatar.position.distanceTo(gate.position) < 2.2) openEnding();
-
-  /* 提示文字 */
-  const lines = [];
-  if (nearCabinet && !uiLock()) {
-    lines.push(`按 Enter 進入《${nearCabinet.game.name}》`);
-    const k = KEYS.find(k =>
-      (k.id === 'copper' && nearCabinet.game.en === 'BEE') ||
-      (k.id === 'jade' && nearCabinet.game.en === 'BLOCKS PRO'));
-    if (k && !keyState[k.id]) lines.push(k.met() ? `⚿ ${k.name}已現世——就在機台旁的基座上` : k.quest());
-  }
-  if (nearSchool && !nearCabinet && !uiLock()) {
-    lines.push('按 Enter 進入學堂《托福特訓》');
-  }
-  if (avatar.position.distanceTo(stele.position) < 2.2) {
-    lines.push('石碑：「霓虹照不到的暗處，沉著第三把鑰匙。」');
-  }
-  if (gate && !keyState.coin && allKeys()) {
-    lines.push('沙那賽之門在霓虹深處發光……');
-  }
-  if (lines.length) {
-    promptEl.innerHTML = lines.join('<br>');
-    promptEl.style.display = 'block';
-  } else {
-    promptEl.style.display = 'none';
-  }
-
-  /* 攝影機跟隨 */
-  const camTarget = new THREE.Vector3(avatar.position.x, 4.5, avatar.position.z + 8.5);
-  camera.position.lerp(camTarget, Math.min(1, dt * 4));
-  camera.lookAt(avatar.position.x, 1.2, avatar.position.z);
-
-  renderer.render(scene, camera);
-}
-checkKeys();
-tick();
-
-addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
-</script>
+<script type="module" src="./island.js?v=2.0.0"></script>
 </body>
 </html>
