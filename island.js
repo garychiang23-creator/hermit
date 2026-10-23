@@ -734,7 +734,7 @@ function buildTower(game) {
   const plaque = new THREE.Mesh(new THREE.PlaneGeometry(1.6, .8), new THREE.MeshBasicMaterial({ map: blocksPlaque }));
   plaque.position.set(px, y + 1.05, pz); plaque.rotation.y = pry; plaque.rotation.x = -.18;
   scene.add(plaque);
-  part('box', [px, y + .55, pz], [.12, 1.1, .12], 0x6f5641);
+  part('box', [px - Math.sin(pry) * .12, y + .36, pz - Math.cos(pry) * .12], [.12, .72, .12], 0x6f5641);
   circleOb(px, pz, .35);
 }
 function setTowerLayers(L) {
@@ -866,7 +866,7 @@ function buildMazeGarden(game) {
   const plaque = new THREE.Mesh(new THREE.PlaneGeometry(1.6, .8), new THREE.MeshBasicMaterial({ map: mazePlaque }));
   plaque.position.set(px, y + 1.05, pz); plaque.rotation.y = pry; plaque.rotation.x = -.18;
   scene.add(plaque);
-  part('box', [px, y + .55, pz], [.12, 1.1, .12], 0x6f5641);
+  part('box', [px - Math.sin(pry) * .12, y + .36, pz - Math.cos(pry) * .12], [.12, .72, .12], 0x6f5641);
   circleOb(px, pz, .35);
 
   const n2 = 40, fp = new Float32Array(n2 * 3);
