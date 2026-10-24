@@ -2083,7 +2083,7 @@ function pixelBurst(pos) {
 function updateDivers(dt, t) {
   if (!swarm) return;
   const av = avatar.position, door = GAME.bee.door;
-  if (Math.hypot(av.x - door[0], av.z - door[1]) < DIVE_R && !uiLock() && !flight.phase && (diveCD -= dt) <= 0 && divers.filter(d => d.on).length < 2) { spawnDiver(); diveCD = 1.6 + rnd() * 1.6; }
+  if (Math.hypot(av.x - door[0], av.z - door[1]) < DIVE_R && !state.nearGame && !uiLock() && !flight.phase && (diveCD -= dt) <= 0 && divers.filter(d => d.on).length < 2) { spawnDiver(); diveCD = 1.6 + rnd() * 1.6; }
   if ((comboT -= dt) <= 0) combo = 0;
   const striking = AV.swingT > 0 && AV.swingT < .33;   // 揮下去的那一段才算
   _sw.set(av.x + Math.sin(avatar.rotation.y) * .55, av.y + 1.15, av.z + Math.cos(avatar.rotation.y) * .55);
@@ -2668,8 +2668,8 @@ function updateProximity() {
   if (nearStele && !steleRead) { steleRead = true; ls.set('sanasai_stele', '1'); renderAll(); }
   const bee = GAME.bee.door, D = dog, dogFree = night <= .85 && !['sleep', 'bed', 'fetch', 'bring'].includes(D.state);
   if (carry.color !== null && dist(bee[0], bee[1]) < 2.6) feedCat();
-  if (divers.some(d => d.on)) setHint('bees', isTouch ? '蜜蜂俯衝過來了！點這裡揮劍' : '蜜蜂俯衝過來了！按空白鍵（或點這裡）揮劍', 'prompt', swing);
-  else if (state.nearGame) setHint('g:' + state.nearGame, isTouch ? `點這裡開始玩《${GAME[state.nearGame].name}》` : `按 Enter（或點這裡）開始玩《${GAME[state.nearGame].name}》`, 'prompt', () => enterGame(GAME[state.nearGame]));
+  if (state.nearGame) setHint('g:' + state.nearGame, isTouch ? `點這裡開始玩《${GAME[state.nearGame].name}》` : `按 Enter（或點這裡）開始玩《${GAME[state.nearGame].name}》`, 'prompt', () => enterGame(GAME[state.nearGame]));   // 站在門口一律先給「開始玩」，蜜蜂提示不能蓋掉
+  else if (divers.some(d => d.on)) setHint('bees', isTouch ? '蜜蜂俯衝過來了！點這裡揮劍' : '蜜蜂俯衝過來了！按空白鍵（或點這裡）揮劍', 'prompt', swing);
   else if (dist(RAMP_PTS[0][0], RAMP_PTS[0][2]) < 1.6) setHint('board', isTouch ? '點這裡登船，繞島飛一圈' : '按 Enter（或點這裡）登船，繞島飛一圈', 'prompt', startFlight);
   else if (nearStele) setHint('stele', '石碑：「霓虹照不到的暗處，沉著第三把鑰匙。」', 'lore');
   else if (!keyState.crystal && dc < 6.5) setHint('dark', dc < 3 ? '岩洞深處有什麼在發光……' : '這裡好暗……', 'lore');
