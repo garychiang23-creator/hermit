@@ -2558,7 +2558,7 @@ addEventListener('resize', () => {
   if (wasMobile !== isMobile()) { ui.side = !isMobile() && ui.sidePref; ui.log = false; syncLayout(); }
 });
 
-/* ---------- 開場：渡海（點擊即登島，否則 5 秒後自動）→ 鏡頭從海上飛向島 ---------- */
+/* ---------- 登島：一打開就是島，鏡頭從海上飛向島（碰一下就停），分身從小舟走上岸 ---------- */
 for (const id of [...GAMES.map(g => g.id), 'pier']) {
   const P = PLACE[id];
   const y = CAB[id] ? CAB[id].F.y + 6.0 : 2.5;
@@ -2580,24 +2580,17 @@ refresh();
 syncLayout();
 renderAll();
 
-const splash = $('#splash');
-let splashGone = false;
-function hideSplash() {
-  if (splashGone) return;
-  splashGone = true;
-  splash.style.opacity = '0';
-  splash.style.pointerEvents = 'none';
-  setTimeout(() => { splash.style.display = 'none'; }, 1300);
-  flyTo(overviewPose(), 3.2, () => {
-    landed = true;
-    walkTo(0, 13.6);
-    if (!ls.get('sanasai_intro_v2')) showIntro(0);
-    pendingToasts.splice(0).forEach(([text, tone], i) => setTimeout(() => toast(text, tone), i * 3000));
-  });
+function land() {
+  if (landed) return;
+  landed = true;
+  if (!ls.get('sanasai_intro_v2')) showIntro(0);
+  pendingToasts.splice(0).forEach(([text, tone], i) => setTimeout(() => toast(text, tone), i * 3000));
 }
-setTimeout(hideSplash, 5200);
-splash.addEventListener('pointerdown', hideSplash, { once: true });
+walkTo(0, 13.6);
+flyTo(overviewPose(), 3.2, land);
+setTimeout(land, 3500);  // 鏡頭半路被手指或清單打斷時 done 不會跑，到點照樣上岸
 tick();
+body.classList.remove('booting');
 
 /* 除錯／測試用的唯讀入口 */
-window.sanasai = { PLACE, GAMES, KEYS, CAB, keyState, state, ui, avatar, camera, controls, records: () => records, overflow: () => ({ bees: swarm && swarm.n, heap: heap && heap.layers, maze: mazeArea && mazeArea.n }), pets: () => ({ dog: dog.state, dogPos: dog.g.position.toArray().map(v => +v.toFixed(2)), cat: cat.awakeT > 0 || night > .6, crabs: crabs.map(c => +c.hide.toFixed(1)), blob: blob.state }), petTap, view: (pos, target) => { follow = false; fly = null; controls.enabled = true; camera.position.set(...pos); controls.target.set(...target); controls.update(); }, select: selectPlace, walkTo, overview, setTime, hideSplash, findPath };
+window.sanasai = { PLACE, GAMES, KEYS, CAB, keyState, state, ui, avatar, camera, controls, records: () => records, overflow: () => ({ bees: swarm && swarm.n, heap: heap && heap.layers, maze: mazeArea && mazeArea.n }), pets: () => ({ dog: dog.state, dogPos: dog.g.position.toArray().map(v => +v.toFixed(2)), cat: cat.awakeT > 0 || night > .6, crabs: crabs.map(c => +c.hide.toFixed(1)), blob: blob.state }), petTap, view: (pos, target) => { follow = false; fly = null; controls.enabled = true; camera.position.set(...pos); controls.target.set(...target); controls.update(); }, select: selectPlace, walkTo, overview, setTime, land, findPath };
