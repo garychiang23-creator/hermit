@@ -35,6 +35,23 @@
   #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
   #warp { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 4; opacity: 0; transition: opacity .25s; }
   #warp.on { opacity: 1; }
+
+  /* ---------- 開飛船、釣魚 ---------- */
+  .flight-hud { position: fixed; z-index: 13; bottom: calc(18px + var(--sb)); left: calc((100vw - var(--side-w)) / 2); transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 7px 8px 7px 14px; border-radius: 999px; }
+  .fh-rings { display: flex; gap: 6px; }
+  .fh-rings i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--c); transition: background .3s, box-shadow .3s; }
+  .fh-rings i.on { background: var(--c); box-shadow: 0 0 10px var(--c); }
+  #fh-time { font-family: var(--display); font-size: 15px; min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; }
+  .flight-hud .btn { height: 40px; padding: 0 14px; font-size: 14px; touch-action: none; }
+  body.flying .dock { display: none; }
+  .catch-card { position: fixed; z-index: 14; top: calc(84px + var(--st)); left: calc((100vw - var(--side-w)) / 2); transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 12px 18px 12px 14px; border-radius: 18px; animation: pop .35s ease; }
+  .catch-card .cf { width: 54px; height: 27px; flex: none; }
+  .catch-card .cf path { fill: var(--c); }
+  .catch-card .cf circle { fill: #1d1b1a; }
+  .catch-card b { display: block; font-size: 15px; }
+  .catch-card span { display: block; font-size: 13.5px; color: var(--ink-2); margin-top: 1px; }
+  .catch-card small { display: block; font-size: 12px; color: var(--ink-3); margin-top: 3px; }
+  @keyframes pop { from { opacity: 0; transform: translate(-50%, -8px) scale(.96); } }
   .panel { background: var(--glass); -webkit-backdrop-filter: blur(14px) saturate(1.15); backdrop-filter: blur(14px) saturate(1.15); border: 1px solid rgba(255, 255, 255, .7); box-shadow: var(--shadow); }
   .eyebrow { font-family: var(--display); font-size: 10.5px; font-weight: 600; letter-spacing: .26em; text-transform: uppercase; color: var(--sea); }
 
@@ -146,7 +163,7 @@
   .chap i { width: 8px; height: 8px; border-radius: 50%; background: #cbc4b5; flex: none; }
   .chap.done i { background: #f0a500; box-shadow: 0 0 8px #ffbf3f; }
   .note { margin: 10px 0 0; font-size: 12px; color: var(--ink-3); line-height: 1.65; }
-  .actions { display: flex; gap: 8px; padding: 14px 22px 16px; border-top: 1px solid var(--line); background: rgba(251, 247, 239, .75); }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 22px 16px; border-top: 1px solid var(--line); background: rgba(251, 247, 239, .75); }
   .actions:empty { display: none; }
   .btn { height: 46px; border-radius: 13px; border: 1px solid var(--line-2); background: #fff; padding: 0 16px; font-size: 14.5px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; color: var(--ink); white-space: nowrap; }
   .btn:hover { border-color: var(--ink-3); }
@@ -309,6 +326,7 @@
     body.sheet-open .hint { display: none; }
     .toast { top: calc(66px + var(--st)); left: 12px; transform: translateY(-8px); max-width: calc(100vw - 130px); font-size: 13px; }
     .toast.show { transform: none; }
+    .catch-card { top: calc(118px + var(--st)); width: calc(100vw - 32px); }
   }
   @media (prefers-reduced-motion: reduce) {
     .card, .log, .intro, #ending { animation: none; }
@@ -398,6 +416,16 @@
 <nav class="dock panel" id="dock" aria-label="快速前往"></nav>
 <button class="hint panel" id="hint" type="button"><span class="halo" aria-hidden="true"></span><span id="hint-text">點地面走路・點建築看介紹</span></button>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="flight-hud panel" id="flight-hud" hidden>
+  <div class="fh-rings" id="fh-rings" aria-label="光圈"></div>
+  <b id="fh-time">0:00</b>
+  <button class="btn" id="fh-boost" type="button">加速</button>
+  <button class="btn primary" id="fh-land" type="button">降落</button>
+</div>
+<div class="catch-card panel" id="catch-card" hidden role="status" aria-live="polite">
+  <svg class="cf" viewBox="0 0 48 24" aria-hidden="true"><path d="M3 12c6-8 20-10 30-4l9-6v20l-9-6c-10 6-24 4-30-4z"/><circle cx="12" cy="10" r="1.6"/></svg>
+  <div><b>釣到了！</b><span id="catch-text"></span><small>花捲聞到魚味了，會跑過來討</small></div>
+</div>
 <div id="joystick" aria-hidden="true"><div id="stick"></div></div>
 
 <div class="intro" id="intro" hidden>
@@ -442,6 +470,6 @@
   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="./island.js?v=2.7.1"></script>
+<script type="module" src="./island.js?v=2.8.0"></script>
 </body>
 </html>
