@@ -1415,12 +1415,31 @@ const AV = {};
   add(AV.body, new RoundedBoxGeometry(.5, .5, .1, 2, .04), M(ROBE), [0, .78, -.15]);
   for (const sx of [-1, 1]) add(AV.body, new RoundedBoxGeometry(.1, .5, .3, 2, .04), M(ROBE), [sx * .24, .78, 0]);
   // 兜帽放下來，圍在脖子後面
-  add(AV.body, new THREE.TorusGeometry(.17, .06, 8, 20), M(ROBE), [0, 1.0, -.02], [1, 1, 1], [Math.PI / 2, 0, 0]);
-  add(AV.body, new RoundedBoxGeometry(.36, .22, .14, 2, .06), M(ROBE), [0, 1.06, -.18], [1, 1, 1], [-.25, 0, 0]);
-  add(AV.body, new THREE.SphereGeometry(.27, 18, 14), M(SKIN), [0, 1.24, 0]);
-  const hair = add(AV.body, new THREE.SphereGeometry(.29, 18, 14, 0, TAU, 0, Math.PI * .52), M(0x5a3d2a), [0, 1.27, -.02]);
-  hair.rotation.x = -.3;
-  for (const sx of [-.09, .09]) add(AV.body, new THREE.SphereGeometry(.035, 8, 6), M(0x1d2233), [sx, 1.24, .25]);
+  AV.hoodDown = new THREE.Group();
+  AV.body.add(AV.hoodDown);
+  add(AV.hoodDown, new THREE.TorusGeometry(.17, .06, 8, 20), M(ROBE), [0, 1.0, -.02], [1, 1, 1], [Math.PI / 2, 0, 0]);
+  add(AV.hoodDown, new RoundedBoxGeometry(.36, .22, .14, 2, .06), M(ROBE), [0, 1.06, -.18], [1, 1, 1], [-.25, 0, 0]);
+  // 頭：爆炸頭的年輕隱士——一大團小方塊堆成的捲髮，臉露在前面
+  {
+    const h = new THREE.Group(), HM = [0x3a2618, 0x2e1e13, 0x4a3220].map(M), curl = new RoundedBoxGeometry(1, 1, 1, 1, .25), hr = mulberry32(7);
+    h.position.set(0, 1.24, 0);
+    AV.body.add(h);
+    add(h, new RoundedBoxGeometry(.42, .4, .38, 2, .1), M(SKIN), [0, -.03, .03]);
+    add(h, new RoundedBoxGeometry(.62, .52, .56, 2, .2), HM[0], [0, .13, -.07]);   // 捲髮的芯
+    for (let i = 0; i < 64; i++) {   // 表面一顆顆捲毛：球面上平均撒點，臉前面和下巴以下留空
+      const y = 1 - (i + .5) / 32, r = Math.sqrt(1 - y * y), a = i * 2.39996, x = Math.cos(a) * r, z = Math.sin(a) * r;
+      if ((z > .25 && y < .25) || y < -.55) continue;
+      const k = .15 + hr() * .07;
+      add(h, curl, HM[i % 3], [x * .36, .13 + y * .3, -.07 + z * .34], [k, k, k], [hr() * 1.5, hr() * 1.5, 0]);
+    }
+    for (const sx of [-1, 1]) {
+      add(h, new THREE.BoxGeometry(.1, .03, .03), HM[1], [sx * .1, .07, .225]);
+      add(h, new THREE.BoxGeometry(.06, .07, .02), M(0x1d2233), [sx * .1, -.005, .225]);
+      add(h, new THREE.BoxGeometry(.02, .02, .01), M(0xffffff), [sx * .1 + .012, .012, .237]);
+      add(h, new THREE.BoxGeometry(.03, .02, .02), M(0xb5644f), [sx * .055, -.11, .225], [1, 1, 1], [0, 0, sx * .5]);   // 嘴角上揚
+    }
+    add(h, new THREE.BoxGeometry(.08, .02, .02), M(0xb5644f), [0, -.12, .225]);
+  }
   const limb = (x, y, w, h, c, foot) => {
     const p = new THREE.Group();
     p.position.set(x, y, 0);
@@ -1437,7 +1456,7 @@ const AV = {};
     add(arm, new THREE.CylinderGeometry(.075, .1, .14, 8), M(ROBE), [0, -.36, 0]);   // 寬袖口
     add(arm, new THREE.SphereGeometry(.055, 8, 6), M(SKIN), [0, -.45, 0]);
   }
-  // 能量劍：握在右手，銀色劍柄、會發光的劍身（點自己的分身會揮一劍）
+  // 能量劍：握在右手，銀色劍柄；綠色劍身平時收起來，揮劍才亮出來（點自己的分身會揮一劍）
   AV.saber = new THREE.Group();
   AV.saber.position.set(0, -.45, .03);
   AV.saber.rotation.set(1.4, 0, -.5);   // 往右前方握，不擋在胸前
@@ -1447,12 +1466,17 @@ const AV = {};
   const blade = new THREE.Group();
   blade.position.y = .14;
   AV.saber.add(blade);
-  const core = new THREE.Mesh(new THREE.CylinderGeometry(.022, .022, 1, 10).translate(0, .5, 0), new THREE.MeshBasicMaterial({ color: 0xeaf9ff }));
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(.022, .022, 1, 10).translate(0, .5, 0), new THREE.MeshBasicMaterial({ color: 0xb4ffaa }));
   core.scale.y = .95;
-  AV.bladeGlow = new THREE.Mesh(new THREE.CylinderGeometry(.055, .045, 1, 12).translate(0, .5, 0), new THREE.MeshBasicMaterial({ color: 0x3fb4ff, transparent: true, opacity: .55, blending: THREE.AdditiveBlending, depthWrite: false }));
-  AV.bladeLight = new THREE.PointLight(0x6fcfff, .5, 3.4, 2);
+  AV.bladeGlow = new THREE.Mesh(new THREE.CylinderGeometry(.055, .045, 1, 12).translate(0, .5, 0), new THREE.MeshBasicMaterial({ color: 0x1fd63a, transparent: true, opacity: .7, blending: THREE.AdditiveBlending, depthWrite: false }));
+  AV.bladeLight = new THREE.PointLight(0x7dff8f, .5, 3.4, 2);
   AV.bladeLight.position.y = .5;
   blade.add(core, AV.bladeGlow, AV.bladeLight);
+  AV.blade = blade;
+  blade.scale.y = .001;
+  blade.visible = false;
+  AV.bladeK = 0;
+  AV.saberT = 0;
   AV.swingT = 0;
   AV.throwT = 0;
   AV.crouchT = 0;
@@ -1470,7 +1494,7 @@ avatar.rotation.y = Math.PI;
 scene.add(avatar);
 const mePin = addPin('me', '你', null, [0, 0, 0], null, 'me');
 avatar.add(mePin.obj);
-mePin.obj.position.set(0, 1.75, 0);
+mePin.obj.position.set(0, 2.0, 0);
 const marker = new THREE.Mesh(new THREE.RingGeometry(.3, .45, 32), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
 marker.rotation.x = -Math.PI / 2;
 scene.add(marker);
@@ -1542,8 +1566,12 @@ function updateAvatar(dt) {
     AV.armR.rotation.x = lerp(AV.armR.rotation.x, sw * .3 - .15, Math.min(1, dt * 10));
     AV.body.rotation.y = 0;
   }
-  AV.bladeGlow.material.opacity = .5 + Math.sin(performance.now() / 25) * .06;
-  AV.bladeLight.intensity = .35 + night * 1.8;
+  AV.saberT -= dt;   // 揮劍時亮出劍身（約 0.1 秒伸長），三秒沒揮就收回
+  AV.bladeK = clamp(AV.bladeK + (AV.swingT > 0 || AV.saberT > 0 ? dt / .12 : -dt / .25), 0, 1);
+  AV.blade.scale.y = Math.max(.001, AV.bladeK);
+  AV.blade.visible = AV.bladeK > .01;
+  AV.bladeGlow.material.opacity = (.5 + Math.sin(performance.now() / 25) * .06) * AV.bladeK;
+  AV.bladeLight.intensity = (.35 + night * 1.8) * AV.bladeK;
   AV.body.position.y = moving ? Math.abs(Math.sin(walk.phase)) * .05 : Math.sin(performance.now() / 600) * .012;
   if (AV.crouchT > 0) { AV.crouchT -= dt; AV.body.position.y -= Math.sin(Math.max(0, AV.crouchT) / .7 * Math.PI) * .22; }   // 蹲下放魚
   if (rod.visible && AV.throwT <= 0) AV.armL.rotation.x = -.55;   // 拿著釣竿
@@ -2263,6 +2291,7 @@ function spawnDiver() {
 function swing() {
   if (AV.swingT > 0 || flight.phase) return;
   AV.swingT = .45;
+  AV.saberT = 3;
   let best = null, bd = 3.5;   // 附近有俯衝的蜜蜂就轉向牠
   for (const d of divers) {
     if (!d.on) continue;
@@ -3447,4 +3476,4 @@ tick();
 body.classList.remove('booting');
 
 /* 除錯／測試用的唯讀入口 */
-window.sanasai = { PLACE, GAMES, KEYS, CAB, keyState, state, ui, avatar, camera, controls, records: () => records, overflow: () => ({ bees: swarm && swarm.n, heap: heap && heap.layers, maze: mazeArea && mazeArea.n }), pets: () => ({ dog: dog.state, dogPos: dog.g.position.toArray().map(v => +v.toFixed(2)), cat: cat.awakeT > 0 || night > .6, crabs: crabs.map(c => +c.hide.toFixed(1)), blob: blob.state }), petTap, view: (pos, target) => { follow = false; fly = null; controls.enabled = true; camera.position.set(...pos); controls.target.set(...target); controls.update(); }, select: selectPlace, walkTo, overview, setTime, land, findPath, dolphins, ship, flight, startFlight, skipFlight, throwBall, fetchS, fishing, startFishing, reel, feedCat, carry, catGo, catJump, rings, landNow, swing, divers, spawnDiver, cat, dog };
+window.sanasai = { PLACE, GAMES, KEYS, CAB, keyState, state, ui, avatar, camera, controls, records: () => records, overflow: () => ({ bees: swarm && swarm.n, heap: heap && heap.layers, maze: mazeArea && mazeArea.n }), pets: () => ({ dog: dog.state, dogPos: dog.g.position.toArray().map(v => +v.toFixed(2)), cat: cat.awakeT > 0 || night > .6, crabs: crabs.map(c => +c.hide.toFixed(1)), blob: blob.state }), petTap, view: (pos, target) => { follow = false; fly = null; controls.enabled = true; camera.position.set(...pos); controls.target.set(...target); controls.update(); }, select: selectPlace, walkTo, overview, setTime, land, findPath, dolphins, ship, AV, flight, startFlight, skipFlight, throwBall, fetchS, fishing, startFishing, reel, feedCat, carry, catGo, catJump, rings, landNow, swing, divers, spawnDiver, cat, dog };
