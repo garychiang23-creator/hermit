@@ -1535,7 +1535,7 @@ function faceTo(dx, dz, dt) {
   avatar.rotation.y += d * Math.min(1, dt * 10);
 }
 
-/* ---------- 島民：柴犬阿滿、機台上的貓、寄居蟹、橘色方塊小傢伙 ---------- */
+/* ---------- 島民：柴犬阿滿、機台上的三花貓花捲、寄居蟹、橘色方塊小傢伙柑仔丁 ---------- */
 const PET_MATS = new Map();
 const petMat = c => { if (!PET_MATS.has(c)) PET_MATS.set(c, new THREE.MeshStandardMaterial({ color: c, roughness: .7, flatShading: true })); return PET_MATS.get(c); };
 const RB = new RoundedBoxGeometry(1, 1, 1, 2, .22);
@@ -1698,6 +1698,9 @@ const cat = { awakeT: 0, t: 0 };
   CAB.bee.G.add(g);
   petHit(g, 'cat', [0, .2, 0], [.5, .5, .7]);
   Object.assign(cat, { g, body, head, eyes, eyeMat, tail });
+  const pin = addPin('cat', `<span class="no">${svg('paw')}</span>花捲`, '#e0954f', [0, 0, 0], () => petTap('cat'), 'pet');
+  g.add(pin.obj);
+  pin.obj.position.set(0, .8, 0);
 }
 function updateCat(dt, t) {
   const c = cat, awake = night > .6 || c.awakeT > 0;
@@ -1764,6 +1767,9 @@ const blob = { path: null, i: 0, state: 'idle', t: 1, hop: 0 };
   scene.add(g);
   petHit(g, 'blob', [0, .35, 0], [.8, .7, .5]);
   Object.assign(blob, { g, body });
+  const pin = addPin('blob', `<span class="no">${svg('paw')}</span>柑仔丁`, '#d97757', [0, 0, 0], () => petTap('blob'), 'pet');
+  g.add(pin.obj);
+  pin.obj.position.set(0, 1.1, 0);
 }
 function updateBlob(dt, t) {
   const B = blob, p = B.g.position;
@@ -1881,9 +1887,9 @@ function updateDolphins(dt, t) {
 /* 清單「島民」：點了鏡頭飛過去、牠會有反應 */
 const RESIDENTS = [
   { id: 'dog', name: '阿滿', sub: '柴犬・常在島上閒晃，你走動牠會跟著', color: '#d8894b', icon: 'paw' },
-  { id: 'cat', name: '貓', sub: '小蜜蜂機台頂上，白天睡午覺、晚上眼睛會亮', color: '#e0954f', icon: 'paw' },
+  { id: 'cat', name: '花捲', sub: '白底三花貓・小蜜蜂機台頂上，白天睡午覺、晚上眼睛會亮', color: '#e0954f', icon: 'paw' },
   { id: 'crab', name: '寄居蟹', sub: '沙灘上三隻，靠近就縮進殼裡', color: '#e0663f', icon: 'paw' },
-  { id: 'blob', name: '橘色小傢伙', sub: '在廣場和機台間跳來跳去', color: '#d97757', icon: 'paw' },
+  { id: 'blob', name: '柑仔丁', sub: '橘色方塊小傢伙・在廣場和機台間跳來跳去', color: '#d97757', icon: 'paw' },
   { id: 'dolphin', name: '海豚', sub: '在島外繞圈，點牠就跳出水面', color: '#5f86a6', icon: 'wave' },
 ];
 function petPos(id) {
@@ -2424,7 +2430,7 @@ $('#btn-back').addEventListener('click', closeGame);
 
 /* ---------- 導覽說明 ---------- */
 const INTRO = [
-  ['三個遊戲，一座島', '小蜜蜂、Blocks Pro、迷宮球各有一台大型機台，遊戲會從螢幕裡溢出來。點機台或清單看介紹，按「開始玩」就進遊戲。島上住著柴犬阿滿、一隻貓和幾隻寄居蟹，海裡有魚和海豚。'],
+  ['三個遊戲，一座島', '小蜜蜂、Blocks Pro、迷宮球各有一台大型機台，遊戲會從螢幕裡溢出來。點機台或清單看介紹，按「開始玩」就進遊戲。島上住著柴犬阿滿、三花貓花捲、方塊小傢伙柑仔丁和幾隻寄居蟹，海裡有魚和海豚。'],
   ['分身會替你走過去', isTouch ? '點地面，分身就走到那裡；也可以用左下角的搖桿。單指拖曳轉視角，雙指縮放。' : '點地面，分身就走到那裡；方向鍵或 WASD 也能走。拖曳轉視角，滾輪縮放。'],
   ['島會記得你的紀錄', '成績越好，溢出來的越多：小蜜蜂分數越高，飛出機台的蜜蜂越多；Blocks 的方塊山跟著分數長高；迷宮球每通過一章，地上的迷宮就長大一圈。'],
   ['三把鑰匙', '銅鑰匙看小蜜蜂，玉鑰匙看 Blocks Pro，水晶鑰匙藏在島上的暗處。三把到齊，隱嶼之門就會出現。'],
