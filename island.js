@@ -1614,6 +1614,7 @@ function bubble(group, text, y) {
   o.center.set(.5, 1); o.position.set(0, y, 0);
   group.add(o);
   setTimeout(() => group.remove(o), 1700);
+  voice(group, text);   // 叫聲跟著對話泡泡出來
 }
 function turnTo(g, dx, dz, dt) {
   let d = Math.atan2(dx, dz) - g.rotation.y;
@@ -1770,6 +1771,7 @@ function throwBall() {
   if (!tgt) { bubble(D.g, '汪？', 1.25); return; }
   avatar.rotation.y = ang;
   AV.throwT = .35;
+  sfx('toss', avatar);
   fetchS.from.set(av.x + Math.sin(ang) * .3, av.y + 1.15, av.z + Math.cos(ang) * .3);
   fetchS.to.set(tgt[0], groundY(tgt[0], tgt[1]) + .11, tgt[1]);
   fetchS.dir.set(Math.sin(ang), 0, Math.cos(ang));
@@ -1791,13 +1793,13 @@ function updateBall(dt) {
     F.t = Math.min(1, F.t + dt / .85);
     ball.position.lerpVectors(F.from, F.to, F.t);
     ball.position.y += Math.sin(Math.PI * F.t) * F.h;
-    if (F.t >= 1) { F.phase = 'bounce'; F.t = 0; F.b = 0; F.from.copy(F.to); }
+    if (F.t >= 1) { F.phase = 'bounce'; F.t = 0; F.b = 0; F.from.copy(F.to); sfx('bounce', ball); }
   } else if (F.phase === 'bounce') {   // 落地再彈兩下、往前滾一點
     const dur = F.b ? .2 : .3, hgt = F.b ? .14 : .42, run = F.b ? .25 : .55;
     F.t = Math.min(1, F.t + dt / dur);
     const x = F.from.x + F.dir.x * run * F.t, z = F.from.z + F.dir.z * run * F.t;
     if (walkableAt(x, z)) ball.position.set(x, groundY(x, z) + .11 + Math.sin(Math.PI * F.t) * hgt, z);
-    if (F.t >= 1) { F.from.copy(ball.position); F.t = 0; if (++F.b >= 2) dropBall(ball.position.x, ball.position.z); }
+    if (F.t >= 1) { F.from.copy(ball.position); F.t = 0; sfx('bounce', ball, .5); if (++F.b >= 2) dropBall(ball.position.x, ball.position.z); }
   } else if (F.phase === 'carried') {
     ball.position.copy(dog.head.localToWorld(_mouth.set(0, -.12, .32)));
   }
@@ -2072,6 +2074,7 @@ function waterSplash(x, z, size = 1) {
   sp.ring.position.set(x, .07, z);
   sp.size = size; sp.t = .9;
   sp.drops.forEach((d, i) => { d.position.set(x, .1, z); d.userData.v.set(Math.cos(i * 1.05) * .9, 2.2 + rnd(), Math.sin(i * 1.05) * .9).multiplyScalar(size); d.visible = true; });
+  sfx('splash', _ssp.set(x, .1, z), size);
 }
 function updateSplashes(dt) {
   for (const sp of splashes) {
@@ -2175,6 +2178,7 @@ function startFishing() {
   avatar.rotation.y = Math.atan2(BOB_AT.x - av.x, BOB_AT.z - av.z);
   rod.visible = true;
   AV.throwT = .35;
+  sfx('cast', avatar);
   Object.assign(fishing, { phase: 'cast', t: 0 });
 }
 function endFishing() {
@@ -2191,8 +2195,9 @@ function reel() {   // 拉竿
     bobber.visible = fishLine.visible = false;
     waterSplash(BOB_AT.x, BOB_AT.z, .8);
     AV.throwT = .35;
+    sfx('reel', avatar);
   } else if (F.phase === 'wait') {
-    if (F.t > F.wait - 1.3) { bubble(avatar, '太早了，魚被嚇跑了', 2.3); endFishing(); }   // 魚在試咬時拉竿
+    if (F.t > F.wait - 1.3) { bubble(avatar, '太早了，魚被嚇跑了', 2.3); sfx('fail'); endFishing(); }   // 魚在試咬時拉竿
     else bubble(avatar, '還沒上鉤，再等等', 2.3);
   }
 }
@@ -2204,6 +2209,7 @@ function showCatch(kind, cm) {
   el.style.setProperty('--c', '#' + FISH_KINDS[kind][1].toString(16).padStart(6, '0'));
   $('#catch-text').textContent = `一條${FISH_KINDS[kind][0]}的魚，${cm} 公分${rec && n > 1 ? '（最大紀錄）' : ''}`;
   el.hidden = false;
+  sfx('jingle', null, rec && n > 1);
   clearTimeout(showCatch.timer);
   showCatch.timer = setTimeout(() => { el.hidden = true; }, 3600);
   if (n === 1) addLog('pet', `第一次在碼頭釣到魚（${cm} 公分）`);
@@ -2229,11 +2235,14 @@ function updateFishing(dt, t) {
     if (k >= 1) { waterSplash(BOB_AT.x, BOB_AT.z, .5); Object.assign(F, { phase: 'wait', t: 0, wait: 2.2 + rnd() * 3.5 }); }
   } else if (F.phase === 'wait') {
     const left = F.wait - F.t;
-    bobber.position.set(BOB_AT.x, BOB_AT.y + Math.sin(t * 3) * .025 - (left < 1.1 && left % .5 < .12 ? .05 : 0), BOB_AT.z);   // 最後一秒浮標抖兩下
-    if (left <= 0) { Object.assign(F, { phase: 'bite', t: 0 }); bubble(avatar, '！', 2.3); waterSplash(BOB_AT.x, BOB_AT.z, .35); }
+    const tw = left < 1.1 && left % .5 < .12;   // 最後一秒浮標抖兩下（每抖一下「噗」一聲）
+    bobber.position.set(BOB_AT.x, BOB_AT.y + Math.sin(t * 3) * .025 - (tw ? .05 : 0), BOB_AT.z);
+    if (tw && !F.tw) sfx('plip', bobber);
+    F.tw = tw;
+    if (left <= 0) { Object.assign(F, { phase: 'bite', t: 0 }); bubble(avatar, '！', 2.3); waterSplash(BOB_AT.x, BOB_AT.z, .35); sfx('bite'); }
   } else if (F.phase === 'bite') {   // 上鉤：浮標沉下去，大約一秒半內要拉
     bobber.position.set(BOB_AT.x, BOB_AT.y - .14 + Math.sin(t * 22) * .03, BOB_AT.z);
-    if (F.t > 1.5) { bubble(avatar, '魚跑掉了，再拋一次', 2.3); endFishing(); }
+    if (F.t > 1.5) { bubble(avatar, '魚跑掉了，再拋一次', 2.3); sfx('fail'); endFishing(); }
   } else if (F.phase === 'catch') {   // 魚跳出水面、落進左手
     const k = Math.min(1, F.t / .8);
     hookFish.position.lerpVectors(BOB_AT, AV.armL.localToWorld(_hand.set(0, -.5, .12)), k);
@@ -2295,6 +2304,7 @@ function swing() {
   if (AV.swingT > 0 || flight.phase) return;
   AV.swingT = .45;
   AV.saberT = 3;
+  sfx('whoosh', avatar);
   let best = null, bd = 3.5;   // 附近有俯衝的蜜蜂就轉向牠
   for (const d of divers) {
     if (!d.on) continue;
@@ -2336,6 +2346,7 @@ function updateDivers(dt, t) {
     if (d.k >= 2) { d.on = false; d.g.visible = false; continue; }
     if (striking && d.g.position.distanceTo(_sw) < 1.5) {
       pixelBurst(d.g.position);
+      sfx('zap', d.g);
       d.on = false; d.g.visible = false;
       combo++; comboT = 2.5;
       bubble(avatar, combo > 1 ? `擊落 ×${combo}` : '擊落！', 2.3);
@@ -2415,7 +2426,7 @@ function petTap(id, fromList = false) {
   } else if (id === 'cat') { if (fromList) { cat.awakeT = 3; bubble(cat.g, '喵', .75); } else catTap(); }
   else if (id === 'blob') { blob.hop = 0; blob.body.position.y = .25; bubble(blob.g, '♪', 1.0); }
   else if (id.startsWith('crab')) { const c = crabs[+id.slice(4) || 0]; c.hide = 3; }
-  else if (id.startsWith('dolphin')) { const d = dolphins[+id.slice(7) || 0]; if (d.jump < 0) d.jumpT = 0; }
+  else if (id.startsWith('dolphin')) { const d = dolphins[+id.slice(7) || 0]; if (d.jump < 0) d.jumpT = 0; sfx('whistle', d.g); }
 }
 function focusPet(id) {
   if (state.flying || !RESIDENTS.some(r => r.id === id)) return;
@@ -2834,6 +2845,7 @@ function collectKey(k) {
   removePedestal(k.id);
   addLog('key', `取得${k.name}`);
   toast(`${k.name}到手！`, 'gold');
+  sfx('key');
   checkKeys();
   renderAll();
 }
@@ -2841,6 +2853,7 @@ function spawnGate() {
   if (gate.visible) return;
   gate.visible = true;
   gateLight.intensity = 6;
+  sfx('gate');
   addPin('gate', `<span class="no">${PLACE.gate.no}</span>${PLACE.gate.name}`, PLACE.gate.color, [PLACE.gate.at[0], 6.6, PLACE.gate.at[1]], () => selectPlace('gate'));
   pickables.push(hitBox({ place: 'gate' }, [PLACE.gate.at[0], 3, PLACE.gate.at[1]], [5, 6, 1.2]));
   addLog('gate', '三鑰齊聚——隱嶼之門開啟');
@@ -2853,6 +2866,7 @@ function openEnding() {
   saveKeys();
   addLog('gate', '穿過隱嶼之門，獲得 25¢ 復活幣');
   $('#ending').hidden = false;
+  sfx('fanfare');
 }
 $('#btn-ending').addEventListener('click', () => {
   state.inEnding = false;
@@ -2946,6 +2960,7 @@ function enterGame(game) {
   $('#ov-newtab').href = game.url;
   frame.src = game.url;
   overlay.hidden = false;
+  sndIdle(true);
   frame.addEventListener('load', () => { try { frame.contentWindow.focus(); } catch (e) {} }, { once: true });
 }
 function closeGame() {
@@ -2953,6 +2968,7 @@ function closeGame() {
   state.inGame = false;
   overlay.hidden = true;
   frame.src = 'about:blank';
+  sndIdle(false);
   const mins = Math.round((Date.now() - gameStart) / 60000);
   if (mins >= 1) addLog('play', `在《${GAME[gameId].name}》待了 ${mins} 分鐘`);
   refresh();
@@ -3296,6 +3312,7 @@ function ringDone(R) {
   R.beam.visible = false;
   pixelBurst(R.c, R.bits);
   renderHud();
+  sfx('ring', null, rings.every(q => q.done));
   const n = rings.filter(q => q.done).length;
   if (n < rings.length) return toast(`光圈 ${n}/3：${R.g.name}上空`);
   const tm = flight.clock, best = num('sanasai_flight_best'), rec = !best || tm < best;
@@ -3524,6 +3541,7 @@ function updateFlight(dt) {
       ship.rotation.set(ship.rotation.x * (1 - dock), ship.rotation.y + dy * dock, ship.rotation.z * (1 - dock));
     }
     ramp.scale.x = k < .93 ? .02 : lerp(.02, 1, (k - .93) / .07);
+    F.heat = heat;
     fireShell.visible = heat > .02;
     fireShell.material.opacity = heat * (.85 + Math.sin(F.t * 40) * .15);
     fireShell.scale.setScalar(5 + heat * 3 + Math.sin(F.t * 33) * .4);
@@ -3586,6 +3604,240 @@ function updateFlight(dt) {
   }
 }
 
+/* ---------- 聲音：全部用 Web Audio 即時合成，不載入音檔 ----------
+   瀏覽器規定要等第一次點畫面或按鍵才能出聲；右上角的開關記在 sanasai_sound（預設開）。
+   iPhone 預設會跟著側邊的靜音開關一起靜音，所以把網頁的聲音模式設成「播放」（iOS 17 起有 navigator.audioSession），
+   舊版 iOS 改成播一段無聲音檔來切換。代價：開著聲音時，手機上正在放的音樂會被暫停。 */
+const IS_IOS = /iP(hone|od|ad)/.test(navigator.platform) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const snd = { on: ls.get('sanasai_sound') !== '0', ctx: null, master: null, amb: null, sfx: null, noise: null, hum: null, eng: null, tag: null, meter: null, log: [], step: -1, blade: 0, ramp: 1, fph: null, birdT: 4, crick: [.3, .8, 1.4] };
+const CRICKETS = [[.6, .62, 4300], [2.5, .7, 4700], [4.3, .66, 3900]].map(([a, d, f]) => { const [x, z] = polar(a, d); return { p: new THREE.Vector3(x, 1.2, z), f }; });
+const SND_ICON = {
+  on: '<path d="M4 9.5h3.2L11.5 6v12l-4.3-3.5H4z"/><path d="M15 9.2a4 4 0 0 1 0 5.6M17.6 6.6a7.6 7.6 0 0 1 0 10.8"/>',
+  off: '<path d="M4 9.5h3.2L11.5 6v12l-4.3-3.5H4z"/><path d="M15.5 9.5l5 5M20.5 9.5l-5 5"/>',
+};
+function setSession(type) { try { if (navigator.audioSession) navigator.audioSession.type = type; } catch (e) {} }
+function silentWav() {   // 半秒鐘的無聲 WAV（舊版 iOS 解鎖用）
+  const n = 4000, v = new DataView(new ArrayBuffer(44 + n)), w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, 8000, true); v.setUint32(28, 8000, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true); w(36, 'data'); v.setUint32(40, n, true);
+  for (let i = 0; i < n; i++) v.setUint8(44 + i, 128);
+  return URL.createObjectURL(new Blob([v], { type: 'audio/wav' }));
+}
+function biq(type, f, q = .7) { const b = snd.ctx.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; }
+function lfo(hz, depth, param) { const o = snd.ctx.createOscillator(), g = snd.ctx.createGain(); o.frequency.value = hz; g.gain.value = depth; o.connect(g).connect(param); o.start(); }
+function noiseLoop() { const s = snd.ctx.createBufferSource(); s.buffer = snd.noise; s.loop = true; s.start(0, Math.random() * 1.9); return s; }
+function buildAudio() {
+  const c = snd.ctx, comp = c.createDynamicsCompressor();
+  comp.threshold.value = -18; comp.knee.value = 10; comp.ratio.value = 4; comp.attack.value = .003; comp.release.value = .25;
+  snd.master = c.createGain();
+  snd.meter = c.createAnalyser();   // 測試用：量有沒有出聲
+  snd.meter.fftSize = 2048;
+  snd.master.connect(comp).connect(snd.meter).connect(c.destination);
+  snd.amb = c.createGain(); snd.amb.connect(snd.master);
+  snd.sfx = c.createGain(); snd.sfx.connect(snd.master);
+  const len = c.sampleRate * 2, buf = c.createBuffer(1, len, c.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  snd.noise = buf;
+  // 海浪：低沉的雜訊加兩個很慢的起伏，一波一波打上岸；再疊一層浪花的沙沙聲
+  const sea = noiseLoop(), swell = c.createGain(), foam = c.createGain();
+  swell.gain.value = .045; foam.gain.value = .006;
+  lfo(.07, .028, swell.gain); lfo(.113, .018, swell.gain); lfo(.09, .005, foam.gain);
+  sea.connect(biq('lowpass', 480)).connect(swell).connect(snd.amb);
+  sea.connect(biq('highpass', 2600)).connect(foam).connect(snd.amb);
+  // 能量劍的嗡嗡聲：兩個差一點點的低音，劍身亮著才開
+  const h1 = c.createOscillator(), h2 = c.createOscillator(), hl = biq('lowpass', 520);
+  h1.type = h2.type = 'sawtooth'; h1.frequency.value = 88; h2.frequency.value = 89.6;
+  snd.hum = c.createGain(); snd.hum.gain.value = 0;
+  h1.connect(hl); h2.connect(hl); hl.connect(snd.hum).connect(snd.sfx);
+  h1.start(); h2.start();
+  // 飛船：引擎低音（跟著速度升高）＋隆隆的風聲；重返大氣層的火光是另一層轟隆聲
+  const eo = c.createOscillator(), elp = biq('lowpass', 300), eg = c.createGain(), rlp = biq('lowpass', 300), rg = c.createGain(), og = c.createGain();
+  eo.type = 'sawtooth'; eo.frequency.value = 45; eg.gain.value = rg.gain.value = og.gain.value = 0;
+  eo.connect(elp).connect(eg).connect(snd.sfx);
+  noiseLoop().connect(rlp).connect(rg).connect(snd.sfx);
+  noiseLoop().connect(biq('bandpass', 420, .6)).connect(og).connect(snd.sfx);
+  eo.start();
+  snd.eng = { eo, elp, eg, rlp, rg, og };
+}
+function audioUnlock() {
+  if (!snd.on) return;
+  setSession('playback');
+  if (!snd.ctx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { snd.ctx = new AC(); } catch (e) { return; }
+    buildAudio();
+  }
+  if (snd.ctx.state !== 'running' && !document.hidden && !state.inGame) snd.ctx.resume().catch(() => {});
+  if (IS_IOS && !navigator.audioSession) {   // 舊版 iOS：播一段無聲音檔，靜音開關才不會把聲音關掉
+    if (!snd.tag) { snd.tag = new Audio(silentWav()); snd.tag.loop = true; snd.tag.setAttribute('x-webkit-airplay', 'deny'); }
+    snd.tag.play().catch(() => {});
+  }
+}
+for (const type of ['pointerup', 'touchend', 'click', 'keydown']) addEventListener(type, audioUnlock, true);
+function sndIdle(idle) {   // 進遊戲（遊戲有自己的聲音）或切到別的分頁時整個停掉
+  if (!snd.ctx) return;
+  if (idle) { snd.ctx.suspend(); if (snd.tag) snd.tag.pause(); }
+  else if (snd.on) audioUnlock();
+}
+document.addEventListener('visibilitychange', () => sndIdle(document.hidden || state.inGame));
+function soundUI() {
+  const b = $('#btn-sound');
+  b.setAttribute('aria-pressed', String(snd.on));
+  b.querySelector('svg').innerHTML = snd.on ? SND_ICON.on : SND_ICON.off;
+  b.querySelector('span').textContent = snd.on ? '聲音' : '靜音';
+  b.title = snd.on ? '關掉聲音' : '打開聲音';
+}
+function setSound(on) {
+  snd.on = on;
+  ls.set('sanasai_sound', on ? '1' : '0');
+  soundUI();
+  if (on) { audioUnlock(); if (snd.ctx) snd.ctx.resume().then(() => sfx('bip')).catch(() => {}); }
+  else { if (snd.ctx) snd.ctx.suspend(); if (snd.tag) snd.tag.pause(); setSession('auto'); }
+}
+$('#btn-sound').addEventListener('click', () => setSound(!snd.on));
+soundUI();
+
+const _sv = new THREE.Vector3(), _sdir = new THREE.Vector3(), _sx = new THREE.Vector3(), _ssp = new THREE.Vector3();
+function place(at) {   // 聲音的位置 → [音量, 左右]：以鏡頭看的地方當耳朵，越遠越小聲，左右照鏡頭的方向
+  if (!at) return [1, 0];
+  const p = at.isObject3D ? at.getWorldPosition(_sv) : at, d = p.distanceTo(controls.target), v = _sdir.copy(p).sub(camera.position);
+  _sx.set(1, 0, 0).applyQuaternion(camera.quaternion);
+  return [1 / (1 + (d / 14) ** 2), clamp(v.dot(_sx) / Math.max(4, v.length()) * 1.3, -.8, .8)];
+}
+function osc(out, { type = 'sine', f = 440, f2 = 0, curve = null, t = 0, dur = .2, v = .2, a = .005, filter = null, vib = null }) {
+  const c = snd.ctx, t0 = c.currentTime + t, o = c.createOscillator(), g = c.createGain();
+  o.type = type;
+  if (curve) { o.frequency.setValueAtTime(curve[0], t0); curve.forEach((fq, i) => { if (i) o.frequency.linearRampToValueAtTime(fq, t0 + dur * i / (curve.length - 1)); }); }
+  else { o.frequency.setValueAtTime(f, t0); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t0 + dur); }
+  if (vib) { const l = c.createOscillator(), lg = c.createGain(); l.frequency.value = vib[0]; lg.gain.value = vib[1]; l.connect(lg).connect(o.frequency); l.start(t0); l.stop(t0 + dur + .05); }
+  g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(v, t0 + a); g.gain.exponentialRampToValueAtTime(.0001, t0 + dur);
+  (filter ? o.connect(biq(...filter)) : o).connect(g).connect(out);
+  o.start(t0); o.stop(t0 + dur + .05);
+}
+function hiss(out, { t = 0, dur = .2, v = .2, a = .004, type = 'bandpass', f = 1000, f2 = 0, q = 1 }) {
+  const c = snd.ctx, t0 = c.currentTime + t, s = c.createBufferSource(), fl = biq(type, f, q), g = c.createGain();
+  s.buffer = snd.noise;
+  fl.frequency.setValueAtTime(f, t0); if (f2) fl.frequency.exponentialRampToValueAtTime(f2, t0 + dur);
+  g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(v, t0 + a); g.gain.exponentialRampToValueAtTime(.0001, t0 + dur);
+  s.connect(fl).connect(g).connect(out);
+  s.start(t0, Math.random() * 1.5); s.stop(t0 + dur + .05);
+}
+const SFX = {
+  bip(o) { osc(o, { type: 'triangle', f: 880, dur: .09, v: .12 }); },
+  // 島民
+  bark(o, n = 1, ask = false) { for (let i = 0; i < n; i++) { const t = i * .17; osc(o, { type: 'sawtooth', curve: ask && i === n - 1 ? [300, 270, 430] : [390, 340, 210], t, dur: .13, v: .2, filter: ['lowpass', 1300, 1] }); hiss(o, { t, dur: .08, v: .16, f: 650, q: 1.5 }); } },
+  meow(o, long = false) { const dur = long ? .62 : .42, curve = [520, 780, 860, 640, 470]; osc(o, { type: 'sawtooth', curve, dur, v: .13, a: .05, filter: ['bandpass', 1300, 1.6], vib: [6, 16] }); osc(o, { curve, dur, v: .05, a: .05 }); },
+  purr(o) {
+    const c = snd.ctx, t0 = c.currentTime, s = c.createBufferSource(), am = c.createGain(), env = c.createGain();
+    s.buffer = snd.noise;
+    am.gain.value = .5; lfoAt(23, .5, am.gain, t0, 1.3);
+    env.gain.setValueAtTime(0, t0); env.gain.linearRampToValueAtTime(.2, t0 + .15); env.gain.linearRampToValueAtTime(0, t0 + 1.2);
+    s.connect(biq('lowpass', 260)).connect(am).connect(env).connect(o);
+    s.start(t0, Math.random()); s.stop(t0 + 1.3);
+  },
+  boing(o) { osc(o, { curve: [200, 560, 420, 470, 380], dur: .38, v: .2, vib: [16, 22] }); },
+  whistle(o) { osc(o, { curve: [1300, 2500, 2100, 2800, 1700], dur: .5, v: .07 }); },
+  gull(o) { const n = 2 + ((Math.random() * 2) | 0); for (let i = 0; i < n; i++) osc(o, { type: 'sawtooth', curve: [1250, 1450, 950], t: i * .3, dur: .24, v: .08, filter: ['bandpass', 1500, 3], vib: [30, 40] }); },
+  chirp(o, f) { for (let i = 0; i < 3; i++) osc(o, { f, t: i * .05, dur: .03, v: .045, a: .003 }); },
+  splash(o, size = 1) {
+    hiss(o, { dur: .18 + size * .35, v: .06 + size * .09, type: 'highpass', f: 700 + 300 / size, q: .5 });
+    hiss(o, { dur: .12, v: .07 * size, f: 400, f2: 1600, q: 1 });
+    if (size < .9) osc(o, { f: 520, f2: 140, dur: .12, v: .1 });
+  },
+  step(o, kind) {
+    if (kind === 'wood' || kind === 'metal') { const m = kind === 'metal'; osc(o, { type: 'triangle', f: m ? 420 : 210, f2: m ? 300 : 120, dur: .07, v: .09 }); hiss(o, { dur: .03, v: .04, f: m ? 3000 : 1500, q: 2 }); }
+    else if (kind === 'sand') { hiss(o, { dur: .07, v: .07, type: 'highpass', f: 2600, q: .5 }); hiss(o, { t: .03, dur: .05, v: .045, type: 'highpass', f: 3200, q: .5 }); }
+    else { hiss(o, { dur: .07, v: .14, type: 'lowpass', f: 1400, q: .7 }); hiss(o, { dur: .03, v: .03, f: 2500, q: 1 }); }
+  },
+  // 能量劍、蜜蜂
+  ignite(o) { osc(o, { type: 'sawtooth', f: 60, f2: 120, dur: .4, v: .15, filter: ['lowpass', 2200, 2] }); hiss(o, { dur: .3, v: .05, f: 600, f2: 3000, q: 3 }); },
+  retract(o) { osc(o, { type: 'sawtooth', f: 130, f2: 50, dur: .3, v: .09, filter: ['lowpass', 1400, 2] }); },
+  whoosh(o) { osc(o, { type: 'sawtooth', curve: [100, 175, 95], dur: .32, v: .11, filter: ['lowpass', 1500, 3] }); hiss(o, { dur: .28, v: .07, f: 500, f2: 2600, q: 2 }); },
+  zap(o) { [880, 660, 494, 330, 220].forEach((f, i) => osc(o, { type: 'square', f, t: i * .035, dur: .05, v: .05 })); hiss(o, { dur: .25, v: .07, type: 'lowpass', f: 2500, f2: 300, q: .7 }); },
+  // 阿滿的球、釣魚
+  toss(o) { hiss(o, { dur: .2, v: .14, f: 700, f2: 2200, q: 1.5 }); },
+  bounce(o, k = 1) { osc(o, { f: 260, f2: 150, dur: .07, v: .13 * k }); hiss(o, { dur: .02, v: .04 * k, f: 2000, q: 1 }); },
+  cast(o) { hiss(o, { dur: .3, v: .15, f: 2600, f2: 700, q: 2 }); },
+  plip(o) { osc(o, { f: 900, f2: 450, dur: .06, v: .07 }); },
+  bite(o) { osc(o, { type: 'triangle', f: 880, dur: .12, v: .15 }); osc(o, { type: 'triangle', f: 1320, t: .1, dur: .2, v: .15 }); },
+  reel(o) { for (let i = 0; i < 9; i++) hiss(o, { t: i * .055, dur: .025, v: .12, f: 3200, q: 3 }); },
+  fail(o) { osc(o, { type: 'triangle', f: 330, f2: 180, dur: .35, v: .11 }); },
+  jingle(o, big = false) { (big ? [523, 659, 784, 1047, 1319] : [523, 659, 784, 1047]).forEach((f, i) => { osc(o, { type: 'triangle', f, t: i * .075, dur: .3, v: .11 }); osc(o, { f: f * 2, t: i * .075, dur: .2, v: .03 }); }); },
+  // 鑰匙、門、結局
+  key(o) { [784, 988, 1175, 1568, 1976].forEach((f, i) => { osc(o, { type: 'triangle', f, t: i * .09, dur: .6, v: .11 }); osc(o, { f: f * 2.01, t: i * .09, dur: .4, v: .035 }); }); },
+  gate(o) { osc(o, { type: 'sawtooth', f: 55, f2: 110, dur: 2.2, v: .11, a: .8, filter: ['lowpass', 900, 1] }); [523, 659, 784, 1047].forEach((f, i) => osc(o, { f, t: .9 + i * .12, dur: 2.2, v: .07 })); },
+  fanfare(o) { [523, 659, 784, 1047].forEach((f, i) => osc(o, { type: 'square', f, t: i * .14, dur: .22, v: .045, filter: ['lowpass', 3000, 1] })); [523, 659, 784, 1047].forEach(f => osc(o, { type: 'triangle', f, t: .6, dur: 1.6, v: .06 })); },
+  // 飛船
+  ring(o, last = false) { (last ? [1047, 1319, 1568, 2093] : [1047, 1568]).forEach((f, i) => osc(o, { type: 'triangle', f, t: i * .07, dur: .5, v: .1 })); },
+  servo(o) { osc(o, { type: 'square', f: 300, f2: 520, dur: .45, v: .05, filter: ['lowpass', 1200, 1] }); },
+  warp(o) { hiss(o, { dur: 1.15, v: .16, a: .9, f: 300, f2: 5000, q: 1.2 }); osc(o, { type: 'sawtooth', f: 180, f2: 1400, dur: 1.15, v: .05, a: .9, filter: ['lowpass', 2500, 1] }); },
+  boom(o) { osc(o, { f: 95, f2: 32, dur: 1.3, v: .3 }); hiss(o, { dur: 1.1, v: .22, type: 'lowpass', f: 900, f2: 90, q: .7 }); },
+  land(o) { osc(o, { f: 70, f2: 40, dur: .35, v: .2 }); hiss(o, { t: .05, dur: .7, v: .05, type: 'highpass', f: 3000, q: .5 }); },
+};
+function lfoAt(hz, depth, param, t0, dur) { const o = snd.ctx.createOscillator(), g = snd.ctx.createGain(); o.type = 'square'; o.frequency.value = hz; g.gain.value = depth; o.connect(g).connect(param); o.start(t0); o.stop(t0 + dur); }
+function sfx(name, at, ...args) {   // at：聲音從哪裡來（3D 物件或位置；不給＝介面音效，不分遠近）
+  if (!snd.on || !snd.ctx || snd.ctx.state !== 'running') return;
+  const [v, pan] = place(at);
+  if (v < .015) return;
+  const g = snd.ctx.createGain();
+  g.gain.value = v;
+  if (snd.ctx.createStereoPanner) { const p = snd.ctx.createStereoPanner(); p.pan.value = pan; g.connect(p).connect(snd.sfx); }
+  else g.connect(snd.sfx);
+  SFX[name](g, ...args);
+  snd.log.push(name);
+  if (snd.log.length > 80) snd.log.shift();
+}
+function voice(g, text) {   // 對話泡泡冒出來時配上叫聲
+  if (g === dog.g && text.includes('汪')) sfx('bark', g, (text.match(/汪/g) || []).length, text.includes('？'));
+  else if (g === cat.g) { if (text.includes('♥')) sfx('purr', g); else if (text.includes('喵')) sfx('meow', g, text.length > 1); }
+  else if (g === blob.g) sfx('boing', g);
+}
+function updateSound(dt) {
+  if (!snd.ctx || snd.ctx.state !== 'running') return;
+  const now = snd.ctx.currentTime, F = flight;
+  // 環境音：海浪在高空會淡掉；白天偶爾有海鳥叫，晚上換成蟲鳴
+  snd.amb.gain.setTargetAtTime(1 - smooth((camera.position.y - 25) / 90), now, .5);
+  if (!state.freeze) {
+    if (night < .5 && (snd.birdT -= dt) <= 0) { snd.birdT = 7 + Math.random() * 10; sfx('gull', birds[(Math.random() * birds.length) | 0]); }
+    if (night > .6) CRICKETS.forEach((k, i) => { if ((snd.crick[i] -= dt) <= 0) { snd.crick[i] = .5 + Math.random() * 1.1; sfx('chirp', k.p, k.f); } });
+  }
+  // 腳步：草地、沙灘、木頭碼頭、飛船的金屬坡道聲音不一樣
+  if (walk.moving || F.walking) {
+    const k = Math.floor(walk.phase / Math.PI);
+    if (k !== snd.step) { snd.step = k; const p = avatar.position; sfx('step', avatar, F.walking ? 'metal' : onPier(p.x, p.z) ? 'wood' : baseHeight(p.x, p.z) < .55 ? 'sand' : 'grass'); }
+  }
+  // 能量劍：亮出來「嗡」一聲、亮著有低低的嗡嗡聲、收回去「咻」一聲
+  const b = AV.bladeK;
+  if (b > .05 && snd.blade <= .05) sfx('ignite', avatar);
+  if (b < .9 && snd.blade >= .9 && AV.swingT <= 0) sfx('retract', avatar);
+  snd.blade = b;
+  snd.hum.gain.setTargetAtTime(b * .03 * place(avatar)[0], now, .05);
+  // 飛船：坡道收放、跳光速、白光、降落；引擎跟著速度，重返大氣層時多一層轟隆聲
+  const r = ramp.scale.x;
+  if ((r > .03 && snd.ramp <= .03) || (r < .97 && snd.ramp >= .97)) sfx('servo', ship);
+  snd.ramp = r;
+  if (F.phase !== snd.fph) {
+    if (F.phase === 'hyper') sfx('warp');
+    else if (F.phase === 'descent') sfx('boom');
+    else if (F.phase === 'off') sfx('land', ship);
+    snd.fph = F.phase;
+  }
+  let lvl = 0, spd = 0;
+  if (F.phase === 'lift') { const k = Math.min(1, F.t / FLY.lift); lvl = .35 + .65 * k; spd = 3 + 5 * k; }
+  else if (['pilot', 'climb', 'hyper', 'return'].includes(F.phase)) { lvl = 1; spd = F.speed; }
+  else if (F.phase === 'descent') { const k = Math.min(1, F.t / FLY.descent); lvl = 1 - .6 * smooth((k - .85) / .15); spd = lerp(40, 4, k); }
+  else if (F.phase === 'touch') { lvl = 1 - Math.min(1, F.t / FLY.touch); spd = 5; }
+  else if (F.phase === 'board' || F.phase === 'off') lvl = .25;
+  const E = snd.eng, sp = Math.min(spd, 60);
+  E.eo.frequency.setTargetAtTime(40 + sp * 2.2, now, .25);
+  E.elp.frequency.setTargetAtTime(220 + sp * 30, now, .25);
+  E.eg.gain.setTargetAtTime(lvl * .06, now, .15);
+  E.rlp.frequency.setTargetAtTime(160 + sp * 16, now, .25);
+  E.rg.gain.setTargetAtTime(lvl * (.03 + sp * .0018), now, .15);
+  E.og.gain.setTargetAtTime(F.phase === 'descent' ? (F.heat || 0) * .2 : 0, now, .1);
+}
+
 /* ---------- 主迴圈 ---------- */
 const clock = new THREE.Clock();
 let elapsed = 0;
@@ -3629,6 +3881,7 @@ function tick() {
   updateAvatar(dt);
   updateCamera(dt);
   updateFlight(dt);
+  updateSound(dt);
   if (!state.freeze) { updateAmbient(dt, elapsed); updatePets(dt, elapsed); }
   updateProximity();
   renderer.render(scene, camera);
@@ -3681,4 +3934,4 @@ tick();
 body.classList.remove('booting');
 
 /* 除錯／測試用的唯讀入口 */
-window.sanasai = { PLACE, GAMES, KEYS, CAB, keyState, state, ui, avatar, camera, controls, records: () => records, overflow: () => ({ bees: swarm && swarm.n, heap: heap && heap.layers, maze: mazeArea && mazeArea.n }), pets: () => ({ dog: dog.state, dogPos: dog.g.position.toArray().map(v => +v.toFixed(2)), cat: cat.awakeT > 0 || night > .6, crabs: crabs.map(c => +c.hide.toFixed(1)), blob: blob.state }), petTap, view: (pos, target) => { follow = false; fly = null; controls.enabled = true; camera.position.set(...pos); controls.target.set(...target); controls.update(); }, select: selectPlace, walkTo, overview, setTime, land, findPath, dolphins, ship, AV, FAR_ISLES, flight, startFlight, skipFlight, throwBall, fetchS, fishing, startFishing, reel, feedCat, carry, catGo, catJump, rings, landNow, swing, divers, spawnDiver, cat, dog };
+window.sanasai = { PLACE, GAMES, KEYS, CAB, keyState, state, ui, avatar, camera, controls, records: () => records, overflow: () => ({ bees: swarm && swarm.n, heap: heap && heap.layers, maze: mazeArea && mazeArea.n }), pets: () => ({ dog: dog.state, dogPos: dog.g.position.toArray().map(v => +v.toFixed(2)), cat: cat.awakeT > 0 || night > .6, crabs: crabs.map(c => +c.hide.toFixed(1)), blob: blob.state }), petTap, view: (pos, target) => { follow = false; fly = null; controls.enabled = true; camera.position.set(...pos); controls.target.set(...target); controls.update(); }, select: selectPlace, walkTo, overview, setTime, land, findPath, dolphins, ship, AV, FAR_ISLES, snd, SFX, setSound, flight, startFlight, skipFlight, throwBall, fetchS, fishing, startFishing, reel, feedCat, carry, catGo, catJump, rings, landNow, swing, divers, spawnDiver, cat, dog };
