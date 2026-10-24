@@ -33,7 +33,7 @@
   #app { transition: opacity .8s ease; }
   body.booting #app { opacity: 0; } /* 島載入好之前不露出空殼，好了整頁一起淡入 */
   #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
-  #warp { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 4; opacity: 0; transition: opacity .25s; }
+  #warp { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 4; opacity: 0; transition: opacity .7s; }
   #warp.on { opacity: 1; }
   #labels { transition: opacity .6s; }
   body.space #labels { opacity: 0; }
@@ -472,6 +472,6 @@
   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="./island.js?v=2.9.0"></script>
+<script type="module" src="./island.js?v=2.9.1"></script>
 </body>
 </html>

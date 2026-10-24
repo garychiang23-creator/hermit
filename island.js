@@ -2891,7 +2891,7 @@ function updateProximity() {
   if (flight.phase) {
     const F = flight;
     if (F.phase === 'pilot') setHint(F.far ? 'far' : 'pilot', F.far ? '飛太遠了，自動轉回島' : isTouch ? '左下搖桿或拖曳畫面轉向・往上推升高・按「降落」回碼頭' : '方向鍵轉向・↑↓ 升降・空白鍵加速・Esc 降落', 'prompt');
-    else if (['ascend', 'hyper', 'reentry'].includes(F.phase)) setHint('f:space', isTouch ? '衝上太空再回來…（點這裡跳過）' : '衝上太空再回來…（Esc 跳過）', 'prompt', skipFlight);
+    else if (['climb', 'hyper', 'descent'].includes(F.phase)) setHint('f:space', isTouch ? '衝上太空再回來…（點這裡跳過）' : '衝上太空再回來…（Esc 跳過）', 'prompt', skipFlight);
     else setHint(F.phase === 'board' || F.phase === 'lift' ? 'f:up' : 'f:down', F.phase === 'board' || F.phase === 'lift' ? '起飛中…' : '回碼頭中…', 'prompt');
     return;
   }
@@ -3123,13 +3123,12 @@ addEventListener('pageshow', e => { if (e.persisted) refresh(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden && !state.inGame) refresh(); });
 addEventListener('storage', e => { if (e.key && !e.key.startsWith('sanasai_')) refresh(); });
 
-/* ---------- 開飛船：走上坡道起飛後換你駕駛，穿過三台機台上空的光圈；三個都過就跳光速，自動降落回碼頭 ---------- */
+/* ---------- 開飛船：走上坡道起飛後換你駕駛，穿過三台機台上空的光圈；三個都過就一鏡到底衝上太空、跳光速、降落回碼頭 ---------- */
 const flight = { phase: null, t: 0, walking: false, yaw: Math.PI, bank: 0, pitch: 0, speed: 0, boostBtn: false, far: false, clock: 0, sec: -1, done: false, jumped: false, from: new THREE.Vector3(), route: null, dur: 1 };
 const steer = { id: null, x0: 0, y0: 0, x: 0, y: 0 };
 const V3 = a => new THREE.Vector3(...a);
-const HOME = new THREE.CatmullRomCurve3([[-3, 13, -12], [.5, 10, 3], [3.5, 6, 13.5], [SHIP.x, 3.4, SHIP.z]].map(V3), false, 'centripetal');
-const FLY = { board: 1.4, lift: 2.2, ascend: 6.5, hyper: 2, reentry: 5, home: 4.5, touch: 2.6, off: 1.3 };
-const REENTRY = new THREE.CatmullRomCurve3([[-30, 260, -210], [-14, 120, -95], [-5, 40, -32], [-3, 13, -12]].map(V3), false, 'centripetal');   // 從北方高空俯衝回來，接到 HOME 的起點
+const FLY = { board: 1.4, lift: 2.2, climb: 7, hyper: 1.1, descent: 9, touch: 2.6, off: 1.3 };
+const DESCENT = new THREE.CatmullRomCurve3([[-34, 300, -240], [-20, 180, -150], [-9, 80, -68], [-3, 26, -20], [.5, 12, 2], [3.4, 6.5, 13], [4.1, 3, 17.2], [SHIP.x, SHIP.y, SHIP.z]].map(V3), false, 'centripetal');   // 跳光速回來：從北方高空一路俯衝、減速，直接停進碼頭
 const _fp = new THREE.Vector3(), _ft = new THREE.Vector3(), _cp = new THREE.Vector3(), _cl = new THREE.Vector3();
 const fmtSec = s => `${Math.floor(s / 60)}:${pad2(Math.floor(s % 60))}`;
 const rings = GAMES.map(g => {   // 三台機台上空各一個霓虹光圈，會轉過來面對飛船（從哪個方向都穿得過）；下面一道光柱，遠遠就看得到
@@ -3173,6 +3172,39 @@ function drawWarp(k) {   // 星光從中心拉長成線，最亮時白光一閃
   if (flash > 0) { x.fillStyle = `rgba(236,246,255,${flash * .92})`; x.fillRect(0, 0, w, h); }
 }
 const baseFov = () => innerWidth / innerHeight < .85 ? 48 : 38;
+/* 一鏡到底的鏡頭：位置和看的點都記成「相對於船」，換構圖時用彈簧慢慢滑過去（起步和停下都是緩的），船再快也不會甩掉鏡頭 */
+const rig = { off: new THREE.Vector3(), look: new THREE.Vector3(), vo: new THREE.Vector3(), vl: new THREE.Vector3() }, _ro = new THREE.Vector3(), _rl = new THREE.Vector3(), _nose = new THREE.Vector3(), _srt = new THREE.Vector3(), _fh = new THREE.Vector3();
+function rigFrom() {
+  rig.off.copy(camera.position).sub(ship.position);
+  rig.look.copy(controls.target).sub(ship.position);
+  rig.vo.set(0, 0, 0); rig.vl.set(0, 0, 0);
+}
+function rigTo(off, look, dt, w = 2.4) {
+  const step = (x, v, target) => { v.addScaledVector(_c3.copy(target).sub(x), w * w * dt).multiplyScalar(Math.max(0, 1 - 2 * w * dt)); x.addScaledVector(v, dt); };
+  step(rig.off, rig.vo, off);
+  step(rig.look, rig.vl, look);
+  camera.position.copy(ship.position).add(rig.off);
+  controls.target.copy(ship.position).add(rig.look);
+  camera.lookAt(controls.target);
+}
+const _c3 = new THREE.Vector3();
+function shipAxes() {   // 船頭方向、右舷、水平航向
+  _nose.set(0, 0, -1).applyQuaternion(ship.quaternion);
+  _srt.crossVectors(_nose, camera.up).normalize();
+  _fh.set(-Math.sin(flight.yaw), 0, -Math.cos(flight.yaw));
+}
+function poseAlong(C, u, dt) {   // 照路線擺船：位置、航向跟著切線，俯仰和側傾慢慢跟，不會瞬間翻過去
+  C.getPointAt(u, _fp); C.getTangentAt(u, _ft);
+  let dy = Math.atan2(-_ft.x, -_ft.z) - flight.yaw;
+  while (dy > Math.PI) dy -= TAU;
+  while (dy < -Math.PI) dy += TAU;
+  const step = dy * Math.min(1, dt * 4);
+  flight.yaw += step;
+  flight.bank = lerp(flight.bank, clamp(step / Math.max(dt, 1e-3) * .5, -.55, .55), Math.min(1, dt * 3));
+  flight.pitch = lerp(flight.pitch, Math.atan2(_ft.y, Math.hypot(_ft.x, _ft.z)) * .7, Math.min(1, dt * 5));
+  ship.position.copy(_fp);
+  ship.rotation.set(flight.pitch, flight.yaw, flight.bank);
+}
 /* 衝上太空再回來用的東西：一層雲（升空和回來時各穿過一次）、船頭的火光、火光尾巴 */
 const cloudDeck = new THREE.Group();
 {
@@ -3271,7 +3303,7 @@ function ringDone(R) {
   toast(`三個光圈全過！${fmtSec(tm)}${rec ? '・新紀錄' : `・最快 ${fmtSec(best)}`}`, 'gold');
   addLog('ship', `開飛船穿過三個光圈：${fmtSec(tm)}${rec ? '（最快紀錄）' : ''}`);
   flight.done = true;
-  nextFlight('ascend');
+  nextFlight('climb');
 }
 function landNow() {   // 按「降落」：從現在的位置自動飛回碼頭
   const F = flight;
@@ -3283,20 +3315,54 @@ function landNow() {   // 按「降落」：從現在的位置自動飛回碼頭
   nextFlight('return');
 }
 function skipFlight() {
-  const ph = flight.phase;
+  const F = flight, ph = F.phase;
   if (ph === 'pilot') landNow();
-  else if (['ascend', 'hyper', 'reentry', 'home', 'return'].includes(ph)) { spaceReset(); nextFlight('touch'); }   // 看太空那段可以按 Esc 直接回碼頭
+  else if (ph === 'return') nextFlight('touch');
+  else if (['climb', 'hyper', 'descent'].includes(ph)) {   // 看太空那段可以按 Esc：直接到碼頭上空降落
+    spaceReset();
+    ship.position.set(SHIP.x, SHIP.y + 2, SHIP.z);
+    Object.assign(F, { yaw: Math.PI, pitch: 0, bank: 0 });
+    ship.rotation.set(0, Math.PI, 0);
+    const v = viewFor('pier');   // 鏡頭直接切到碼頭，不要從太空一路飛回來
+    camera.position.copy(v.pos);
+    controls.target.copy(v.target);
+    camera.lookAt(controls.target);
+    camera.fov = baseFov();
+    camera.updateProjectionMatrix();
+    nextFlight('touch');
+  }
 }
 function nextFlight(phase) {
   const F = flight;
   F.phase = phase; F.t = 0;
   body.classList.toggle('autopilot', phase !== 'pilot');   // 只有自己開的時候才顯示搖桿
   if (phase === 'pilot') { Object.assign(F, { clock: 0, sec: -1, speed: 6, pitch: 0 }); setRings(true); hud.hidden = false; }
-  if (phase === 'ascend' || phase === 'return') { hud.hidden = true; for (const R of rings) R.beam.visible = false; }
-  if (phase === 'ascend') { F.from.copy(ship.position); F.pitch = ship.rotation.x; cloudDeck.position.set(ship.position.x, 72, ship.position.z); cloudDeck.visible = true; }
-  if (phase === 'hyper') { camera.up.set(0, 1, 0); F.jumped = false; F.speed = 10; cloudDeck.visible = false; warpCv.classList.add('on'); }
-  if (phase === 'home') fireShell.visible = cloudDeck.visible = false;
-  body.classList.toggle('space', ['ascend', 'hyper', 'reentry'].includes(phase));   // 太空那段把名牌藏起來
+  if (phase === 'climb' || phase === 'return') { hud.hidden = true; for (const R of rings) R.beam.visible = false; }
+  if (phase === 'climb') {   // 從穿過第三個光圈的地方，順著原本的方向往前、弧線拉起來衝上太空，到頂再擺平
+    const p = ship.position, f = _fh.set(-Math.sin(F.yaw), 0, -Math.cos(F.yaw)).clone(), at = (h, v) => p.clone().addScaledVector(f, h).add(_c3.set(0, v, 0));
+    F.route = new THREE.CatmullRomCurve3([p.clone(), at(14, 3), at(28, 22), at(36, 80), at(44, 220), at(70, 420), at(150, 520), at(260, 540)], false, 'centripetal');
+    F.len = F.route.getLength();
+    F.v0 = Math.max(F.speed, 6);
+    F.acc = (F.len - F.v0 * FLY.climb) / FLY.climb ** 3;   // 走過的距離＝v0·t＋acc·t³：起步跟剛才的速度一樣，越飛越快
+    cloudDeck.position.copy(at(36, 0)).setY(72);
+    cloudDeck.visible = true;
+    rigFrom();
+  }
+  if (phase === 'hyper') { F.jumped = false; warpCv.classList.add('on'); }
+  if (phase === 'descent') {   // 白光最亮的那一刻換到北方高空（白光遮住這一次切換）
+    F.route = DESCENT;
+    DESCENT.getTangentAt(0, _ft);
+    Object.assign(F, { yaw: Math.atan2(-_ft.x, -_ft.z), pitch: Math.atan2(_ft.y, Math.hypot(_ft.x, _ft.z)) * .7, bank: 0, pier: viewFor('pier') });
+    poseAlong(DESCENT, 0, 1 / 60);
+    rig.off.copy(_c3.crossVectors(_ft, camera.up).normalize()).multiplyScalar(isMobile() ? 16 : 12).addScaledVector(_ft, 4).add(_c3.set(0, isMobile() ? 12 : 9, 0));
+    rig.look.set(0, 0, 0); rig.vo.set(0, 0, 0); rig.vl.set(0, 0, 0);
+    rigTo(rig.off, rig.look, 1 / 60);
+    cloudDeck.position.set(-10, 64, -64);
+    cloudDeck.visible = true;
+    setRings(false);   // 回程會飛過島，穿過的光圈先收起來
+    warpCv.classList.remove('on');   // 留下最後一格白光，靠 CSS 慢慢淡掉
+  }
+  body.classList.toggle('space', ['climb', 'hyper', 'descent'].includes(phase));   // 太空那段把名牌藏起來
   if (phase === 'touch') { spaceReset(); F.from.copy(ship.position); flyTo(viewFor('pier'), 1.8); setRings(false); }
 }
 function alongRamp(k, back) {   // 沿坡道折線走（照長度分配時間）
@@ -3409,67 +3475,95 @@ function updateFlight(dt) {
     camera.updateProjectionMatrix();
     chaseCam(dt, 3.5);
     if (Math.floor(F.clock) !== F.sec) { F.sec = Math.floor(F.clock); hudTime.textContent = fmtSec(F.clock); }
-  } else if (F.phase === 'ascend') {   // 衝上太空：船頭朝上加速穿過雲層，天空慢慢變黑，島縮成海上一個小點
-    const t = F.t, p = ship.position;
-    p.set(F.from.x, F.from.y + 3 * t + 13.5 * t * t, F.from.z);
-    F.pitch = lerp(F.pitch, 1.45, Math.min(1, dt * 3));
-    F.bank = lerp(F.bank, 0, Math.min(1, dt * 3));
-    ship.rotation.set(F.pitch, F.yaw, F.bank);
+  } else if (F.phase === 'climb') {   // 一鏡到底①：船從光圈那裡順勢拉起、穿過雲層衝上太空，鏡頭跟在船旁邊慢慢換位置
+    const t = Math.min(F.t, FLY.climb), d = F.v0 * t + F.acc * t * t * t;
+    poseAlong(F.route, Math.min(1, d / F.len), dt);
+    F.speed = F.v0 + 3 * F.acc * t * t;
+    shipAxes();
+    const M = isMobile(), back = M ? 12.5 : 9.5, up = M ? 5.2 : 3.8, p = ship.position;   // 手機直立畫面比較窄，鏡頭都拉遠一點、不偏左右
+    if (t < 1.3) {   // 跟在船後面，看它拉起來
+      _ro.copy(_nose).multiplyScalar(-back).addScaledVector(_srt, 1.1).add(_c3.set(0, up, 0));
+      _rl.copy(_nose).multiplyScalar(6).add(_c3.set(0, .4, 0));
+    } else if (t < 3.3) {   // 滑到船的右邊，看它垂直往上穿過雲層
+      _ro.copy(_srt).multiplyScalar(M ? 19 : 14).addScaledVector(_nose, -3).add(_c3.set(0, 3, 0));
+      _rl.set(0, 0, 0);
+    } else if (t < 5.6) {   // 升到船的右上方往下看：雲在下面，島越縮越小
+      _ro.copy(_srt).multiplyScalar(M ? 13 : 10).addScaledVector(_fh, -3).add(_c3.set(0, M ? 22 : 17, 0));
+      _rl.copy(p).multiplyScalar(-.05);
+    } else {   // 繞到船後上方，準備跳光速
+      _ro.copy(_fh).multiplyScalar(M ? -19 : -13).addScaledVector(_srt, M ? 0 : 1.5).add(_c3.set(0, 4.5, 0));
+      _rl.copy(_fh).multiplyScalar(14).add(_c3.set(0, 1, 0));   // 繞過來的半路上船也留在畫面中間
+    }
+    rigTo(_ro, _rl, dt);
     camera.fov = lerp(camera.fov, baseFov(), Math.min(1, dt * 3));
     camera.updateProjectionMatrix();
-    if (t < 2.2) {   // 鏡頭一：留在原地仰望，看船衝進雲裡
-      camera.lookAt(controls.target.lerp(p, Math.min(1, dt * 4)));
-    } else if (t < 4.4) {   // 鏡頭二：從船下方往上追，前方的天空變黑、星星出來
-      camera.position.lerp(_cp.set(p.x + 6, p.y - 16, p.z + 6), Math.min(1, dt * 2.5));
-      camera.lookAt(controls.target.lerp(_cl.set(p.x, p.y + 20, p.z), Math.min(1, dt * 3)));
-    } else {   // 鏡頭三：切到船上方往下看，船在前景、島在海上縮成一個小點（鏡頭的「上」改成北，正下方看才不會亂轉）
-      camera.up.set(0, 0, -1);
-      camera.position.set(p.x + 8, p.y + 40, p.z + 8);
-      camera.lookAt(controls.target.set(0, 0, 0));
-    }
-    spaceView(smooth((p.y - 60) / 260));
-    if (t >= FLY.ascend) nextFlight('hyper');
-  } else if (F.phase === 'hyper') {   // 在太空跳光速：船擺平往前衝，星光拉長，白光一閃
+    spaceView(smooth((t - 2.6) / 3.2));   // 天色照時間變：穿過雲層之後約 3 秒轉黑
+    if (F.t >= FLY.climb) nextFlight('hyper');
+  } else if (F.phase === 'hyper') {   // 一鏡到底②：船往前加速衝出去、越變越小，星光拉長，白光一閃
     const k = Math.min(1, F.t / FLY.hyper);
-    if (k < .55) {
-      F.pitch = lerp(F.pitch, 0, Math.min(1, dt * 5));
-      F.speed = lerp(10, 90, k / .55);
-      ship.position.x -= Math.sin(F.yaw) * F.speed * dt;
-      ship.position.z -= Math.cos(F.yaw) * F.speed * dt;
-      ship.rotation.set(F.pitch, F.yaw, 0);
-      const sn = Math.sin(F.yaw), cs = Math.cos(F.yaw), p = ship.position;   // 鏡頭貼在船後面、看向前方的星空（背景是太空，不是海）
-      camera.position.set(p.x + sn * 11, p.y + 2.6, p.z + cs * 11);
-      camera.lookAt(controls.target.set(p.x - sn * 40, p.y + 4, p.z - cs * 40));
-      spaceView(1);
-    } else if (!F.jumped) {   // 白光最亮的那一刻：換到北方高空，準備重返大氣層
-      F.jumped = true;
-      REENTRY.getPointAt(0, _fp); REENTRY.getTangentAt(0, _ft);
-      F.yaw = Math.atan2(-_ft.x, -_ft.z); F.bank = 0;
-      poseShip(_fp, _ft, dt);
-      const rt = _cp.crossVectors(_ft, camera.up).normalize();
-      camera.position.copy(_fp).addScaledVector(rt, 12).addScaledVector(_ft, 4).add(_cl.set(0, 9, 0));
-      camera.lookAt(controls.target.copy(_fp));
-      cloudDeck.position.set(-10, 64, -64);
-      cloudDeck.visible = true;
-    } else spaceView(smooth((ship.position.y - 60) / 260));
-    drawWarp(k);
-    if (k >= 1) { warpCv.classList.remove('on'); nextFlight('reentry'); }
-  } else if (F.phase === 'reentry') {   // 拖著火光重返大氣層，越接近地面火光越小
-    const k = Math.min(1, F.t / FLY.reentry), u = 1 - (1 - k) * (1 - k), heat = 1 - smooth((k - .55) / .4);
-    poseShip(REENTRY.getPointAt(u, _fp), REENTRY.getTangentAt(u, _ft), dt);
+    shipAxes();
+    F.speed *= 1 + dt * 2.5;
+    ship.position.addScaledVector(_fh, F.speed * dt);
+    F.pitch = lerp(F.pitch, 0, Math.min(1, dt * 4));
+    F.bank = lerp(F.bank, 0, Math.min(1, dt * 4));
+    ship.rotation.set(F.pitch, F.yaw, F.bank);
+    _ro.copy(_fh).multiplyScalar((isMobile() ? -19 : -13) - 70 * k * k).addScaledVector(_srt, isMobile() ? 0 : 1.5).add(_c3.set(0, 4.5, 0));
+    _rl.copy(_fh).multiplyScalar(30).add(_c3.set(0, 1, 0));
+    rigTo(_ro, _rl, dt, 3.5);
+    spaceView(1);
+    drawWarp(k * .55);   // 白光在這一段的最後一刻最亮
+    if (k >= 1) nextFlight('descent');
+  } else if (F.phase === 'descent') {   // 一鏡到底③：拖著火光重返大氣層，一路減速飛過島上空，直接停進碼頭、放下坡道
+    const k = Math.min(1, F.t / FLY.descent), u = 1 - (1 - k) * (1 - k), heat = 1 - smooth((k - .28) / .25);
+    poseAlong(DESCENT, u, dt);
+    const dock = smooth((k - .8) / .2);   // 最後一段：船擺正、轉回停靠方向
+    if (dock > 0) {
+      let dy = Math.PI - ship.rotation.y;
+      while (dy > Math.PI) dy -= TAU;
+      while (dy < -Math.PI) dy += TAU;
+      ship.rotation.set(ship.rotation.x * (1 - dock), ship.rotation.y + dy * dock, ship.rotation.z * (1 - dock));
+    }
+    ramp.scale.x = k < .93 ? .02 : lerp(.02, 1, (k - .93) / .07);
     fireShell.visible = heat > .02;
     fireShell.material.opacity = heat * (.85 + Math.sin(F.t * 40) * .15);
     fireShell.scale.setScalar(5 + heat * 3 + Math.sin(F.t * 33) * .4);
     if (heat > .05) { emitTrail(ship.position, heat); emitTrail(ship.position, heat); }
-    const fw = REENTRY.getTangentAt(u, _ft), rt = _cp.crossVectors(fw, camera.up).normalize(), p = ship.position;   // 鏡頭在船的斜上方一起往下衝：看得到圓盤頂面，火光尾巴往後拖、不會擋住船
-    camera.position.copy(p).addScaledVector(rt, 12).addScaledVector(fw, 4).add(_cl.set(0, 9, 0));
-    camera.lookAt(controls.target.copy(p));
-    spaceView(smooth((ship.position.y - 60) / 260));
-    if (k >= 1) nextFlight('home');
-  } else if (F.phase === 'home' || F.phase === 'return') {   // 自動飛回碼頭上空
-    const k = Math.min(1, F.t / (F.phase === 'home' ? FLY.home : F.dur)), u = 1 - (1 - k) * (1 - k);
-    const C = F.phase === 'home' ? HOME : F.route;
-    poseShip(C.getPointAt(u, _fp), C.getTangentAt(u, _ft), dt);
+    shipAxes();
+    DESCENT.getTangentAt(u, _ft);
+    const M = isMobile();   // 手機直立畫面比較窄，鏡頭拉遠一點、不偏左右
+    if (F.t < 3.2) {   // 鏡頭在船的斜上方一起往下衝：看得到圓盤頂面，火光尾巴往後拖
+      _ro.copy(_c3.crossVectors(_ft, camera.up).normalize()).multiplyScalar(M ? 16 : 12).addScaledVector(_ft, 4).add(_c3.set(0, M ? 12 : 9, 0));
+      _rl.set(0, 0, 0);
+    } else {   // 慢慢繞到船後上方，跟著它飛過島
+      _ro.copy(_fh).multiplyScalar(M ? -16 : -11).addScaledVector(_srt, M ? 0 : 3).add(_c3.set(0, M ? 6.5 : 5, 0));
+      _rl.copy(_fh).multiplyScalar(8).add(_c3.set(0, .5, 0));
+    }
+    rigTo(_ro, _rl, dt, 1.8);
+    const toPier = smooth((k - .72) / .28);   // 最後滑到碼頭的固定視角
+    if (toPier > 0) {
+      camera.position.lerp(F.pier.pos, toPier);
+      controls.target.lerp(F.pier.target, toPier);
+      camera.lookAt(controls.target);
+    }
+    camera.fov = lerp(camera.fov, baseFov(), Math.min(1, dt * 3));
+    camera.updateProjectionMatrix();
+    spaceView(1 - smooth((F.t - 1) / 3.4));   // 天色照時間變：重返大氣層後約 3 秒轉亮
+    body.classList.toggle('space', k < .55);
+    if (k < 1) return;
+    spaceReset();
+    setRings(false);
+    ship.position.set(SHIP.x, SHIP.y, SHIP.z);
+    ship.rotation.set(0, Math.PI, 0);
+    Object.assign(F, { yaw: Math.PI, pitch: 0, bank: 0 });
+    camera.position.copy(F.pier.pos);
+    controls.target.copy(F.pier.target);
+    camera.fov = baseFov();
+    camera.updateProjectionMatrix();
+    avatar.visible = true; mePin.obj.visible = true; F.walking = true;
+    nextFlight('off');
+  } else if (F.phase === 'return') {   // 按「降落」：自動飛回碼頭上空
+    const k = Math.min(1, F.t / F.dur), u = 1 - (1 - k) * (1 - k);
+    poseShip(F.route.getPointAt(u, _fp), F.route.getTangentAt(u, _ft), dt);
     camera.fov = lerp(camera.fov, baseFov(), Math.min(1, dt * 3));
     camera.updateProjectionMatrix();
     chaseCam(dt, 3);
