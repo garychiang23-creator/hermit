@@ -33,6 +33,8 @@
   #app { transition: opacity .8s ease; }
   body.booting #app { opacity: 0; } /* 島載入好之前不露出空殼，好了整頁一起淡入 */
   #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  #warp { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 4; opacity: 0; transition: opacity .25s; }
+  #warp.on { opacity: 1; }
   .panel { background: var(--glass); -webkit-backdrop-filter: blur(14px) saturate(1.15); backdrop-filter: blur(14px) saturate(1.15); border: 1px solid rgba(255, 255, 255, .7); box-shadow: var(--shadow); }
   .eyebrow { font-family: var(--display); font-size: 10.5px; font-weight: 600; letter-spacing: .26em; text-transform: uppercase; color: var(--sea); }
 
@@ -186,6 +188,8 @@
   .tag.land { background: #e4f2e8; color: #2d7744; }
   .tag.play { background: #eee8f8; color: #5a4695; }
   .tag.gate { background: #fff0c4; color: #7a5200; }
+  .tag.ship { background: #e2edf5; color: #2b5d7c; }
+  .tag.pet { background: #fbe8dc; color: #9a4a22; }
   .log-list time { font-family: var(--display); font-size: 11.5px; color: var(--ink-3); margin-right: 6px; }
   .log-overview { padding: 14px 16px 16px; overflow-y: auto; flex: 1; }
   .ov-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -438,6 +442,6 @@
   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="./island.js?v=2.6.1"></script>
+<script type="module" src="./island.js?v=2.7.0"></script>
 </body>
 </html>

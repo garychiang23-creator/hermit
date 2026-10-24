@@ -538,6 +538,10 @@ function buildPier() {
 const SHIP = { x: 4.35, y: 1.3, z: 19.4, r: 2.3 };   // z 讓坡道落在碼頭兩根木樁中間
 SHIP.a = Math.atan2(SHIP.z, SHIP.x);
 const ship = new THREE.Group();
+let ramp = null;   // 登船坡道：起飛前縮回船腹，降落後放下
+const shipGlow = new THREE.MeshBasicMaterial({ vertexColors: true });   // 引擎光：飛行時比平常亮
+const RAMP_Z = SHIP.z - SHIP.r * .15;
+const RAMP_PTS = [[PIER.x1 - .15, DECK_Y, RAMP_Z], [PIER.x1 + .25, DECK_Y + .07, RAMP_Z], [SHIP.x - SHIP.r * .74, SHIP.y - SHIP.r * .17, RAMP_Z], [SHIP.x - SHIP.r * .45, SHIP.y - SHIP.r * .1, RAMP_Z]];   // 碼頭上 → 碼頭邊 → 坡道頂 → 船裡
 function buildShip() {
   const R = SHIP.r, L = [], GL = [], hull = 0xd6d3cb, wall = 0xa4a199, plate = 0xbdbab2, line = 0x8e8b84, dark = 0x575b62, rust = 0xa65a3f;
   // 船身：從上面看的整片輪廓（圓盤＋兩支叉，中間一道缺口）擠出厚度，側邊是一圈直立的機械牆。輪廓座標 (u, v)：u＝右舷、v＝船頭
@@ -605,11 +609,15 @@ function buildShip() {
     const t = Math.PI * 1.5 + (i - 5) / 5 * .96;
     part('box', [Math.cos(t) * R * 1.04, 0, -Math.sin(t) * R * 1.04], [R * .215, R * .17, R * .03], 0x8fd8ff, { into: GL, ry: t + Math.PI / 2 });
   }
-  // 登船坡道：從右舷船腹斜放到碼頭邊
-  const x0 = R * .74, y0 = -R * .17, x1 = SHIP.x - (PIER.x1 + .25), y1 = DECK_Y + .07 - SHIP.y;
-  part('box', [(x0 + x1) / 2, (y0 + y1) / 2, R * .15], [Math.hypot(x1 - x0, y1 - y0), .07, .9], 0x6f737a, { into: L, rz: Math.atan2(y1 - y0, x1 - x0) });
-  ship.add(merged(L, MAT.solid));
-  ship.add(merged(GL, MAT.glow, false));
+  // 登船坡道：從右舷船腹斜放到碼頭邊；以船腹那端為軸，起飛前縮回船裡
+  const x0 = R * .74, y0 = -R * .17, x1 = SHIP.x - (PIER.x1 + .25), y1 = DECK_Y + .07 - SHIP.y, RL = [], len = Math.hypot(x1 - x0, y1 - y0);
+  part('box', [len / 2, 0, 0], [len, .07, .9], 0x6f737a, { into: RL });
+  ramp = new THREE.Group();
+  ramp.position.set(x0, y0, R * .15);
+  ramp.rotation.z = Math.atan2(y1 - y0, x1 - x0);
+  ramp.add(merged(RL, MAT.solid));
+  ship.add(merged(L, MAT.solid), ramp, merged(GL, shipGlow, false));
+  ship.rotation.order = 'YXZ';   // 飛行時：先偏航、再俯仰、最後側傾
   ship.position.set(SHIP.x, SHIP.y, SHIP.z);
   ship.rotation.y = Math.PI;
   scene.add(ship);
@@ -1446,6 +1454,7 @@ const AV = {};
   AV.bladeLight.position.y = .5;
   blade.add(core, AV.bladeGlow, AV.bladeLight);
   AV.swingT = 0;
+  AV.throwT = 0;
   const hb = new THREE.Mesh(HIT_GEO, hitMat);
   hb.position.y = .8; hb.scale.set(.6, 1.6, .6); hb.userData = { pet: 'me' };
   avatar.add(hb);
@@ -1478,6 +1487,11 @@ const keysDown = {};
 const joy = { x: 0, y: 0 };
 const _fw = new THREE.Vector3(), _rt = new THREE.Vector3(), _mv = new THREE.Vector3();
 function updateAvatar(dt) {
+  if (flight.phase) {   // 飛行中：分身在船上，只有走坡道時擺腿
+    const sw = flight.walking ? Math.sin(walk.phase += dt * 9) * .65 : 0;
+    AV.legL.rotation.x = sw; AV.legR.rotation.x = -sw; AV.armL.rotation.x = -sw * .8;
+    return;
+  }
   let ix = (keysDown.d || keysDown.arrowright ? 1 : 0) - (keysDown.a || keysDown.arrowleft ? 1 : 0) + joy.x;
   let iz = (keysDown.s || keysDown.arrowdown ? 1 : 0) - (keysDown.w || keysDown.arrowup ? 1 : 0) + joy.y;
   const len = Math.hypot(ix, iz);
@@ -1512,6 +1526,11 @@ function updateAvatar(dt) {
   walk.phase += dt * (moving ? 9 : 0);
   const sw = moving ? Math.sin(walk.phase) * .65 : 0;
   AV.legL.rotation.x = sw; AV.legR.rotation.x = -sw; AV.armL.rotation.x = -sw * .8;
+  if (AV.throwT > 0) {   // 丟東西：左手往後拉再甩出去
+    AV.throwT -= dt;
+    const k = 1 - Math.max(0, AV.throwT) / .35;
+    AV.armL.rotation.x = k < .45 ? lerp(0, -2.4, k / .45) : lerp(-2.4, .4, (k - .45) / .55);
+  }
   if (AV.swingT > 0) {   // 揮劍：先舉高再砍下
     AV.swingT -= dt;
     const k = 1 - Math.max(0, AV.swingT) / .45;
@@ -1628,7 +1647,7 @@ const dog = { path: null, i: 0, state: 'idle', t: 2, phase: 0, wag: 0, petT: 0, 
 }
 function updateDog(dt, t) {
   const D = dog, p = D.g.position, av = avatar.position, dAv = Math.hypot(av.x - p.x, av.z - p.z), sleepy = night > .85;
-  if (sleepy && D.state !== 'bed' && D.state !== 'sleep') { D.state = 'bed'; goTo(D, DOG_BED[0], DOG_BED[1]); }
+  if (sleepy && D.state !== 'bed' && D.state !== 'sleep') { if (fetchS.phase === 'carried') dropBall(p.x, p.z); D.state = 'bed'; goTo(D, DOG_BED[0], DOG_BED[1]); }
   if (!sleepy && D.state === 'sleep') { D.state = 'idle'; D.t = 1; }
   if (!sleepy && walk.moving && dAv < 6 && (D.state === 'idle' || D.state === 'walk')) D.state = 'follow';
   let speed = 1.8;
@@ -1655,6 +1674,27 @@ function updateDog(dt, t) {
       else D.state = 'sleep';
     }
   } else if (D.state === 'sniff' && (D.t -= dt) <= 0) { D.state = 'idle'; D.t = 2; }
+  else if (D.state === 'fetch') {   // 衝去撿球；球還在飛就盯著等它落地
+    speed = 5.2;
+    D.fetchT -= dt;
+    const bx = ball.position.x - p.x, bz = ball.position.z - p.z;
+    if (D.fetchT <= 0) { D.state = 'idle'; D.t = 2; D.path = null; }
+    else if (fetchS.phase === 'rest' && Math.hypot(bx, bz) < .9) { fetchS.phase = 'carried'; D.state = 'bring'; D.repath = 0; D.path = null; }
+    else if (!D.path) { if (fetchS.phase === 'rest') goTo(D, ball.position.x, ball.position.z); else turnTo(D.g, bx, bz, dt); }
+  } else if (D.state === 'bring') {   // 叼回分身腳邊
+    speed = 4.4;
+    D.repath -= dt;
+    if (dAv < 1.7) {
+      D.path = null;
+      dropBall(p.x + Math.sin(D.g.rotation.y) * .5, p.z + Math.cos(D.g.rotation.y) * .5);
+      D.state = 'idle'; D.t = 4; D.petT = 2;
+      turnTo(D.g, av.x - p.x, av.z - p.z, 1);
+      bubble(D.g, '汪！', 1.25);
+      fetchN++;
+      ls.set('sanasai_fetch', String(fetchN));
+      if (fetchN === 1 || fetchN === 10 || fetchN % 50 === 0) addLog('pet', `阿滿撿回第 ${fetchN} 次球`);
+    } else if (D.repath <= 0) { goTo(D, av.x + Math.sin(avatar.rotation.y) * 1.1, av.z + Math.cos(avatar.rotation.y) * 1.1); D.repath = .6; }
+  }
   const moving = stepAlong(D, speed, dt);
   p.y = groundY(p.x, p.z);
   D.phase += dt * (moving ? speed * 3.4 : 0);
@@ -1671,8 +1711,66 @@ function updateDog(dt, t) {
   if (lie && (D.zzz -= dt) <= 0) { D.zzz = 4; bubble(D.g, 'Zzz', 1.1); }
 }
 
+/* 阿滿撿球：點阿滿，分身往面對的方向丟球，阿滿衝去撿、叼回你腳邊 */
+const ball = new THREE.Mesh(new THREE.SphereGeometry(.11, 10, 8), new THREE.MeshStandardMaterial({ color: 0xd8ec4a, roughness: .6, flatShading: true }));
+ball.castShadow = true;
+ball.visible = false;
+scene.add(ball);
+const fetchS = { phase: null, t: 0, b: 0, h: 2, from: new THREE.Vector3(), to: new THREE.Vector3(), dir: new THREE.Vector3() };
+let fetchN = num('sanasai_fetch');
+const _mouth = new THREE.Vector3();
+function throwBall() {
+  const D = dog;
+  if (night > .85 || D.state === 'sleep' || D.state === 'bed') { bubble(D.g, 'Zzz…', 1.1); return; }
+  if (D.state === 'fetch' || D.state === 'bring' || fetchS.phase === 'air' || fetchS.phase === 'bounce') return;
+  const av = avatar.position, dp = D.g.position;
+  let tgt = null, ang = 0;
+  for (const da of [0, .45, -.45, .9, -.9, 1.5, -1.5, 2.3, -2.3, Math.PI]) {   // 落點要走得到、阿滿也跑得到
+    for (const d of [7, 5.5, 4]) {
+      const a = avatar.rotation.y + da, x = av.x + Math.sin(a) * d, z = av.z + Math.cos(a) * d;
+      if (walkableAt(x, z) && findPath(dp.x, dp.z, x, z)) { tgt = [x, z]; ang = a; break; }
+    }
+    if (tgt) break;
+  }
+  if (!tgt) { bubble(D.g, '汪？', 1.25); return; }
+  avatar.rotation.y = ang;
+  AV.throwT = .35;
+  fetchS.from.set(av.x + Math.sin(ang) * .3, av.y + 1.15, av.z + Math.cos(ang) * .3);
+  fetchS.to.set(tgt[0], groundY(tgt[0], tgt[1]) + .11, tgt[1]);
+  fetchS.dir.set(Math.sin(ang), 0, Math.cos(ang));
+  fetchS.h = 1.8 + fetchS.from.distanceTo(fetchS.to) * .12;
+  fetchS.phase = 'air'; fetchS.t = 0;
+  ball.position.copy(fetchS.from);
+  ball.visible = true;
+  D.state = 'fetch'; D.fetchT = 14; D.petT = 1;
+  goTo(D, tgt[0], tgt[1]);
+  bubble(D.g, '汪！', 1.25);
+}
+function dropBall(x, z) {
+  fetchS.phase = 'rest';
+  ball.position.set(x, groundY(x, z) + .11, z);
+}
+function updateBall(dt) {
+  const F = fetchS;
+  if (F.phase === 'air') {
+    F.t = Math.min(1, F.t + dt / .85);
+    ball.position.lerpVectors(F.from, F.to, F.t);
+    ball.position.y += Math.sin(Math.PI * F.t) * F.h;
+    if (F.t >= 1) { F.phase = 'bounce'; F.t = 0; F.b = 0; F.from.copy(F.to); }
+  } else if (F.phase === 'bounce') {   // 落地再彈兩下、往前滾一點
+    const dur = F.b ? .2 : .3, hgt = F.b ? .14 : .42, run = F.b ? .25 : .55;
+    F.t = Math.min(1, F.t + dt / dur);
+    const x = F.from.x + F.dir.x * run * F.t, z = F.from.z + F.dir.z * run * F.t;
+    if (walkableAt(x, z)) ball.position.set(x, groundY(x, z) + .11 + Math.sin(Math.PI * F.t) * hgt, z);
+    if (F.t >= 1) { F.from.copy(ball.position); F.t = 0; if (++F.b >= 2) dropBall(ball.position.x, ball.position.z); }
+  } else if (F.phase === 'carried') {
+    ball.position.copy(dog.head.localToWorld(_mouth.set(0, -.12, .32)));
+  }
+  if (F.phase === 'air' || F.phase === 'bounce') ball.rotation.x += dt * 12;
+}
+
 /* 貓：白天在小蜜蜂機台頂上睡午覺，晚上醒著、眼睛會亮 */
-const cat = { awakeT: 0, t: 0 };
+const cat = { awakeT: 0, t: 0, eatT: 0 };
 {
   const g = new THREE.Group(), body = new THREE.Group(), Wc = 0xf4efe7, Or = 0xe0954f, Dk = 0x5a4f48;
   g.add(body);
@@ -1711,6 +1809,7 @@ function updateCat(dt, t) {
   c.body.scale.y = 1 + Math.sin(t * (awake ? 2.2 : 1.2)) * .03;
   c.eyes.forEach(e => { e.scale.y = awake ? .04 : .008; });
   c.eyeMat.emissiveIntensity = awake ? night * 1.6 : 0;
+  if (c.eatT > 0) { c.eatT -= dt; c.head.rotation.x = .25 + Math.abs(Math.sin(t * 9)) * .3; c.head.rotation.y = 0; }   // 吃魚：頭一點一點
   c.tail.rotation.y = Math.sin(t * (awake ? 2.4 : .9)) * .35;
 }
 
@@ -1824,15 +1923,33 @@ for (const col of [0xf08a3c, 0xc9d6df, 0xf2c14e]) {
   vox(g, BASE.pyr, col, [0, 0, -.32], [.04, .22, .2], [Math.PI / 2, 0, 0]);
   vox(g, BASE.box, 0x1d1b1a, [0, .04, .19], [.21, .04, .04]);
   g.visible = false;
+  g.position.y = -50;   // 沒跳的時候藏到水底，點擊判定才不會擋到別的東西
   scene.add(g);
-  fishes.push({ g, t: 2 + rnd() * 6, u: -1, from: new THREE.Vector3(), dir: new THREE.Vector3() });
+  petHit(g, 'fish' + fishes.length, [0, 0, 0], [1.3, 1.3, 1.6]);
+  fishes.push({ g, color: col, t: 2 + rnd() * 6, u: -1, k: 0, from: new THREE.Vector3(), dir: new THREE.Vector3() });
 }
+function hideFish(f) { f.g.visible = false; f.g.position.set(0, -50, 0); f.u = -1; f.t = 2.5 + rnd() * 7; }
 function updateFish(dt) {
+  const av = avatar.position, aa = Math.atan2(av.z, av.x), atShore = Math.hypot(av.x, av.z) > islandR(aa) * .8;
   for (const f of fishes) {
-    if (f.u < 0) {
+    if (f.u === -2) {   // 被抓到：飛進分身左手
+      f.k = Math.min(1, f.k + dt / .5);
+      f.g.position.lerpVectors(f.from, AV.armL.localToWorld(_hand.set(0, -.5, .12)), f.k);
+      f.g.position.y += Math.sin(Math.PI * f.k) * 1.2;
+      f.g.rotation.x += dt * 14;
+      if (f.k >= 1) {
+        hideFish(f);
+        carry.color = f.color;
+        heldFish.userData.mat.color.setHex(f.color);
+        heldFish.visible = true;
+        bubble(avatar, '抓到了！', 2.3);
+      }
+    } else if (f.u < 0) {
       if ((f.t -= dt) > 0) continue;
-      const a = rnd() * TAU, r = islandR(a) * (1.07 + rnd() * .25), x = Math.cos(a) * r, z = Math.sin(a) * r;
-      if ((Math.abs(x) < 3.5 && z > 14) || Math.hypot(x - SHIP.x, z - SHIP.z) < SHIP.r + 2) { f.t = .5; continue; }   // 不要跳在碼頭上或飛船底下
+      let a = rnd() * TAU, r = islandR(a) * (1.07 + rnd() * .25);
+      if (atShore && rnd() < .6) { a = aa + (rnd() - .5) * .5; r = islandR(a) * (1.06 + rnd() * .1); }   // 分身在海邊時，魚多半跳在附近
+      const x = Math.cos(a) * r, z = Math.sin(a) * r;
+      if (onPier(x, z) || Math.hypot(x - SHIP.x, z - SHIP.z) < SHIP.r + 2) { f.t = .5; continue; }   // 不要跳在碼頭上或飛船底下
       const h = rnd() * TAU;
       f.from.set(x, 0, z); f.dir.set(Math.cos(h), 0, Math.sin(h));
       f.u = 0; f.g.visible = true;
@@ -1842,8 +1959,162 @@ function updateFish(dt) {
       const k = f.u, x = f.from.x + f.dir.x * 1.8 * k, z = f.from.z + f.dir.z * 1.8 * k, y = Math.sin(Math.PI * k) * 1.1 - .1;
       f.g.position.set(x, y, z);
       f.g.lookAt(x + f.dir.x * 1.8, y + Math.PI * 1.1 * Math.cos(Math.PI * k), z + f.dir.z * 1.8);
-      if (k >= 1) { f.g.visible = false; waterSplash(x, z, .55); f.u = -1; f.t = 2.5 + rnd() * 7; }
+      if (k >= 1) { waterSplash(x, z, .55); hideFish(f); }
     }
+  }
+}
+
+/* 抓魚餵花捲：魚跳出水面時點牠就抓到，拿在左手；走到小蜜蜂機台前，魚會拋給機台頂上的花捲 */
+const carry = { color: null, toss: null };
+const _hand = new THREE.Vector3(), _catPos = new THREE.Vector3();
+const [heldFish, tossFish] = [0, 1].map(() => {
+  const G = new THREE.Group(), m = new THREE.MeshStandardMaterial({ color: 0xf08a3c, roughness: .7, flatShading: true });
+  const b = new THREE.Mesh(BASE.ico, m), tl = new THREE.Mesh(BASE.pyr, m);
+  b.scale.set(.2, .24, .52);
+  tl.scale.set(.04, .22, .2); tl.position.z = -.32; tl.rotation.x = Math.PI / 2;
+  G.add(b, tl);
+  G.userData.mat = m;
+  G.visible = false;
+  return G;
+});
+heldFish.scale.setScalar(1.05);
+heldFish.position.set(0, -.52, .1);
+heldFish.rotation.set(-1.3, 0, 0);   // 抓著尾巴，頭朝下
+AV.armL.add(heldFish);
+scene.add(tossFish);
+function catchFish(f) {
+  if (!f || f.u < 0 || carry.color !== null || carry.toss) return;
+  const p = f.g.position;
+  if (Math.hypot(p.x - avatar.position.x, p.z - avatar.position.z) > 10) { bubble(avatar, '太遠了，走近一點', 2.3); return; }
+  waterSplash(p.x, p.z, .55);
+  f.from.copy(p);
+  f.u = -2; f.k = 0;
+}
+function feedCat() {
+  if (carry.color === null || carry.toss) return;
+  const door = GAME.bee.door;
+  if (Math.hypot(avatar.position.x - door[0], avatar.position.z - door[1]) > 6) { walkTo(door[0], door[1], { follow: true, mark: true }); return; }   // 太遠就先走過去，到門口會自動餵
+  cat.g.localToWorld(_catPos.set(0, .25, .2));
+  avatar.rotation.y = Math.atan2(_catPos.x - avatar.position.x, _catPos.z - avatar.position.z);
+  avatar.updateMatrixWorld(true);
+  carry.toss = { t: 0, from: AV.armL.localToWorld(_hand.set(0, -.5, .12)).clone(), to: _catPos.clone() };
+  tossFish.userData.mat.color.setHex(carry.color);
+  tossFish.position.copy(carry.toss.from);
+  tossFish.visible = true;
+  heldFish.visible = false;
+  carry.color = null;
+  AV.throwT = .35;
+}
+function updateCarry(dt) {
+  const T = carry.toss;
+  if (!T) return;
+  T.t = Math.min(1, T.t + dt / .7);
+  tossFish.position.lerpVectors(T.from, T.to, T.t);
+  tossFish.position.y += Math.sin(Math.PI * T.t) * 1.6;
+  tossFish.rotation.x += dt * 10;
+  if (T.t < 1) return;
+  tossFish.visible = false;
+  carry.toss = null;
+  cat.awakeT = 6; cat.eatT = 2.4;
+  bubble(cat.g, '喵～', .62);
+  setTimeout(() => bubble(cat.g, '♥', .62), 2400);
+  const n = num('sanasai_catfed') + 1;
+  ls.set('sanasai_catfed', String(n));
+  addLog('pet', `餵花捲吃了一條魚（第 ${n} 條）`);
+}
+
+/* 能量劍打小蜜蜂：靠近小蜜蜂機台，蜜蜂會從螢幕飛出來朝你俯衝；揮劍打中就碎成像素 */
+const divers = [], bits = [], DIVE_R = 7;
+let diveCD = 2.5, combo = 0, comboT = 0;
+const _dv = new THREE.Vector3(), _sw = new THREE.Vector3(), _prev = new THREE.Vector3();
+function bez(out, a, b, c, d, k) {   // 三次貝茲曲線
+  const u = 1 - k;
+  return out.set(0, 0, 0).addScaledVector(a, u * u * u).addScaledVector(b, 3 * u * u * k).addScaledVector(c, 3 * u * k * k).addScaledVector(d, k * k * k);
+}
+function spawnDiver() {
+  let d = divers.find(q => !q.on);
+  if (!d) {
+    const g = new THREE.Group(), w1 = new THREE.Mesh(swarm.wings.geometry, swarm.wings.material), w2 = new THREE.Mesh(swarm.wings.geometry, swarm.wings.material);
+    g.add(new THREE.Mesh(swarm.body.geometry, MAT.solid), w1, w2);
+    w1.position.set(.16, .12, 0);
+    w2.position.set(-.16, .12, 0); w2.rotation.y = Math.PI;
+    scene.add(g);
+    d = { g, w1, w2, on: false, k: 0, p: [0, 1, 2, 3, 4, 5, 6].map(() => new THREE.Vector3()) };
+    divers.push(d);
+  }
+  const G = CAB.bee.G, av = avatar.position, P = d.p, side = rnd() < .5 ? -1 : 1;
+  G.localToWorld(P[0].copy(BEE_CURVE.getPointAt(.03)));   // 從螢幕裡飛出來
+  const top = G.localToWorld(new THREE.Vector3(0, 7.5, 0));
+  const dir = _dv.set(av.x - P[0].x, 0, av.z - P[0].z).normalize();
+  P[3].set(av.x - dir.z * .45 * side, av.y + 1.25, av.z + dir.x * .45 * side);   // 從頭邊擦過去
+  P[1].copy(P[0]).add(new THREE.Vector3(dir.x * 1.5, 2.6, dir.z * 1.5));
+  P[2].copy(P[3]).add(new THREE.Vector3(-dir.x * 2.2, 1.4, -dir.z * 2.2));
+  P[4].copy(P[3]).add(new THREE.Vector3(dir.x * 2.5, .6, dir.z * 2.5));
+  P[5].copy(top).add(new THREE.Vector3(dir.x * 3, 2.5, dir.z * 3));
+  P[6].copy(top);
+  d.on = true; d.k = 0;
+  d.g.visible = true; d.g.scale.setScalar(1);
+  d.g.position.copy(P[0]);
+}
+function swing() {
+  if (AV.swingT > 0 || flight.phase) return;
+  AV.swingT = .45;
+  let best = null, bd = 3.5;   // 附近有俯衝的蜜蜂就轉向牠
+  for (const d of divers) {
+    if (!d.on) continue;
+    const dd = Math.hypot(d.g.position.x - avatar.position.x, d.g.position.z - avatar.position.z);
+    if (dd < bd) { bd = dd; best = d; }
+  }
+  if (best) avatar.rotation.y = Math.atan2(best.g.position.x - avatar.position.x, best.g.position.z - avatar.position.z);
+}
+const BIT_GEO = new THREE.BoxGeometry(.11, .11, .11), BIT_MATS = [0xf5c518, 0x2a2a35, 0xe63946, 0xffffff].map(c => new THREE.MeshBasicMaterial({ color: c }));
+function pixelBurst(pos) {
+  for (let i = 0; i < 16; i++) {
+    let b = bits.find(q => q.t <= 0);
+    if (!b) { b = { m: new THREE.Mesh(BIT_GEO, BIT_MATS[0]), v: new THREE.Vector3(), t: 0 }; scene.add(b.m); bits.push(b); }
+    b.m.material = BIT_MATS[i % 4];
+    b.m.position.copy(pos);
+    b.m.scale.setScalar(1);
+    b.m.visible = true;
+    b.v.set(rnd() - .5, rnd() * .9 + .2, rnd() - .5).normalize().multiplyScalar(3 + rnd() * 3);
+    b.t = .7;
+  }
+}
+function updateDivers(dt, t) {
+  if (!swarm) return;
+  const av = avatar.position, door = GAME.bee.door;
+  if (Math.hypot(av.x - door[0], av.z - door[1]) < DIVE_R && !uiLock() && !flight.phase && (diveCD -= dt) <= 0 && divers.filter(d => d.on).length < 2) { spawnDiver(); diveCD = 1.6 + rnd() * 1.6; }
+  if ((comboT -= dt) <= 0) combo = 0;
+  const striking = AV.swingT > 0 && AV.swingT < .33;   // 揮下去的那一段才算
+  _sw.set(av.x + Math.sin(avatar.rotation.y) * .55, av.y + 1.15, av.z + Math.cos(avatar.rotation.y) * .55);
+  for (const d of divers) {
+    if (!d.on) continue;
+    d.k += dt / (d.k < 1 ? 1.3 : 1.4);
+    _prev.copy(d.g.position);
+    if (d.k < 1) bez(d.g.position, d.p[0], d.p[1], d.p[2], d.p[3], d.k);
+    else bez(d.g.position, d.p[3], d.p[4], d.p[5], d.p[6], Math.min(1, d.k - 1));
+    d.g.lookAt(_dv.copy(d.g.position).multiplyScalar(2).sub(_prev));
+    const f = Math.sin(t * 30) * .8;
+    d.w1.rotation.z = f; d.w2.rotation.z = f;
+    if (d.k > 1.75) d.g.scale.setScalar(Math.max(.01, (2 - d.k) / .25));
+    if (d.k >= 2) { d.on = false; d.g.visible = false; continue; }
+    if (striking && d.g.position.distanceTo(_sw) < 1.5) {
+      pixelBurst(d.g.position);
+      d.on = false; d.g.visible = false;
+      combo++; comboT = 2.5;
+      bubble(avatar, combo > 1 ? `擊落 ×${combo}` : '擊落！', 2.3);
+      const n = num('sanasai_beehits') + 1;
+      ls.set('sanasai_beehits', String(n));
+      if (n === 1 || n === 10 || n % 50 === 0) addLog('pet', `用能量劍打下第 ${n} 隻小蜜蜂`);
+    }
+  }
+  for (const b of bits) {
+    if (b.t <= 0) continue;
+    b.t -= dt;
+    b.v.y -= 9.8 * dt;
+    b.m.position.addScaledVector(b.v, dt);
+    b.m.scale.setScalar(Math.max(.01, b.t / .7));
+    if (b.t <= 0) b.m.visible = false;
   }
 }
 const dolphins = [], DOL_R = 23.5;
@@ -1896,21 +2167,23 @@ function petPos(id) {
   const v = new THREE.Vector3();
   return ({ dog: dog.g, cat: cat.g, crab: crabs[0].g, blob: blob.g, dolphin: dolphins[0].g })[id].getWorldPosition(v);
 }
-function petTap(id) {
-  if (id === 'me') { if (AV.swingT <= 0) AV.swingT = .45; return; }
+function petTap(id, fromList = false) {
+  if (id === 'me') return swing();
   if (id === 'dog') {
     const D = dog;
     if (D.state === 'sleep') { bubble(D.g, 'Zzz…', 1.1); return; }
+    if (!fromList) return throwBall();   // 在島上點阿滿＝丟球；從清單點只是打招呼
     D.petT = 2; D.state = D.state === 'follow' ? 'follow' : 'idle'; D.t = 3; D.path = null;
     turnTo(D.g, avatar.position.x - D.g.position.x, avatar.position.z - D.g.position.z, 1);
     bubble(D.g, '汪！', 1.25);
-  } else if (id === 'cat') { cat.awakeT = 4; bubble(cat.g, '喵', .62); }
+  } else if (id === 'cat') { if (carry.color !== null && !fromList) return feedCat(); cat.awakeT = 4; bubble(cat.g, '喵', .62); }
   else if (id === 'blob') { blob.hop = 0; blob.body.position.y = .25; bubble(blob.g, '♪', 1.0); }
   else if (id.startsWith('crab')) { const c = crabs[+id.slice(4) || 0]; c.hide = 3; }
   else if (id.startsWith('dolphin')) { const d = dolphins[+id.slice(7) || 0]; if (d.jump < 0) d.jumpT = 0; }
+  else if (id.startsWith('fish')) catchFish(fishes[+id.slice(4)]);
 }
 function focusPet(id) {
-  if (!RESIDENTS.some(r => r.id === id)) return;
+  if (state.flying || !RESIDENTS.some(r => r.id === id)) return;
   if (isMobile()) { ui.side = false; syncLayout(); }
   closeCard();
   follow = false;
@@ -1919,9 +2192,9 @@ function focusPet(id) {
   t.y += id === 'cat' ? .4 : .6;
   const off = camera.position.clone().sub(controls.target).setLength((isMobile() ? 1.3 : 1) * (id === 'dolphin' ? 16 : id === 'cat' ? 7 : 10));
   if (off.y < 4) off.y = 4;
-  flyTo({ pos: t.clone().add(off), target: t }, 1.1, () => petTap(id));
+  flyTo({ pos: t.clone().add(off), target: t }, 1.1, () => petTap(id, true));
 }
-function updatePets(dt, t) { updateDog(dt, t); updateCat(dt, t); updateCrabs(dt, t); updateBlob(dt, t); updateFish(dt); updateDolphins(dt, t); updateSplashes(dt); }
+function updatePets(dt, t) { updateDog(dt, t); updateCat(dt, t); updateCrabs(dt, t); updateBlob(dt, t); updateFish(dt); updateDolphins(dt, t); updateSplashes(dt); updateBall(dt); updateCarry(dt); updateDivers(dt, t); }
 
 /* ---------- 日夜（預設跟著現在時間） ---------- */
 const DAY = [
@@ -2062,9 +2335,9 @@ function updateCamera(dt) {
 
 /* ---------- 介面狀態 ---------- */
 const ui = { side: !isMobile(), sidePref: true, card: false, log: false, tab: 'places', logTab: 'log', full: false };
-const state = { selected: null, nearGame: null, names: true, freeze: reduced, bird: false, inGame: false, inEnding: false, intro: false };
+const state = { selected: null, nearGame: null, names: true, freeze: reduced, bird: false, inGame: false, inEnding: false, intro: false, flying: false };
 let landed = false;
-const uiLock = () => state.inGame || state.inEnding;
+const uiLock = () => state.inGame || state.inEnding || state.flying;
 function syncLayout() {
   body.classList.toggle('side-closed', !ui.side);
   body.classList.toggle('card-open', ui.card);
@@ -2097,7 +2370,7 @@ function closeCard(sync = true) {
 /* ---------- 地點選取 ---------- */
 function selectPlace(id, { walkThere = true } = {}) {
   const P = PLACE[id];
-  if (!P || (id === 'gate' && !gate.visible)) return;
+  if (!P || (id === 'gate' && !gate.visible) || state.flying) return;
   state.selected = id;
   follow = false;
   if (state.bird) setBird(false, false);
@@ -2114,12 +2387,14 @@ function markActive() {
   $$('#dock button, .idx[data-place]').forEach(b => b.classList.toggle('active', b.dataset.place === state.selected));
 }
 function overview() {
+  if (state.flying) return;
   follow = false;
   if (state.bird) setBird(false, false);
   closeCard();
   flyTo(overviewPose());
 }
 function setBird(on, move = true) {
+  if (state.flying) return;
   state.bird = on;
   controls.minPolarAngle = on ? 0 : .12;
   $$('[data-toggle=bird]').forEach(b => b.setAttribute('aria-pressed', String(on)));
@@ -2226,7 +2501,7 @@ function renderCard() {
   } else if (id === 'pier') {
     h += `<div class="sec">入口石碑</div>` + (steleRead ? `<p class="quote" style="--c:#5c6570">霓虹照不到的暗處，沉著第三把鑰匙。</p>` : `<div class="empty">石碑上刻了字，走近才看得清楚。</div>`);
     if (keyState.coin) h += `<div class="sec">25¢ 復活幣</div><p class="lead" style="margin-top:0">穿過隱嶼之門的紀念，從此留在碼頭邊。</p>`;
-    actions = `<button class="btn primary" data-act="walk">${svg('walk')}走到石碑前</button>`;
+    actions = `<button class="btn primary" data-act="fly">${svg('pier')}搭飛船繞島一圈</button><button class="btn" data-act="walk">${svg('walk')}走到石碑前</button>`;
   } else if (id === 'gate') {
     actions = `<button class="btn primary" data-act="gate">${svg('walk')}走進門裡</button>`;
   }
@@ -2247,7 +2522,7 @@ const LOG_KEY = 'sanasai_log', SEEN_KEY = 'sanasai_seen';
 let logItems = ls.json(LOG_KEY, []);
 for (const it of logItems) if (typeof it.text === 'string') it.text = it.text.replace(/沙那賽/g, '隱嶼');   // 改名前寫下的日誌換成新島名
 if (!Array.isArray(logItems)) logItems = [];
-const TAG = { land: ['land', '登島'], rec: ['rec', '紀錄'], key: ['key', '鑰匙'], play: ['play', '遊玩'], gate: ['gate', '門'] };
+const TAG = { land: ['land', '登島'], rec: ['rec', '紀錄'], key: ['key', '鑰匙'], play: ['play', '遊玩'], gate: ['gate', '門'], ship: ['ship', '飛船'], pet: ['pet', '島民'] };
 function addLog(tag, text) {
   logItems.unshift({ t: Date.now(), tag, text });
   logItems = logItems.slice(0, 80);
@@ -2364,18 +2639,19 @@ function toast(text, tone = '') {
   toastTimer = setTimeout(() => { toastEl.className = 'toast ' + tone; }, 2800);
 }
 const hintEl = $('#hint'), hintText = $('#hint-text');
-let hintKey = '';
+let hintKey = '', hintAction = null;
 const DEFAULT_HINT = isTouch ? '點地面走路・點機台看介紹' : '點地面走路・點機台看介紹・方向鍵也能走';
-function setHint(key, text, cls = '') {
+function setHint(key, text, cls = '', action = null) {
   if (key === hintKey) return;
-  hintKey = key;
+  hintKey = key; hintAction = action;
   hintText.textContent = text;
   hintEl.className = 'hint panel ' + cls;
 }
-hintEl.addEventListener('click', () => { if (state.nearGame) enterGame(GAME[state.nearGame]); });
+hintEl.addEventListener('click', () => hintAction && hintAction());
 
 /* ---------- 接近偵測 ---------- */
 function updateProximity() {
+  if (flight.phase) { setHint('flight', isTouch ? '飛行中・點這裡提早回碼頭' : '飛行中・按 Esc（或點這裡）提早回碼頭', 'prompt', skipFlight); return; }
   const ax = avatar.position.x, az = avatar.position.z, dist = (x, z) => Math.hypot(ax - x, az - z);
   state.nearGame = null;
   for (const g of GAMES) if (dist(g.door[0], g.door[1]) < 1.9) state.nearGame = g.id;
@@ -2390,10 +2666,17 @@ function updateProximity() {
   if (gate.visible && !keyState.coin && !state.inEnding && dist(PLACE.gate.at[0], PLACE.gate.at[1]) < 1.25) openEnding();
   const nearStele = dist(STELE[0], STELE[1]) < 2.4;
   if (nearStele && !steleRead) { steleRead = true; ls.set('sanasai_stele', '1'); renderAll(); }
-  if (state.nearGame) setHint('g:' + state.nearGame, isTouch ? `點這裡開始玩《${GAME[state.nearGame].name}》` : `按 Enter（或點這裡）開始玩《${GAME[state.nearGame].name}》`, 'prompt');
+  const bee = GAME.bee.door, D = dog, dogFree = night <= .85 && !['sleep', 'bed', 'fetch', 'bring'].includes(D.state);
+  if (carry.color !== null && dist(bee[0], bee[1]) < 2.6) feedCat();
+  if (divers.some(d => d.on)) setHint('bees', isTouch ? '蜜蜂俯衝過來了！點這裡揮劍' : '蜜蜂俯衝過來了！按空白鍵（或點這裡）揮劍', 'prompt', swing);
+  else if (state.nearGame) setHint('g:' + state.nearGame, isTouch ? `點這裡開始玩《${GAME[state.nearGame].name}》` : `按 Enter（或點這裡）開始玩《${GAME[state.nearGame].name}》`, 'prompt', () => enterGame(GAME[state.nearGame]));
+  else if (dist(RAMP_PTS[0][0], RAMP_PTS[0][2]) < 1.6) setHint('board', isTouch ? '點這裡登船，繞島飛一圈' : '按 Enter（或點這裡）登船，繞島飛一圈', 'prompt', startFlight);
   else if (nearStele) setHint('stele', '石碑：「霓虹照不到的暗處，沉著第三把鑰匙。」', 'lore');
   else if (!keyState.crystal && dc < 6.5) setHint('dark', dc < 3 ? '岩洞深處有什麼在發光……' : '這裡好暗……', 'lore');
   else if (gate.visible && !keyState.coin && dist(PLACE.gate.at[0], PLACE.gate.at[1]) < 5) setHint('gate', '隱嶼之門──走進去', 'prompt');
+  else if (carry.color !== null) setHint('carry', '手上有魚：帶去小蜜蜂機台給花捲', 'prompt', () => walkTo(bee[0], bee[1], { follow: true, mark: true }));
+  else if (dogFree && fetchN < 3 && dist(D.g.position.x, D.g.position.z) < 3.2) setHint('dog', '點阿滿，丟球給牠撿', '', throwBall);
+  else if (onPier(ax, az)) setHint('fish', '魚跳出水面時點牠，就能抓到', 'lore');
   else setHint('default', DEFAULT_HINT);
 }
 
@@ -2489,6 +2772,7 @@ document.addEventListener('click', e => {
   if (el.dataset.place) return selectPlace(el.dataset.place);
   const act = el.dataset.act, id = state.selected;
   if (act === 'play') enterGame(GAME[id]);
+  if (act === 'fly') startFlight();
   if (act === 'walk') { walkTo(STELE[0] + .6, STELE[1] + 1.4, { follow: true, mark: true }); if (isMobile()) closeCard(); }
   if (act === 'gate') { walkTo(PLACE.gate.at[0], PLACE.gate.at[1], { follow: true, mark: true }); if (isMobile()) closeCard(); }
 });
@@ -2520,7 +2804,8 @@ addEventListener('pointercancel', () => { dragging = false; down = null; });
 addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (e.key === 'Escape') {
-    if (state.inGame) closeGame();
+    if (flight.phase) skipFlight();
+    else if (state.inGame) closeGame();
     else if (state.intro) closeIntro();
     else if (ui.card) closeCard();
     else if (ui.log) openLog(false);
@@ -2533,7 +2818,10 @@ addEventListener('keydown', e => {
     keysDown[k] = true;
     e.preventDefault();
   }
-  if (e.key === 'Enter' && state.nearGame && (document.activeElement === body || document.activeElement === renderer.domElement)) enterGame(GAME[state.nearGame]);
+  const onStage = document.activeElement === body || document.activeElement === renderer.domElement;
+  if (e.key === 'Enter' && state.nearGame && onStage) enterGame(GAME[state.nearGame]);
+  else if (e.key === 'Enter' && hintKey === 'board' && onStage) startFlight();
+  if (e.code === 'Space' && onStage) { e.preventDefault(); swing(); }
   if (DEBUG) {
     if (e.key === '7') { ls.set('bee_hi_normal', String(BEE_TARGET + 500)); toast('DEBUG：偽造小蜜蜂紀錄'); refresh(); }
     if (e.key === '8') { ls.set('tetris2_best_marathon', String(MARATHON_TARGET + 500)); toast('DEBUG：偽造 Blocks 紀錄'); refresh(); }
@@ -2572,6 +2860,159 @@ addEventListener('pageshow', e => { if (e.persisted) refresh(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden && !state.inGame) refresh(); });
 addEventListener('storage', e => { if (e.key && !e.key.startsWith('sanasai_')) refresh(); });
 
+/* ---------- 搭飛船繞島一圈：走上坡道 → 起飛 → 繞島（經過三台機台）→ 跳光速回到島的另一頭 → 降落、走下坡道 ---------- */
+const flight = { phase: null, t: 0, walking: false, yaw: Math.PI, bank: 0, speed: 0, jumped: false, from: new THREE.Vector3() };
+const V3 = a => new THREE.Vector3(...a);
+const TOUR = new THREE.CatmullRomCurve3([[SHIP.x, 4, SHIP.z], [9.5, 6.5, 24], [19, 8.5, 12], [14.5, 10, 2], [8.8, 11, -1.5], [6.3, 12, -11.5], [-2, 12.5, -18], [-12, 10.5, -13.5], [-9.5, 9, -3], [-17, 8, 6], [-10, 7.5, 22]].map(V3), false, 'centripetal');
+const HOME = new THREE.CatmullRomCurve3([[-3, 13, -12], [.5, 10, 3], [3.5, 6, 13.5], [SHIP.x, 3.4, SHIP.z]].map(V3), false, 'centripetal');
+const FLY = { board: 1.4, lift: 2.2, tour: 18, warp: 1.6, home: 6, touch: 2.6, off: 1.3 };
+const _fp = new THREE.Vector3(), _ft = new THREE.Vector3(), _cp = new THREE.Vector3(), _cl = new THREE.Vector3();
+const warpCv = document.createElement('canvas');
+warpCv.id = 'warp';
+$('#app').appendChild(warpCv);
+const warpStars = Array.from({ length: 180 }, () => ({ a: rnd() * TAU, r: .03 + rnd() * .5, v: .4 + rnd() * .9, o: .4 + rnd() * .6 }));
+function drawWarp(k) {   // 星光從中心拉長成線，最亮時白光一閃
+  const dpr = Math.min(2, devicePixelRatio || 1), w = warpCv.width = innerWidth * dpr, h = warpCv.height = innerHeight * dpr, x = warpCv.getContext('2d');
+  const cx = w / 2, cy = h / 2, R = Math.hypot(cx, cy);
+  if (!reduced) {
+    x.lineCap = 'round';
+    for (const s of warpStars) {
+      const r1 = R * (s.r + k * k * 1.6 * s.v), r0 = Math.max(0, r1 - R * (.02 + k * .5 * s.v));
+      x.strokeStyle = `rgba(220,240,255,${Math.min(1, k * 2.2) * s.o})`;
+      x.lineWidth = (1 + k * 2.5 * s.v) * dpr;
+      x.beginPath();
+      x.moveTo(cx + Math.cos(s.a) * r0, cy + Math.sin(s.a) * r0);
+      x.lineTo(cx + Math.cos(s.a) * r1, cy + Math.sin(s.a) * r1);
+      x.stroke();
+    }
+  }
+  const flash = smooth(1 - Math.abs(k - .55) / .14);
+  if (flash > 0) { x.fillStyle = `rgba(236,246,255,${flash * .92})`; x.fillRect(0, 0, w, h); }
+}
+function startFlight() {
+  if (flight.phase || uiLock() || state.intro) return;
+  const [fx, , fz] = RAMP_PTS[0];
+  if (Math.hypot(avatar.position.x - fx, avatar.position.z - fz) > .5) {   // 先走到坡道腳下
+    if (walkTo(fx, fz, { follow: true, mark: true, onArrive: startFlight }) && isMobile()) closeCard();
+    return;
+  }
+  closeCard();
+  if (isMobile()) { ui.side = false; ui.log = false; syncLayout(); }
+  if (state.bird) setBird(false, false);
+  walk.path = null; follow = false; fly = null; controls.enabled = false;
+  state.flying = true;
+  Object.assign(flight, { phase: 'board', t: 0, walking: true, yaw: Math.PI, bank: 0 });
+  avatar.rotation.y = Math.PI / 2;   // 面向飛船
+}
+function skipFlight() {
+  if (flight.phase === 'tour') nextFlight('warp');
+  else if (flight.phase === 'home') nextFlight('touch');
+}
+function nextFlight(phase) {
+  const F = flight;
+  F.phase = phase; F.t = 0;
+  if (phase === 'warp') { F.jumped = false; F.speed = 8; warpCv.classList.add('on'); }
+  if (phase === 'touch') { F.from.copy(ship.position); flyTo(viewFor('pier'), 1.8); }
+}
+function alongRamp(k, back) {   // 沿坡道折線走（照長度分配時間）
+  const P = back ? [...RAMP_PTS].reverse() : RAMP_PTS, L = P.slice(1).map((q, i) => Math.hypot(q[0] - P[i][0], q[1] - P[i][1], q[2] - P[i][2]));
+  let s = k * L.reduce((a, b) => a + b, 0), i = 0;
+  while (i < L.length - 1 && s > L[i]) { s -= L[i]; i++; }
+  const f = Math.min(1, s / L[i]);
+  avatar.position.set(lerp(P[i][0], P[i + 1][0], f), lerp(P[i][1], P[i + 1][1], f), lerp(P[i][2], P[i + 1][2], f));
+}
+function poseShip(pos, tan, dt) {   // 船頭朝前進方向；轉彎時往內側傾、爬升時抬頭
+  let dy = Math.atan2(-tan.x, -tan.z) - flight.yaw;
+  while (dy > Math.PI) dy -= TAU;
+  while (dy < -Math.PI) dy += TAU;
+  const step = dy * Math.min(1, dt * 4);
+  flight.yaw += step;
+  flight.bank = lerp(flight.bank, clamp(step / Math.max(dt, 1e-3) * .5, -.55, .55), Math.min(1, dt * 3));
+  ship.position.copy(pos);
+  ship.rotation.set(Math.atan2(tan.y, Math.hypot(tan.x, tan.z)) * .7, flight.yaw, flight.bank);
+}
+function chaseCam(dt, rate) {   // 鏡頭跟在船後上方、稍微偏右舷
+  const s = Math.sin(flight.yaw), c = Math.cos(flight.yaw), p = ship.position, k = Math.min(1, dt * rate);
+  camera.position.lerp(_cp.set(p.x + s * 8.5 + c * 1.2, p.y + 3.6, p.z + c * 8.5 - s * 1.2), k);
+  controls.target.lerp(_cl.set(p.x - s * 6, p.y + .4, p.z - c * 6), k);
+  camera.lookAt(controls.target);
+}
+function endFlight() {
+  Object.assign(flight, { phase: null, walking: false });
+  state.flying = false;
+  avatar.position.set(RAMP_PTS[0][0], DECK_Y, RAMP_PTS[0][2]);
+  avatar.rotation.y = Math.PI;
+  controls.enabled = true;
+  const n = num('sanasai_flights') + 1;
+  ls.set('sanasai_flights', String(n));
+  addLog('ship', `搭飛船繞島一圈（第 ${n} 趟）`);
+  toast('繞島一圈，回到碼頭了');
+}
+function updateFlight(dt) {
+  const F = flight;
+  if (!F.phase) return;
+  F.t += dt;
+  if (F.phase === 'board' || F.phase === 'off') {
+    const k = Math.min(1, F.t / (F.phase === 'board' ? FLY.board : FLY.off));
+    alongRamp(k, F.phase === 'off');
+    avatar.rotation.y = F.phase === 'board' ? Math.PI / 2 : -Math.PI / 2;
+    if (k < 1) return;
+    if (F.phase === 'off') return endFlight();
+    avatar.visible = false; mePin.obj.visible = false; F.walking = false;
+    if (dog.state === 'follow' || Math.hypot(dog.g.position.x - avatar.position.x, dog.g.position.z - avatar.position.z) < 6) bubble(dog.g, '汪汪！', 1.25);
+    nextFlight('lift');
+  } else if (F.phase === 'lift') {   // 收坡道、垂直升空
+    const k = Math.min(1, F.t / FLY.lift);
+    ramp.scale.x = Math.max(.02, 1 - k / .3);
+    ship.position.set(SHIP.x, lerp(SHIP.y, 4, smooth(k)), SHIP.z);
+    ship.rotation.set(Math.sin(k * Math.PI) * .06, Math.PI, Math.sin(F.t * 6) * .02 * (1 - k));
+    chaseCam(dt, 1.2);
+    if (k >= 1) nextFlight('tour');
+  } else if (F.phase === 'tour') {
+    const k = Math.min(1, F.t / FLY.tour), u = Math.min(1, k < .12 ? k * k / .24 : (k - .06) / .94);   // 起步慢、之後等速
+    poseShip(TOUR.getPointAt(u, _fp), TOUR.getTangentAt(u, _ft), dt);
+    chaseCam(dt, 3);
+    if (k >= 1) nextFlight('warp');
+  } else if (F.phase === 'warp') {
+    const k = Math.min(1, F.t / FLY.warp);
+    if (k < .55) {   // 往前加速衝出去
+      F.speed = lerp(8, 70, k / .55);
+      ship.position.x -= Math.sin(F.yaw) * F.speed * dt;
+      ship.position.z -= Math.cos(F.yaw) * F.speed * dt;
+      chaseCam(dt, 1.5);
+    } else if (!F.jumped) {   // 白光最亮的那一刻換到島的另一頭
+      F.jumped = true;
+      HOME.getPointAt(0, _fp); HOME.getTangentAt(0, _ft);
+      F.yaw = Math.atan2(-_ft.x, -_ft.z); F.bank = 0;
+      poseShip(_fp, _ft, dt);
+      const s = Math.sin(F.yaw), c = Math.cos(F.yaw);
+      camera.position.set(_fp.x + s * 8.5, _fp.y + 3.6, _fp.z + c * 8.5);
+      controls.target.set(_fp.x - s * 6, _fp.y + .4, _fp.z - c * 6);
+      camera.lookAt(controls.target);
+    }
+    drawWarp(k);
+    if (k >= 1) { warpCv.classList.remove('on'); nextFlight('home'); }
+  } else if (F.phase === 'home') {   // 從島的北邊飛過廣場，減速回到碼頭上空
+    const k = Math.min(1, F.t / FLY.home), u = 1 - (1 - k) * (1 - k);
+    poseShip(HOME.getPointAt(u, _fp), HOME.getTangentAt(u, _ft), dt);
+    chaseCam(dt, 3);
+    if (k >= 1) nextFlight('touch');
+  } else if (F.phase === 'touch') {   // 降落、轉回停靠方向、放下坡道
+    const k = Math.min(1, F.t / FLY.touch), e = smooth(k);
+    let dy = Math.PI - F.yaw;
+    while (dy > Math.PI) dy -= TAU;
+    while (dy < -Math.PI) dy += TAU;
+    ship.position.lerpVectors(F.from, _fp.set(SHIP.x, SHIP.y, SHIP.z), e);
+    ship.rotation.set(ship.rotation.x * (1 - e), F.yaw + dy * e, F.bank * (1 - e));
+    ramp.scale.x = k < .7 ? .02 : lerp(.02, 1, (k - .7) / .3);
+    if (k < 1) return;
+    F.yaw = Math.PI;
+    ship.rotation.set(0, Math.PI, 0);
+    avatar.visible = true; mePin.obj.visible = true; F.walking = true;
+    nextFlight('off');
+  }
+}
+
 /* ---------- 主迴圈 ---------- */
 const clock = new THREE.Clock();
 let elapsed = 0;
@@ -2586,8 +3027,11 @@ function updateAmbient(dt, t) {
   wp.needsUpdate = true;
   foam.material.opacity = .32 + .2 * Math.sin(t * 1.3);
   foam.scale.setScalar(1 + .006 * Math.sin(t * 1.3));
-  ship.position.y = SHIP.y + Math.sin(t * 1.1) * .045;
-  ship.rotation.z = Math.sin(t * .8) * .006;
+  if (!flight.phase) {
+    ship.position.y = SHIP.y + Math.sin(t * 1.1) * .045;
+    ship.rotation.z = Math.sin(t * .8) * .006;
+  }
+  shipGlow.color.setScalar(lerp(.9, 2.1, night) * (flight.phase ? 1.6 : 1));
   clouds.rotation.y = t * .004;
   for (const b of birds) {
     const u = b.userData, a = t * u.sp + u.ph;
@@ -2611,6 +3055,7 @@ function tick() {
   updateTime(dt);
   updateAvatar(dt);
   updateCamera(dt);
+  updateFlight(dt);
   if (!state.freeze) { updateAmbient(dt, elapsed); updatePets(dt, elapsed); }
   updateProximity();
   renderer.render(scene, camera);
@@ -2663,4 +3108,4 @@ tick();
 body.classList.remove('booting');
 
 /* 除錯／測試用的唯讀入口 */
-window.sanasai = { PLACE, GAMES, KEYS, CAB, keyState, state, ui, avatar, camera, controls, records: () => records, overflow: () => ({ bees: swarm && swarm.n, heap: heap && heap.layers, maze: mazeArea && mazeArea.n }), pets: () => ({ dog: dog.state, dogPos: dog.g.position.toArray().map(v => +v.toFixed(2)), cat: cat.awakeT > 0 || night > .6, crabs: crabs.map(c => +c.hide.toFixed(1)), blob: blob.state }), petTap, view: (pos, target) => { follow = false; fly = null; controls.enabled = true; camera.position.set(...pos); controls.target.set(...target); controls.update(); }, select: selectPlace, walkTo, overview, setTime, land, findPath, dolphins, ship };
+window.sanasai = { PLACE, GAMES, KEYS, CAB, keyState, state, ui, avatar, camera, controls, records: () => records, overflow: () => ({ bees: swarm && swarm.n, heap: heap && heap.layers, maze: mazeArea && mazeArea.n }), pets: () => ({ dog: dog.state, dogPos: dog.g.position.toArray().map(v => +v.toFixed(2)), cat: cat.awakeT > 0 || night > .6, crabs: crabs.map(c => +c.hide.toFixed(1)), blob: blob.state }), petTap, view: (pos, target) => { follow = false; fly = null; controls.enabled = true; camera.position.set(...pos); controls.target.set(...target); controls.update(); }, select: selectPlace, walkTo, overview, setTime, land, findPath, dolphins, ship, flight, startFlight, skipFlight, throwBall, fetchS, fishes, catchFish, feedCat, carry, swing, divers, spawnDiver, cat, dog };
