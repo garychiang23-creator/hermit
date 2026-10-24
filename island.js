@@ -248,6 +248,7 @@ const BASE = {
   dodeca: new THREE.DodecahedronGeometry(.5, 0),
   sphere: new THREE.SphereGeometry(.5, 14, 10),
   disc: new THREE.CylinderGeometry(.5, .5, 1, 32),
+  frust: new THREE.CylinderGeometry(.26, .5, 1, 28),   // 截頭圓錐（上窄下寬）
   octa: new THREE.OctahedronGeometry(.5, 0),
 };
 for (const k in BASE) {
@@ -532,41 +533,80 @@ function buildPier() {
   groundPick.push(hitBox({ walk: true }, [0, DECK_Y - .1, (z0 + z1) / 2], [w, .2, z1 - z0]));
   keep(0, 15.2, 2.6);
 }
-/* 碼頭邊的老飛船：圓盤船身、船頭兩支叉、右舷駕駛艙、船尾一排藍色引擎光。造型是致敬，網站上不寫名字。
+/* 碼頭邊的老飛船：圓盤船身、船頭兩支長叉、右舷駕駛艙、左舷雷達碟、中央砲塔、船尾一排藍色引擎光。造型是致敬，網站上不寫名字。
    船的局部座標：-z＝船頭、+x＝右舷；轉 180° 後船頭朝海，右舷（駕駛艙、登船坡道）朝碼頭 */
 const SHIP = { x: 4.35, y: 1.3, z: 19.4, r: 2.3 };   // z 讓坡道落在碼頭兩根木樁中間
 SHIP.a = Math.atan2(SHIP.z, SHIP.x);
 const ship = new THREE.Group();
 function buildShip() {
-  const R = SHIP.r, L = [], GL = [], hull = 0xd8d5cd, plate = 0xb7b4ac, dark = 0x575b62, rust = 0xa65a3f;
-  const topY = d => .5 * Math.sqrt(Math.max(0, 1 - (d / R) ** 2));   // 船殼上表面：中間厚、邊緣薄
-  part('sphere', [0, 0, 0], [R * 2, 1.0, R * 2], hull, { into: L });
-  part('disc', [0, 0, 0], [R * 2 + .1, .18, R * 2 + .1], plate, { into: L });
-  for (const sx of [-1, 1]) {
-    part('box', [sx * R * .36, 0, -R * 1.02], [R * .5, .26, R * .95], hull, { into: L });
-    part('box', [sx * R * .36, .14, -R * 1.06], [R * .36, .04, R * .78], plate, { into: L });
+  const R = SHIP.r, L = [], GL = [], hull = 0xd6d3cb, wall = 0xa4a199, plate = 0xbdbab2, line = 0x8e8b84, dark = 0x575b62, rust = 0xa65a3f;
+  // 船身：從上面看的整片輪廓（圓盤＋兩支叉，中間一道缺口）擠出厚度，側邊是一圈直立的機械牆。輪廓座標 (u, v)：u＝右舷、v＝船頭
+  const A = R * .62, B = R * .12, TIP = R * 1.78, CH = R * .12, SLOT = R * .9, J = Math.sqrt(R * R - A * A), a0 = Math.atan2(J, A);
+  const sh = new THREE.Shape();
+  sh.moveTo(A, J);
+  sh.absarc(0, 0, R, a0, Math.PI - a0, true);
+  for (const [u, v] of [[-A, TIP - CH], [-A + CH, TIP], [-B, TIP], [-B, SLOT], [B, SLOT], [B, TIP], [A - CH, TIP], [A, TIP - CH]]) sh.lineTo(u, v);   // 最後一段自動接回起點
+  const g = new THREE.ExtrudeGeometry(sh, { depth: R * .2, bevelEnabled: true, bevelThickness: R * .03, bevelSize: R * .03, bevelSegments: 1, curveSegments: 14 });
+  g.rotateX(-Math.PI / 2).translate(0, -R * .1, 0);   // (u, v, 厚度) → (x, y, z)＝(u, 厚度, -v)
+  g.deleteAttribute('uv');
+  const nm = g.attributes.normal, gc = new Float32Array(nm.count * 3), cTop = new THREE.Color(hull), cWall = new THREE.Color(wall);
+  for (let i = 0; i < nm.count; i += 3) {
+    const c = Math.abs(nm.getY(i)) > .5 ? cTop : cWall, k = 1 + (rnd() - .5) * .05;
+    for (let v = i; v < i + 3; v++) gc.set([c.r * k, c.g * k, c.b * k], v * 3);
   }
-  part('cyl', [R * .95, .06, -R * .5], [R * .3, R * .8, R * .3], hull, { into: L, rx: Math.PI / 2 });
-  part('cyl', [R * .95, .06, -R * .98], [R * .4, R * .32, R * .4], hull, { into: L, rx: Math.PI / 2 });
-  part('sphere', [R * .95, .06, -R * 1.14], [R * .4, R * .4, R * .2], hull, { into: L });
-  part('disc', [R * .95, .06, -R * 1.235], [R * .28, .04, R * .28], dark, { into: L, rx: Math.PI / 2 });
-  part('disc', [R * .95, .06, -R * 1.25], [R * .17, .03, R * .17], 0x5d8fb8, { into: GL, rx: Math.PI / 2 });   // 駕駛艙窗，晚上會亮
-  part('disc', [0, .5, 0], [R * .5, .1, R * .5], plate, { into: L });
-  part('box', [0, .58, 0], [R * .24, .1, R * .14], dark, { into: L });
-  const dx = R * .42, dz = -R * .42, dy = topY(Math.hypot(dx, dz));
-  part('cyl6', [dx, dy + .16, dz], [.08, .34, .08], dark, { into: L });
-  part('disc', [dx, dy + .38, dz], [R * .26, .04, R * .26], 0xcfcac0, { into: L, rx: -.8 });
-  for (let i = 0; i < 12; i++) {
-    const a = i / 12 * TAU + .26, d = R * (.5 + (i % 3) * .11);
-    part('box', [Math.sin(a) * d, topY(d) + .01, Math.cos(a) * d], [R * .2, .07, R * .1], i % 4 ? plate : dark, { into: L, ry: a });
+  g.setAttribute('color', new THREE.BufferAttribute(gc, 3));
+  L.push(g);
+  // 上下各一層往中間隆起的斜面；slopeY＝上斜面在半徑 r 處的高度
+  const yT = R * .13, slope = Math.atan2(R * .1, R * .466), slopeY = r => yT + R * .1 * clamp((R * .97 - r) / (R * .466), 0, 1);
+  part('frust', [0, yT + R * .05, 0], [R * 1.94, R * .1, R * 1.94], hull, { into: L, jit: .04 });
+  part('frust', [0, -yT - R * .04, 0], [R * 1.94, R * .08, R * 1.94], wall, { into: L, rx: Math.PI });
+  for (let i = 0; i < 16; i++) {   // 斜面上放射狀的接縫線，船頭中線那條讓給前面的長條
+    const t = i / 16 * TAU + .2;
+    if (Math.abs(t % TAU - Math.PI / 2) < .25) continue;
+    part('box', [Math.cos(t) * R * .735, slopeY(R * .735) + R * .006, -Math.sin(t) * R * .735], [R * .47, R * .012, R * .02], line, { into: L, ry: t, rz: -slope });
   }
-  for (const sx of [-1, 1]) part('box', [sx * R * .3, topY(R * .63) + .02, -R * .55], [R * .12, .05, R * .32], rust, { into: L, ry: sx * -.2 });
-  for (let i = 0; i < 9; i++) {
-    const a = (i - 4) / 4 * .9;
-    part('box', [Math.sin(a) * (R + .03), 0, Math.cos(a) * (R + .03)], [R * .23, .13, .1], 0x8fd8ff, { into: GL, ry: a });
+  // 中央：深色邊的圓台＋雙管砲塔
+  part('disc', [0, yT + R * .115, 0], [R * .9, R * .03, R * .9], line, { into: L });
+  part('disc', [0, yT + R * .13, 0], [R * .84, R * .04, R * .84], plate, { into: L });
+  part('cyl', [0, yT + R * .17, 0], [R * .34, R * .05, R * .34], dark, { into: L });
+  part('sphere', [0, yT + R * .2, 0], [R * .28, R * .14, R * .28], plate, { into: L });
+  for (const s of [-1, 1]) part('box', [s * R * .045, yT + R * .21, -R * .2], [R * .025, R * .025, R * .26], dark, { into: L });
+  // 船頭：兩支叉中間的長條、叉上的凸條和圓艙口
+  part('box', [0, slopeY(R * .72) + R * .035, -R * .72], [R * .26, R * .07, R * .5], plate, { into: L, rx: -slope });
+  for (const s of [-1, 1]) {
+    part('box', [s * R * .3, yT + R * .025, -R * 1.28], [R * .18, R * .05, R * .9], plate, { into: L });
+    for (const vz of [1.15, 1.5]) part('disc', [s * R * .51, yT + R * .006, -R * vz], [R * .12, R * .02, R * .12], dark, { into: L });
+  }
+  // 船尾上方三個圓口、兩塊紅漆、左舷對接環、側牆上的機械零件
+  for (const d of [-.45, 0, .45]) { const t = Math.PI * 1.5 + d; part('disc', [Math.cos(t) * R * .7, slopeY(R * .7) + R * .012, -Math.sin(t) * R * .7], [R * .16, R * .02, R * .16], dark, { into: L }); }
+  part('box', [R * .3, slopeY(R * .55) + R * .01, R * .38], [R * .16, R * .015, R * .1], rust, { into: L, ry: .6 });
+  part('box', [R * .62, slopeY(R * .72) + R * .01, -R * .35], [R * .12, R * .015, R * .18], rust, { into: L, ry: -.3 });
+  part('disc', [-R * 1.035, 0, R * .05], [R * .26, R * .03, R * .26], dark, { into: L, rz: Math.PI / 2 });
+  part('disc', [-R * 1.05, 0, R * .05], [R * .16, R * .02, R * .16], plate, { into: L, rz: Math.PI / 2 });
+  [120, 140, 160, 180, 200, 220, 240, 300, 320, 340].forEach((deg, k) => {
+    const t = deg * Math.PI / 180;
+    part('box', [Math.cos(t) * R * 1.035, R * (k % 2 ? .03 : -.04), -Math.sin(t) * R * 1.035], [R * .1, R * .07, R * .03], dark, { into: L, ry: t + Math.PI / 2 });
+  });
+  // 右舷駕駛艙：一截通道往前伸，前端是圓筒＋錐形鼻，正面是蜘蛛網窗框
+  const cx = R * .98;
+  part('cyl', [cx, 0, -R * .255], [R * .26, R * .51, R * .26], hull, { into: L, rx: Math.PI / 2 });
+  for (const vz of [.15, .35]) part('cyl', [cx, 0, -R * vz], [R * .29, R * .03, R * .29], wall, { into: L, rx: Math.PI / 2 });
+  part('cyl', [cx + R * .02, 0, -R * .66], [R * .38, R * .3, R * .38], hull, { into: L, rx: Math.PI / 2 });
+  part('frust', [cx + R * .02, 0, -R * .87], [R * .38, R * .12, R * .38], hull, { into: L, rx: -Math.PI / 2 });
+  part('disc', [cx + R * .02, 0, -R * .935], [R * .2, R * .01, R * .2], dark, { into: L, rx: Math.PI / 2 });
+  part('disc', [cx + R * .02, 0, -R * .94], [R * .15, R * .005, R * .15], 0x5d8fb8, { into: GL, rx: Math.PI / 2 });   // 駕駛艙窗，晚上會亮
+  for (let k = 0; k < 6; k++) { const t = k * Math.PI / 3 + Math.PI / 6; part('box', [cx + R * .02 + Math.cos(t) * R * .045, Math.sin(t) * R * .045, -R * .945], [R * .09, R * .016, R * .006], plate, { into: L, rz: t }); }
+  // 左舷雷達碟（內圈深一點，看起來是凹的）
+  part('cyl6', [-R * .48, slopeY(R * .64) + R * .07, -R * .42], [R * .04, R * .14, R * .04], dark, { into: L });
+  part('disc', [-R * .48, slopeY(R * .64) + R * .15, -R * .42], [R * .24, R * .025, R * .24], 0xcfcac0, { into: L, rz: .55, rx: -.25 });
+  part('disc', [-R * .48, slopeY(R * .64) + R * .15, -R * .42], [R * .14, R * .03, R * .14], 0xa19d94, { into: L, rz: .55, rx: -.25 });
+  // 船尾一排引擎光
+  for (let i = 0; i < 11; i++) {
+    const t = Math.PI * 1.5 + (i - 5) / 5 * .96;
+    part('box', [Math.cos(t) * R * 1.04, 0, -Math.sin(t) * R * 1.04], [R * .215, R * .17, R * .03], 0x8fd8ff, { into: GL, ry: t + Math.PI / 2 });
   }
   // 登船坡道：從右舷船腹斜放到碼頭邊
-  const x0 = R * .72, y0 = -.32, x1 = SHIP.x - (PIER.x1 + .25), y1 = DECK_Y + .07 - SHIP.y;
+  const x0 = R * .74, y0 = -R * .17, x1 = SHIP.x - (PIER.x1 + .25), y1 = DECK_Y + .07 - SHIP.y;
   part('box', [(x0 + x1) / 2, (y0 + y1) / 2, R * .15], [Math.hypot(x1 - x0, y1 - y0), .07, .9], 0x6f737a, { into: L, rz: Math.atan2(y1 - y0, x1 - x0) });
   ship.add(merged(L, MAT.solid));
   ship.add(merged(GL, MAT.glow, false));
@@ -574,7 +614,7 @@ function buildShip() {
   ship.rotation.y = Math.PI;
   scene.add(ship);
   keep(SHIP.x, SHIP.z, R + .8);
-  pickables.push(hitBox({ place: 'pier' }, [SHIP.x, SHIP.y, SHIP.z + R * .25], [R * 2.3, 1.4, R * 2.5]));
+  pickables.push(hitBox({ place: 'pier' }, [SHIP.x - R * .08, SHIP.y, SHIP.z + R * .37], [R * 2.25, 1.4, R * 2.85]));
 }
 function buildStele() {
   const [x, z] = STELE, y = groundY(x, z), ry = .35;
