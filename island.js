@@ -1,4 +1,4 @@
-/* SANASAI 沙那賽 v2：一座島、三個遊戲（小蜜蜂／Blocks Pro／迷宮球）。
+/* HERMIT 隱嶼：一座島、三個遊戲（小蜜蜂／Blocks Pro／迷宮球）。網址、repo、存檔鍵沿用舊名 sanasai。
  * 同網域 localStorage 讀真實遊戲紀錄：島上的造景、三把鑰匙、日誌都跟著紀錄變。
  * 造景全部用程式拼（方塊、圓柱、錐），不載入任何模型檔。
  */
@@ -63,7 +63,7 @@ const INFO = {
   bee: { eyebrow: 'ARCADE', lead: '經典射擊街機。三種難度各自記分，打倒 Boss，每 3 萬分多一條命。', chips: ['三種難度', 'Boss 戰', '手機可玩'] },
   blocks: { eyebrow: 'PUZZLE', lead: '方塊消除。MARATHON 每 10 行升一級，SPRINT 40 比誰先清完 40 行，ULTRA 只有兩分鐘，ZEN 不會結束。', chips: ['四種模式', '手機可玩'] },
   maze: { eyebrow: 'TILT', lead: '傾斜手機讓球滾進終點；電腦用方向鍵。6 章 30 關，零失誤過關拿三顆星。', chips: ['陀螺儀', '6 章 30 關'] },
-  pier: { eyebrow: 'LANDING', lead: '渡海的小舟停在這裡。上岸第一眼看到的，是一塊刻了字的石碑。' },
+  pier: { eyebrow: 'LANDING', lead: '一艘老飛船停在碼頭邊，船尾的引擎還亮著藍光。上岸第一眼看到的，是一塊刻了字的石碑。' },
   gate: { eyebrow: 'FINALE', lead: '三把鑰匙到齊時，門才會出現。走進去。' },
 };
 
@@ -128,7 +128,7 @@ let steleRead = ls.get('sanasai_stele') === '1';
 const PLACE = {};
 GAMES.forEach((g, i) => { PLACE[g.id] = { id: g.id, no: pad2(i + 1), kind: 'game', name: g.name, en: g.en, color: g.color, at: g.at, door: g.door }; });
 PLACE.pier = { id: 'pier', no: pad2(GAMES.length + 1), kind: 'pier', name: '入口碼頭', en: 'PIER', color: '#1d7d8b', at: [0, 19.2], door: [0, 15.9] };
-PLACE.gate = { id: 'gate', no: pad2(GAMES.length + 2), kind: 'gate', name: '沙那賽之門', en: 'GATE', color: '#b8841f', at: [0, -11.4], door: [0, -9.8] };
+PLACE.gate = { id: 'gate', no: pad2(GAMES.length + 2), kind: 'gate', name: '隱嶼之門', en: 'GATE', color: '#b8841f', at: [0, -11.4], door: [0, -9.8] };
 const CAB_VIEW = {   // 機台座標系：look＝看的點，dir＝鏡頭在哪一側，el＝仰角
   bee: { look: [0, 5.0, .6], dir: [.3, 1], dist: 19, el: .42 },
   blocks: { look: [1.3, 2.9, 0], dir: [.25, 1], dist: 17, el: .55 },
@@ -143,7 +143,7 @@ const ICON = {
   bee: '<path d="M12 6.5c2.9 0 5 2.6 5 6s-2.1 6.5-5 6.5-5-3.1-5-6.5 2.1-6 5-6z"/><path d="M7.3 11h9.4M7.2 14.5h9.6"/><path d="M10.2 6.9C9 4.6 6.6 3.9 5.4 5.1s.2 3.8 2.4 4M13.8 6.9c1.2-2.3 3.6-3 4.8-1.8s-.2 3.8-2.4 4"/>',
   blocks: '<path d="M3.5 13.5H9V19H3.5zM9 13.5h5.5V19H9zM9 8h5.5v5.5H9zM14.5 8H20v5.5h-5.5z"/>',
   maze: '<rect x="3.5" y="3.5" width="17" height="17" rx="2.5"/><path d="M3.5 9.2H11M14.5 3.5v5.7M8 14.3h12.5M8 14.3v6.2M14.5 14.3v-2.2"/><circle cx="17.2" cy="17.6" r="1.4"/>',
-  pier: '<path d="M12 3v11M12 4.2l5.6 8.8H12"/><path d="M5 15.5c2.2 2.1 11.8 2.1 14 0"/><path d="M3 20c1.5-1 3-1 4.5 0s3 1 4.5 0 3-1 4.5 0 3 1 4.5 0"/>',
+  pier: '<circle cx="11" cy="11" r="5.2"/><circle cx="11" cy="11" r="1.5"/><path d="M9.6 6.2V2.6M12.4 6.2V2.6M15.9 8.6l.5-3.2"/><circle cx="16.6" cy="4.3" r="1.1"/><path d="M3 20c1.5-1 3-1 4.5 0s3 1 4.5 0 3-1 4.5 0 3 1 4.5 0"/>',
   gate: '<path d="M6 21V7.5M18 21V7.5M3.5 4.5h17M4.5 7.5h15M5 11h14"/>',
   key: '<circle cx="8" cy="8.5" r="4"/><path d="M11 11.5 20 20.5M15.5 16l2.2-2.2M18 18.5l2.2-2.2"/>',
   arrow: '<path d="M7 17 17 7M9 7h8v8"/>',
@@ -514,8 +514,7 @@ function buildPaths() {
   }
 }
 
-/* ---------- 入口碼頭、小舟、石碑 ---------- */
-const boat = new THREE.Group();
+/* ---------- 入口碼頭、老飛船、石碑 ---------- */
 function buildPier() {
   const { x0, x1, z0, z1 } = PIER, w = x1 - x0 + .5;
   let k = 0;
@@ -532,28 +531,50 @@ function buildPier() {
   }
   groundPick.push(hitBox({ walk: true }, [0, DECK_Y - .1, (z0 + z1) / 2], [w, .2, z1 - z0]));
   keep(0, 15.2, 2.6);
-
-  const L = [], hull = 0x1f2638;
-  part('box', [0, .12, 0], [2.0, .42, .9], hull, { into: L });
-  part('pyr', [1.32, .12, 0], [.42, .65, .9], hull, { into: L, rz: -Math.PI / 2 });
-  part('pyr', [-1.18, .12, 0], [.42, .38, .9], hull, { into: L, rz: Math.PI / 2 });
-  part('box', [0, .34, 0], [1.9, .05, .74], 0x9b7350, { into: L });
-  part('cyl6', [.1, 1.3, 0], [.07, 2.0, .07], 0x3a2e24, { into: L });
-  boat.add(merged(L, MAT.solid));
-  const sg = new THREE.BufferGeometry();
-  sg.setAttribute('position', new THREE.Float32BufferAttribute([.1, .55, 0, .1, 2.2, 0, -.95, .6, 0], 3));
-  sg.computeVertexNormals();
-  const sail = new THREE.Mesh(sg, new THREE.MeshStandardMaterial({ color: 0xe8e3d0, side: THREE.DoubleSide, roughness: .9 }));
-  sail.castShadow = true;
-  boat.add(sail);
-  const lamp = new THREE.Mesh(BASE.box, glowMat(0xffb066));
-  lamp.scale.setScalar(.17);
-  lamp.position.set(-1.0, .58, 0);
-  boat.add(lamp);
-  boat.position.set(1.95, 0, 21.4);
-  boat.rotation.y = Math.PI / 2;
-  scene.add(boat);
-  pickables.push(hitBox({ place: 'pier' }, [1.95, .8, 21.4], [1.1, 2.4, 3.0]));
+}
+/* 碼頭邊的老飛船：圓盤船身、船頭兩支叉、右舷駕駛艙、船尾一排藍色引擎光。造型是致敬，網站上不寫名字。
+   船的局部座標：-z＝船頭、+x＝右舷；轉 180° 後船頭朝海，右舷（駕駛艙、登船坡道）朝碼頭 */
+const SHIP = { x: 4.35, y: 1.3, z: 19.4, r: 2.3 };   // z 讓坡道落在碼頭兩根木樁中間
+SHIP.a = Math.atan2(SHIP.z, SHIP.x);
+const ship = new THREE.Group();
+function buildShip() {
+  const R = SHIP.r, L = [], GL = [], hull = 0xd8d5cd, plate = 0xb7b4ac, dark = 0x575b62, rust = 0xa65a3f;
+  const topY = d => .5 * Math.sqrt(Math.max(0, 1 - (d / R) ** 2));   // 船殼上表面：中間厚、邊緣薄
+  part('sphere', [0, 0, 0], [R * 2, 1.0, R * 2], hull, { into: L });
+  part('disc', [0, 0, 0], [R * 2 + .1, .18, R * 2 + .1], plate, { into: L });
+  for (const sx of [-1, 1]) {
+    part('box', [sx * R * .36, 0, -R * 1.02], [R * .5, .26, R * .95], hull, { into: L });
+    part('box', [sx * R * .36, .14, -R * 1.06], [R * .36, .04, R * .78], plate, { into: L });
+  }
+  part('cyl', [R * .95, .06, -R * .5], [R * .3, R * .8, R * .3], hull, { into: L, rx: Math.PI / 2 });
+  part('cyl', [R * .95, .06, -R * .98], [R * .4, R * .32, R * .4], hull, { into: L, rx: Math.PI / 2 });
+  part('sphere', [R * .95, .06, -R * 1.14], [R * .4, R * .4, R * .2], hull, { into: L });
+  part('disc', [R * .95, .06, -R * 1.235], [R * .28, .04, R * .28], dark, { into: L, rx: Math.PI / 2 });
+  part('disc', [R * .95, .06, -R * 1.25], [R * .17, .03, R * .17], 0x5d8fb8, { into: GL, rx: Math.PI / 2 });   // 駕駛艙窗，晚上會亮
+  part('disc', [0, .5, 0], [R * .5, .1, R * .5], plate, { into: L });
+  part('box', [0, .58, 0], [R * .24, .1, R * .14], dark, { into: L });
+  const dx = R * .42, dz = -R * .42, dy = topY(Math.hypot(dx, dz));
+  part('cyl6', [dx, dy + .16, dz], [.08, .34, .08], dark, { into: L });
+  part('disc', [dx, dy + .38, dz], [R * .26, .04, R * .26], 0xcfcac0, { into: L, rx: -.8 });
+  for (let i = 0; i < 12; i++) {
+    const a = i / 12 * TAU + .26, d = R * (.5 + (i % 3) * .11);
+    part('box', [Math.sin(a) * d, topY(d) + .01, Math.cos(a) * d], [R * .2, .07, R * .1], i % 4 ? plate : dark, { into: L, ry: a });
+  }
+  for (const sx of [-1, 1]) part('box', [sx * R * .3, topY(R * .63) + .02, -R * .55], [R * .12, .05, R * .32], rust, { into: L, ry: sx * -.2 });
+  for (let i = 0; i < 9; i++) {
+    const a = (i - 4) / 4 * .9;
+    part('box', [Math.sin(a) * (R + .03), 0, Math.cos(a) * (R + .03)], [R * .23, .13, .1], 0x8fd8ff, { into: GL, ry: a });
+  }
+  // 登船坡道：從右舷船腹斜放到碼頭邊
+  const x0 = R * .72, y0 = -.32, x1 = SHIP.x - (PIER.x1 + .25), y1 = DECK_Y + .07 - SHIP.y;
+  part('box', [(x0 + x1) / 2, (y0 + y1) / 2, R * .15], [Math.hypot(x1 - x0, y1 - y0), .07, .9], 0x6f737a, { into: L, rz: Math.atan2(y1 - y0, x1 - x0) });
+  ship.add(merged(L, MAT.solid));
+  ship.add(merged(GL, MAT.glow, false));
+  ship.position.set(SHIP.x, SHIP.y, SHIP.z);
+  ship.rotation.y = Math.PI;
+  scene.add(ship);
+  keep(SHIP.x, SHIP.z, R + .8);
+  pickables.push(hitBox({ place: 'pier' }, [SHIP.x, SHIP.y, SHIP.z + R * .25], [R * 2.3, 1.4, R * 2.5]));
 }
 function buildStele() {
   const [x, z] = STELE, y = groundY(x, z), ry = .35;
@@ -1044,7 +1065,7 @@ function buildGrotto() {
   scene.add(crystal.group);
 }
 
-/* ---------- 沙那賽之門、25¢ 復活幣、鑰匙基座 ---------- */
+/* ---------- 隱嶼之門、25¢ 復活幣、鑰匙基座 ---------- */
 const gate = new THREE.Group(), gateLight = new THREE.PointLight(0xffd27a, 0, 14, 1.5);
 let gateShimmer = null;
 function buildGate() {
@@ -1239,6 +1260,7 @@ function addPin(id, html, color, [x, y, z], onClick, cls = '') {
 buildPlaza();
 buildPaths();
 buildPier();
+buildShip();
 buildStele();
 buildArch();
 for (const g of GAMES) { const cab = buildCabinet(g); ({ bee: buildSwarm, blocks: buildHeap, maze: buildMazeArea }[g.id] || (() => {}))(cab); }
@@ -1393,7 +1415,7 @@ const AV = {};
   AV.halo.position.y = .05;
   avatar.add(AV.halo);
 }
-avatar.position.set(0, DECK_Y, 21.6);
+avatar.position.set(.3, DECK_Y, 19.1);   // 飛船坡道腳下
 avatar.rotation.y = Math.PI;
 scene.add(avatar);
 const mePin = addPin('me', '你', null, [0, 0, 0], null, 'me');
@@ -1764,7 +1786,7 @@ function updateFish(dt) {
     if (f.u < 0) {
       if ((f.t -= dt) > 0) continue;
       const a = rnd() * TAU, r = islandR(a) * (1.07 + rnd() * .25), x = Math.cos(a) * r, z = Math.sin(a) * r;
-      if (Math.abs(x) < 3.5 && z > 14) { f.t = .5; continue; }   // 不要跳在碼頭上
+      if ((Math.abs(x) < 3.5 && z > 14) || Math.hypot(x - SHIP.x, z - SHIP.z) < SHIP.r + 2) { f.t = .5; continue; }   // 不要跳在碼頭上或飛船底下
       const h = rnd() * TAU;
       f.from.set(x, 0, z); f.dir.set(Math.cos(h), 0, Math.sin(h));
       f.u = 0; f.g.visible = true;
@@ -1800,7 +1822,8 @@ for (let i = 0; i < 3; i++) {
 function updateDolphins(dt, t) {
   for (const d of dolphins) {
     d.a += dt * .07;
-    const R = DOL_R + d.lane, x = Math.cos(d.a) * R, z = Math.sin(d.a) * R;
+    const off = Math.atan2(Math.sin(d.a - SHIP.a), Math.cos(d.a - SHIP.a));   // 經過飛船那一段往外繞
+    const R = DOL_R + d.lane + smooth(1 - Math.abs(off) / .4) * 4, x = Math.cos(d.a) * R, z = Math.sin(d.a) * R;
     let y = -.18 + Math.sin(t * 1.6 + d.lane) * .07, pitch = Math.sin(t * 1.6 + d.lane) * .08;
     if (d.jump >= 0) {
       d.jump = Math.min(1, d.jump + dt / 1.3);
@@ -2079,7 +2102,7 @@ function subline(id) {
   if (id === 'bee') return r.bee.best ? `最高分 ${fmt(r.bee.best)}` : '還沒有紀錄';
   if (id === 'blocks') return r.blocks.marathon ? `MARATHON ${fmt(r.blocks.marathon)}` : r.blocks.sprint ? `SPRINT 40 ${fmtTime(r.blocks.sprint)}` : '還沒有紀錄';
   if (id === 'maze') return r.maze.cleared ? `通過 ${r.maze.cleared} 關・★ ${r.maze.stars}` : '還沒有紀錄';
-  if (id === 'pier') return '渡海的小舟・入口石碑';
+  if (id === 'pier') return '老飛船・入口石碑';
   if (id === 'gate') return '三鑰齊聚，門已開啟';
   return '';
 }
@@ -2106,7 +2129,7 @@ function renderSide() {
       else { state2 = `<span class="state">${Math.floor(clamp(k.pct(records), 0, .99) * 100)}%</span>`; note = `${k.rule}。${k.now(records)}`; bar = `<div class="bar" style="--c:${k.color}"><i style="width:${clamp(k.pct(records), 0, 1) * 100}%"></i></div>`; }
       const btn = !owned && met && k.id !== 'crystal' ? `<p><button class="btn" data-getkey="${k.id}" style="height:36px;font-size:13px">${svg('walk')}走過去拿</button></p>` : '';
       return `<div class="keyrow"><div class="keyrow-top">${kchip(k)}<b>${k.name}</b>${state2}</div>${bar}<p>${note}</p>${btn}</div>`;
-    }).join('') + `<p class="side-note">三把到齊，沙那賽之門就會出現。${keyState.coin ? '你已經穿過那道門，25¢ 復活幣留在入口。' : ''}</p>`;
+    }).join('') + `<p class="side-note">三把到齊，隱嶼之門就會出現。${keyState.coin ? '你已經穿過那道門，25¢ 復活幣留在入口。' : ''}</p>`;
   }
 }
 function renderDock() {
@@ -2156,7 +2179,7 @@ function renderCard() {
     actions = `<button class="btn primary" data-act="play">${svg('play')}開始玩</button><a class="btn" href="${g.url}" target="_blank" rel="noopener">${svg('arrow')}新分頁</a>`;
   } else if (id === 'pier') {
     h += `<div class="sec">入口石碑</div>` + (steleRead ? `<p class="quote" style="--c:#5c6570">霓虹照不到的暗處，沉著第三把鑰匙。</p>` : `<div class="empty">石碑上刻了字，走近才看得清楚。</div>`);
-    if (keyState.coin) h += `<div class="sec">25¢ 復活幣</div><p class="lead" style="margin-top:0">穿過沙那賽之門的紀念，從此留在碼頭邊。</p>`;
+    if (keyState.coin) h += `<div class="sec">25¢ 復活幣</div><p class="lead" style="margin-top:0">穿過隱嶼之門的紀念，從此留在碼頭邊。</p>`;
     actions = `<button class="btn primary" data-act="walk">${svg('walk')}走到石碑前</button>`;
   } else if (id === 'gate') {
     actions = `<button class="btn primary" data-act="gate">${svg('walk')}走進門裡</button>`;
@@ -2176,6 +2199,7 @@ function renderAll() {
 /* ---------- 日誌 ---------- */
 const LOG_KEY = 'sanasai_log', SEEN_KEY = 'sanasai_seen';
 let logItems = ls.json(LOG_KEY, []);
+for (const it of logItems) if (typeof it.text === 'string') it.text = it.text.replace(/沙那賽/g, '隱嶼');   // 改名前寫下的日誌換成新島名
 if (!Array.isArray(logItems)) logItems = [];
 const TAG = { land: ['land', '登島'], rec: ['rec', '紀錄'], key: ['key', '鑰匙'], play: ['play', '遊玩'], gate: ['gate', '門'] };
 function addLog(tag, text) {
@@ -2261,15 +2285,15 @@ function spawnGate() {
   gateLight.intensity = 6;
   addPin('gate', `<span class="no">${PLACE.gate.no}</span>${PLACE.gate.name}`, PLACE.gate.color, [PLACE.gate.at[0], 6.6, PLACE.gate.at[1]], () => selectPlace('gate'));
   pickables.push(hitBox({ place: 'gate' }, [PLACE.gate.at[0], 3, PLACE.gate.at[1]], [5, 6, 1.2]));
-  addLog('gate', '三鑰齊聚——沙那賽之門開啟');
-  toast('三鑰齊聚——沙那賽之門開啟', 'gold');
+  addLog('gate', '三鑰齊聚——隱嶼之門開啟');
+  toast('三鑰齊聚——隱嶼之門開啟', 'gold');
   renderAll();
 }
 function openEnding() {
   state.inEnding = true;
   keyState.coin = true;
   saveKeys();
-  addLog('gate', '穿過沙那賽之門，獲得 25¢ 復活幣');
+  addLog('gate', '穿過隱嶼之門，獲得 25¢ 復活幣');
   $('#ending').hidden = false;
 }
 $('#btn-ending').addEventListener('click', () => {
@@ -2323,7 +2347,7 @@ function updateProximity() {
   if (state.nearGame) setHint('g:' + state.nearGame, isTouch ? `點這裡開始玩《${GAME[state.nearGame].name}》` : `按 Enter（或點這裡）開始玩《${GAME[state.nearGame].name}》`, 'prompt');
   else if (nearStele) setHint('stele', '石碑：「霓虹照不到的暗處，沉著第三把鑰匙。」', 'lore');
   else if (!keyState.crystal && dc < 6.5) setHint('dark', dc < 3 ? '岩洞深處有什麼在發光……' : '這裡好暗……', 'lore');
-  else if (gate.visible && !keyState.coin && dist(PLACE.gate.at[0], PLACE.gate.at[1]) < 5) setHint('gate', '沙那賽之門──走進去', 'prompt');
+  else if (gate.visible && !keyState.coin && dist(PLACE.gate.at[0], PLACE.gate.at[1]) < 5) setHint('gate', '隱嶼之門──走進去', 'prompt');
   else setHint('default', DEFAULT_HINT);
 }
 
@@ -2363,7 +2387,7 @@ const INTRO = [
   ['三個遊戲，一座島', '小蜜蜂、Blocks Pro、迷宮球各有一台大型機台，遊戲會從螢幕裡溢出來。點機台或清單看介紹，按「開始玩」就進遊戲。島上住著柴犬阿滿、一隻貓和幾隻寄居蟹，海裡有魚和海豚。'],
   ['分身會替你走過去', isTouch ? '點地面，分身就走到那裡；也可以用左下角的搖桿。單指拖曳轉視角，雙指縮放。' : '點地面，分身就走到那裡；方向鍵或 WASD 也能走。拖曳轉視角，滾輪縮放。'],
   ['島會記得你的紀錄', '成績越好，溢出來的越多：小蜜蜂分數越高，飛出機台的蜜蜂越多；Blocks 的方塊山跟著分數長高；迷宮球每通過一章，地上的迷宮就長大一圈。'],
-  ['三把鑰匙', '銅鑰匙看小蜜蜂，玉鑰匙看 Blocks Pro，水晶鑰匙藏在島上的暗處。三把到齊，沙那賽之門就會出現。'],
+  ['三把鑰匙', '銅鑰匙看小蜜蜂，玉鑰匙看 Blocks Pro，水晶鑰匙藏在島上的暗處。三把到齊，隱嶼之門就會出現。'],
 ];
 let introStep = 0;
 function showIntro(step = 0) {
@@ -2516,8 +2540,8 @@ function updateAmbient(dt, t) {
   wp.needsUpdate = true;
   foam.material.opacity = .32 + .2 * Math.sin(t * 1.3);
   foam.scale.setScalar(1 + .006 * Math.sin(t * 1.3));
-  boat.position.y = Math.sin(t * 1.4) * .06;
-  boat.rotation.z = Math.sin(t * 1.1) * .04;
+  ship.position.y = SHIP.y + Math.sin(t * 1.1) * .045;
+  ship.rotation.z = Math.sin(t * .8) * .006;
   clouds.rotation.y = t * .004;
   for (const b of birds) {
     const u = b.userData, a = t * u.sp + u.ph;
@@ -2558,7 +2582,7 @@ addEventListener('resize', () => {
   if (wasMobile !== isMobile()) { ui.side = !isMobile() && ui.sidePref; ui.log = false; syncLayout(); }
 });
 
-/* ---------- 登島：一打開就是島，鏡頭從海上飛向島（碰一下就停），分身從小舟走上岸 ---------- */
+/* ---------- 登島：一打開就是島，鏡頭從海上飛向島（碰一下就停），分身從飛船走上岸 ---------- */
 for (const id of [...GAMES.map(g => g.id), 'pier']) {
   const P = PLACE[id];
   const y = CAB[id] ? CAB[id].F.y + 6.0 : 2.5;
@@ -2593,4 +2617,4 @@ tick();
 body.classList.remove('booting');
 
 /* 除錯／測試用的唯讀入口 */
-window.sanasai = { PLACE, GAMES, KEYS, CAB, keyState, state, ui, avatar, camera, controls, records: () => records, overflow: () => ({ bees: swarm && swarm.n, heap: heap && heap.layers, maze: mazeArea && mazeArea.n }), pets: () => ({ dog: dog.state, dogPos: dog.g.position.toArray().map(v => +v.toFixed(2)), cat: cat.awakeT > 0 || night > .6, crabs: crabs.map(c => +c.hide.toFixed(1)), blob: blob.state }), petTap, view: (pos, target) => { follow = false; fly = null; controls.enabled = true; camera.position.set(...pos); controls.target.set(...target); controls.update(); }, select: selectPlace, walkTo, overview, setTime, land, findPath };
+window.sanasai = { PLACE, GAMES, KEYS, CAB, keyState, state, ui, avatar, camera, controls, records: () => records, overflow: () => ({ bees: swarm && swarm.n, heap: heap && heap.layers, maze: mazeArea && mazeArea.n }), pets: () => ({ dog: dog.state, dogPos: dog.g.position.toArray().map(v => +v.toFixed(2)), cat: cat.awakeT > 0 || night > .6, crabs: crabs.map(c => +c.hide.toFixed(1)), blob: blob.state }), petTap, view: (pos, target) => { follow = false; fly = null; controls.enabled = true; camera.position.set(...pos); controls.target.set(...target); controls.update(); }, select: selectPlace, walkTo, overview, setTime, land, findPath, dolphins, ship };
