@@ -35,6 +35,8 @@
   #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
   #warp { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 4; opacity: 0; transition: opacity .25s; }
   #warp.on { opacity: 1; }
+  #labels { transition: opacity .6s; }
+  body.space #labels { opacity: 0; }
 
   /* ---------- 開飛船、釣魚 ---------- */
   .flight-hud { position: fixed; z-index: 13; bottom: calc(18px + var(--sb)); left: calc((100vw - var(--side-w)) / 2); transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 7px 8px 7px 14px; border-radius: 999px; }
@@ -43,7 +45,7 @@
   .fh-rings i.on { background: var(--c); box-shadow: 0 0 10px var(--c); }
   #fh-time { font-family: var(--display); font-size: 15px; min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; }
   .flight-hud .btn { height: 40px; padding: 0 14px; font-size: 14px; touch-action: none; }
-  body.flying .dock { display: none; }
+  body.flying .dock, body.flying.autopilot #joystick { display: none; }
   .catch-card { position: fixed; z-index: 14; top: calc(84px + var(--st)); left: calc((100vw - var(--side-w)) / 2); transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 12px 18px 12px 14px; border-radius: 18px; animation: pop .35s ease; }
   .catch-card .cf { width: 54px; height: 27px; flex: none; }
   .catch-card .cf path { fill: var(--c); }
@@ -470,6 +472,6 @@
   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="./island.js?v=2.8.1"></script>
+<script type="module" src="./island.js?v=2.9.0"></script>
 </body>
 </html>
