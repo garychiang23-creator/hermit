@@ -537,7 +537,6 @@ function buildPier() {
 /* 碼頭邊的老飛船：圓盤船身、船頭兩支長叉、右舷駕駛艙、左舷雷達碟、中央砲塔、船尾一排藍色引擎光。造型是致敬，網站上不寫名字。
    船的局部座標：-z＝船頭、+x＝右舷；轉 180° 後船頭朝海，右舷（駕駛艙、登船坡道）朝碼頭 */
 const SHIP = { x: 4.35, y: 1.3, z: 19.4, r: 2.3 };   // z 讓坡道落在碼頭兩根木樁中間
-SHIP.a = Math.atan2(SHIP.z, SHIP.x);
 const ship = new THREE.Group();
 let ramp = null;   // 登船坡道：起飛前縮回船腹，降落後放下
 const shipGlow = new THREE.MeshBasicMaterial({ vertexColors: true });   // 引擎光：飛行時比平常亮
@@ -2060,9 +2059,9 @@ function updateBlob(dt, t) {
   B.body.position.y = jump;
   B.body.scale.set(1 + (moving && jump < .02 ? .08 : 0), 1 - (moving && jump < .02 ? .1 : 0), 1);
 }
-/* 海裡：魚偶爾跳出水面，三隻海豚繞著島游、輪流躍出水面 */
+/* 海裡：魚偶爾跳出水面，三隻海豚結伴在島外到處游、偶爾表演 */
 const splashes = [], dropGeo = new THREE.BoxGeometry(.07, .07, .07), ringGeo = new THREE.RingGeometry(.12, .26, 24).rotateX(-Math.PI / 2);
-function waterSplash(x, z, size = 1) {
+function waterSplash(x, z, size = 1, quiet = false) {
   let sp = splashes.find(q => q.t <= 0);
   if (!sp) {
     const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false });
@@ -2074,7 +2073,7 @@ function waterSplash(x, z, size = 1) {
   sp.ring.position.set(x, .07, z);
   sp.size = size; sp.t = .9;
   sp.drops.forEach((d, i) => { d.position.set(x, .1, z); d.userData.v.set(Math.cos(i * 1.05) * .9, 2.2 + rnd(), Math.sin(i * 1.05) * .9).multiplyScalar(size); d.visible = true; });
-  sfx('splash', _ssp.set(x, .1, z), size);
+  if (!quiet) sfx('splash', _ssp.set(x, .1, z), size);
 }
 function updateSplashes(dt) {
   for (const sp of splashes) {
@@ -2364,41 +2363,251 @@ function updateDivers(dt, t) {
     if (b.t <= 0) b.m.visible = false;
   }
 }
-const dolphins = [], DOL_R = 23.5;
+/* 海豚：一群三隻跟著一個看不見的「帶頭點」走。帶頭點繞著島去下一個目的地（看得到的地方優先、偶爾繞遠路、會掉頭），
+   或停下來兜圈子玩；三隻照隊形跟（人字／縱隊／並排／鬆散），各自轉彎、加減速。表演只挑鏡頭看得到的時候。 */
+const dolphins = [];
+/* 能游的水域只用「離島中心至少多遠」一條線圍（離岸 4；南邊停飛船、碼頭盡頭、釣魚浮標那段往外鼓到約 28）。
+   不用好幾個圓形禁區：圓跟圓疊起來會有凹角，帶頭點會卡在裡面出不來 */
+const dolMinR = a => islandR(a) + 4 + 6.3 * smooth((.55 - Math.abs(Math.atan2(Math.sin(a - 1.48), Math.cos(a - 1.48)))) / .3);
+const DOL_FORM = [   // 隊形：每隻 [往前, 往右]，以帶頭點為準
+  [[0, 0], [-1.8, -1.5], [-1.8, 1.5]],    // 人字
+  [[0, 0], [-2.3, .35], [-4.6, -.35]],    // 一路縱隊（連跳用）
+  [[0, 0], [0, -1.8], [0, 1.8]],          // 並排（同步跳用）
+  [[.6, -1], [-1.2, 1.4], [-2.8, -.4]],   // 鬆散，位置會慢慢飄
+];
+const DOL_RR = 2.2, DOL_PH = .8, DOL_ARC = 2 * DOL_RR * DOL_PH, DOL_GLIDE = 1.4;   // 換氣滾過水面的圓弧（半徑、單邊角度、弧長）＋水下那段的長度
+const TRICKS = { hop: [.75, .9], jump: [1.3, 2.2], spin: [1.5, 2.6], flip: [1.7, 3], walk: [2.6, 0] };   // [秒, 跳多高]；spin＝邊跳邊轉兩圈、flip＝後空翻、walk＝立起來用尾巴在水面倒退走
+const pod = { x: Math.cos(.9) * 26, z: Math.sin(.9) * 26, h: Math.atan2(-Math.sin(.9), Math.cos(.9)), v: 1.6, vT: 1.6, w: 0, mode: 'go', ga: 0, gr: 26, dir: 1, t: 0, wv: 0, cx: 0, cz: 0, ph: 0, spin: 1, flipT: 0, form: 0, show: null, showT: 8 };
+const _dfr = new THREE.Frustum(), _dfm = new THREE.Matrix4(), _dv3 = new THREE.Vector3();
+const dolView = (x, z) => _dfr.containsPoint(_dv3.set(x, 0, z)) && camera.position.distanceTo(_dv3) < 80;   // 鏡頭看得到這裡嗎
+function dolRoom(x, z) {   // 離不能去的地方還有多遠（岸邊／南邊那段、太遠的外海）；≥0 就是舒服的水域
+  const r = Math.hypot(x, z);
+  return Math.min(r - dolMinR(Math.atan2(z, x)), 36 - r);
+}
+function dolKeep(o) {   // 保底：怎樣都不會游上岸、鑽到飛船底下
+  const r = Math.hypot(o.x, o.z), lo = dolMinR(Math.atan2(o.z, o.x)) - 1.2, k = r < lo ? lo / r : r > 38 ? 38 / r : 1;
+  o.x *= k; o.z *= k;
+}
+function dolTurn(o, hd, w, dt) {   // 朝 hd 轉，每秒最多 w；要掉頭時，靠岸那段往外海那側轉（不往岸上切），轉的方向一決定就轉到底，不左右搖擺
+  let d = Math.atan2(Math.sin(hd - o.h), Math.cos(hd - o.h));
+  if (Math.abs(d) > 2.5) {
+    if (!o.ut) { const s = Math.sin(Math.atan2(o.x, o.z) - o.h); o.ut = (dolRoom(o.x, o.z) < 5 && Math.abs(s) > .05 ? Math.sign(s) : Math.sign(d)) || 1; }
+    if (Math.sign(d) !== o.ut) d -= Math.sign(d) * TAU;
+  } else o.ut = 0;
+  const s = clamp(d, -w * dt, w * dt);
+  o.h = Math.atan2(Math.sin(o.h + s), Math.cos(o.h + s)); o.w = s / Math.max(dt, 1e-3);
+}
+function dolPlan() {   // 選下一段：游去別處，或在原地兜圈子玩（表演進行中就不停下來玩、也不改隊形和衝刺速度）
+  const a = Math.atan2(pod.z, pod.x), S = pod.show;
+  if (pod.mode === 'go' && !S && rnd() < .4) {
+    let cx = pod.x, cz = pod.z;
+    for (let i = 0; i < 12 && dolRoom(cx, cz) < 3; i++) { cx *= 1.04; cz *= 1.04; }   // 兜圈子的地方往外挪到夠寬
+    if (dolRoom(cx, cz) >= 3 && dolView(cx, cz)) {
+      Object.assign(pod, { mode: 'play', t: 8 + rnd() * 7, cx, cz, ph: Math.atan2(pod.z - cz, pod.x - cx), spin: rnd() < .5 ? 1 : -1, flipT: 3 + rnd() * 3, vT: 1.3 + rnd() * .5, form: 3 });
+      pod.showT = Math.min(pod.showT, 2 + rnd() * 2);
+      return;
+    }
+  }
+  let ga = a + 1.5, gr = 26, best = -1;
+  for (let i = 0; i < 10; i++) {   // 抽幾個候選點，鏡頭看得到的加分
+    const ca = rnd() * TAU, cr = dolMinR(ca) + .6 + rnd() * 6.5, x = Math.cos(ca) * cr, z = Math.sin(ca) * cr;
+    if (Math.abs(Math.atan2(Math.sin(ca - a), Math.cos(ca - a))) < .8 || dolRoom(x, z) < .5) continue;
+    const s = rnd() + (dolView(x, z) ? 1.2 : 0);
+    if (s > best) { best = s; ga = ca; gr = cr; }
+  }
+  const da = Math.atan2(Math.sin(ga - a), Math.cos(ga - a)), vT = .9 + rnd() * 1.5, form = [0, 1, 3][(rnd() * 3) | 0];
+  Object.assign(pod, { mode: 'go', ga, gr, dir: (rnd() < .2 ? -1 : 1) * Math.sign(da), t: 90, wv: rnd() * TAU, vT: S && S.k === 'wave' ? pod.vT : vT, form: S ? pod.form : form });   // 兩成繞遠路
+  if (S && S.k === 'wave') S.v0 = vT;   // 連跳完改用新這段的速度
+}
+function dolTrick(d, k) {   // 開始一個動作；落點不在舒服的水域就不做
+  if (d.tr) return false;
+  const [dur, H] = TRICKS[k], v = k === 'walk' ? -1.7 : Math.max(d.v, k === 'hop' ? 3.2 : 3.6), L = v * dur * (k === 'walk' ? .7 : 1);
+  if (dolRoom(d.x + Math.sin(d.h) * L, d.z + Math.cos(d.h) * L) < 0) return false;
+  d.tr = { k, u: 0, dur, H, v, v0: d.v, sp: 0, y0: d.y, ps: d.pitch };   // 從換氣起伏的當下位置接著跳
+  waterSplash(d.x, d.z, k === 'hop' ? .6 : 1, k === 'hop');   // 連跳時起跳不出聲，不然太吵
+  return true;
+}
+function dolShow(dt, vis) {   // 誰、什麼時候表演
+  const S = pod.show;
+  if (!S) {
+    if ((pod.showT -= dt) > 0 || dolphins.some(d => d.tr)) return;
+    if (!vis) { pod.showT = 1.5; return; }   // 沒人看就先不演，等游進畫面
+    const r = rnd();
+    if (r < .28 && pod.mode === 'go') { pod.show = { k: 'wave', t: 5.5, v0: pod.vT }; pod.form = 1; pod.vT = 3.6; dolphins.forEach((d, i) => d.nh = .5 + i * .3); }   // 衝刺連跳，一隻接一隻像波浪
+    else if (r < .55) { pod.show = { k: 'sync', t: 0 }; pod.form = 2; }   // 排成並排，一起跳
+    else {   // 個人秀
+      const d = dolphins[(rnd() * 3) | 0];
+      if (!dolTrick(d, ['spin', 'flip', 'walk', 'jump', 'spin', 'flip', 'walk'][(rnd() * 7) | 0])) dolTrick(d, 'jump');
+      pod.showT = (pod.mode === 'play' ? 3 : 7) + rnd() * 7;
+    }
+    return;
+  }
+  if (S.k === 'wave') {
+    for (const d of dolphins) if (!d.tr && (d.nh -= dt) <= 0) { dolTrick(d, 'hop'); d.nh = .3 + rnd() * .2; }
+    if ((S.t -= dt) <= 0) { pod.show = null; pod.vT = S.v0; pod.form = 0; pod.showT = 9 + rnd() * 9; }
+  } else if (!S.go) {
+    S.t += dt;
+    if (S.t > 4 || dolphins.every(d => Math.hypot(d.x - d.sx, d.z - d.sz) < 1.1 && Math.abs(Math.sin((d.h - pod.h) / 2)) < .12)) {
+      S.go = true;
+      const mid = rnd() < .5 ? 'spin' : 'jump';
+      dolphins.forEach((d, i) => dolTrick(d, i ? 'jump' : mid));
+    }
+  } else if (!dolphins.some(d => d.tr)) { pod.show = null; pod.form = 3; pod.showT = 9 + rnd() * 9; }
+}
+/* 海豚造型（照寬吻海豚照片做）：圓鼓的額頭急降到一截短嘴、往後彎的鉤狀背鰭、中間有缺口的水平尾鰭、小胸鰭、
+   小眼睛和往上翹的嘴線；背深灰、側面淺灰、肚子白。身體用一段段橢圓斷面接起來——
+   拉長的球＋三角背鰭＋圓錐尖鼻子，看起來會像鯊魚 */
+const DOL_GEO = (() => {
+  // 斷面 [z, 半寬, 半高, 中心高度]，從尾巴根部到嘴尖；0.74→0.8 那一段額頭陡降，就是「額隆＋短嘴」
+  const ST = [[-.95, .03, .035, .02], [-.86, .05, .06, .025], [-.7, .085, .11, .03], [-.45, .16, .19, .03], [-.15, .23, .26, .02], [.15, .25, .28, .01],
+    [.45, .23, .25, 0], [.62, .19, .205, -.015], [.74, .14, .155, -.035], [.8, .095, .09, -.07], [.92, .065, .055, -.095], [1.02, .03, .03, -.1]];
+  const N = 10, pos = [], col = [], CAPE = 0x6c7a87, cs = [new THREE.Color(CAPE), new THREE.Color(0x96a3ae), new THREE.Color(0xe6e9eb)];
+  const P = (i, k) => { const [z, w, h, c] = ST[i], a = k / N * TAU + Math.PI / 2; return [Math.cos(a) * w, c + Math.sin(a) * h, z, Math.sin(a)]; };
+  const tri = (a, b, c) => {   // 每個面一個顏色：朝上＝背、朝旁邊＝側面、朝下＝肚子
+    const s = (a[3] + b[3] + c[3]) / 3, k = s > .3 ? 0 : s > -.25 ? 1 : 2;
+    for (const v of [a, b, c]) { pos.push(v[0], v[1], v[2]); col.push(cs[k].r, cs[k].g, cs[k].b); }
+  };
+  for (let i = 0; i < ST.length - 1; i++) for (let k = 0; k < N; k++) { const a = P(i, k), b = P(i, k + 1), c = P(i + 1, k), d = P(i + 1, k + 1); tri(a, b, c); tri(b, d, c); }
+  for (let k = 0; k < N; k++) { tri(P(ST.length - 1, k), P(ST.length - 1, k + 1), [0, -.1, 1.05, 0]); tri(P(0, k + 1), P(0, k), [0, .02, -.97, 0]); }   // 嘴尖、尾巴根部封口
+  const body = new THREE.BufferGeometry();
+  body.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  body.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  body.computeVertexNormals();
+  const flat = (pts, depth) => {   // 平面輪廓（直線＋二次曲線）擠出成薄片，厚度置中
+    const sh = new THREE.Shape();
+    sh.moveTo(...pts[0]);
+    for (const p of pts.slice(1)) p.length > 2 ? sh.quadraticCurveTo(...p) : sh.lineTo(...p);
+    const g = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: false, curveSegments: 6 }).translate(0, 0, -depth / 2);
+    g.deleteAttribute('uv');
+    return g;
+  };
+  // 背鰭：側面輪廓 (往前, 往上)，前緣往後上方彎、後緣內凹
+  const fin = flat([[.1, .24], [0, .5, -.3, .62], [-.19, .42, -.23, .22], [.1, .2]], .05).rotateY(-Math.PI / 2);
+  // 尾鰭：俯視輪廓 (往右, 往前)，兩片往後掠、中間一道缺口
+  const fluke = flat([[0, .06], [.3, .04, .48, -.2], [.24, -.13, .03, -.13], [0, -.09], [-.03, -.13], [-.24, -.13, -.48, -.2], [-.3, .04, 0, .06]], .04).rotateX(Math.PI / 2);
+  // 胸鰭：(往外, 往前)，尖端往後掠；左右各做一片（鏡像輪廓，面才會朝外）
+  const flip = s => flat([[0, .06], [s * .14, .06, s * .27, -.1], [s * .12, -.06, 0, -.06]], .03).rotateX(Math.PI / 2);
+  return { body, mat: new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .5 }), fin, fluke, flipR: flip(1), flipL: flip(-1), cape: CAPE };
+})();
 for (let i = 0; i < 3; i++) {
-  const g = new THREE.Group(), body = new THREE.Group(), top = 0x6d8ea8, belly = 0xe2eaf0;
+  const g = new THREE.Group(), body = new THREE.Group(), tail = new THREE.Group(), D = DOL_GEO, hull = new THREE.Mesh(D.body, D.mat);
   g.add(body);
-  vox(body, BASE.sphere, top, [0, 0, 0], [.56, .52, 1.9]);
-  vox(body, BASE.sphere, belly, [0, -.1, .1], [.46, .36, 1.6]);
-  vox(body, BASE.cone6, top, [0, -.03, 1.05], [.17, .32, .17], [Math.PI / 2, 0, 0]);
-  vox(body, BASE.box, 0x1d1b1a, [0, .07, .66], [.5, .05, .05]);
-  vox(body, BASE.pyr, top, [0, .38, -.12], [.06, .46, .38], [-.4, 0, 0]);
-  for (const sx of [-1, 1]) vox(body, BASE.box, top, [sx * .3, -.15, .35], [.32, .04, .14], [0, 0, sx * -.5]);
-  const tail = new THREE.Group();
-  tail.position.set(0, 0, -.92);
+  hull.castShadow = true;
+  body.add(hull);
+  vox(body, D.fin, D.cape, [0, 0, 0], [1, 1, 1]);
+  for (const s of [-1, 1]) {
+    vox(body, s > 0 ? D.flipR : D.flipL, D.cape, [s * .19, -.15, .4], [1, 1, 1], [0, 0, -s * .55]);
+    vox(body, BASE.sphere, 0x22262a, [s * .19, .005, .6], [.036, .036, .036]);   // 眼睛
+    vox(body, BASE.box, 0x46505a, [s * .066, -.105, .89], [.008, .008, .22], [0, -s * .29, 0]);   // 嘴線
+  }
+  tail.position.set(0, .02, -.93);
   body.add(tail);
-  vox(tail, BASE.box, top, [0, 0, -.16], [.92, .05, .3]);
+  vox(tail, D.fluke, D.cape, [0, 0, 0], [1, 1, 1]);
   g.scale.setScalar(.85);
   scene.add(g);
-  petHit(g, 'dolphin' + i, [0, .1, 0], [.8, .8, 2]);
-  dolphins.push({ g, body, tail, a: 1.2 + i * .32, lane: i * .9, jumpT: 4 + i * 4 + rnd() * 4, jump: -1 });
+  petHit(body, 'dolphin' + i, [0, .1, 0], [.8, .8, 2]);   // 掛在身體上：立起來、翻跟斗時也點得到
+  const [f, s] = DOL_FORM[0][i], fx = Math.sin(pod.h), fz = Math.cos(pod.h);
+  dolphins.push({ g, body, tail, x: pod.x + fx * f - fz * s, z: pod.z + fz * f + fx * s, sx: 0, sz: 0, h: pod.h, v: 1.6, vT: 1.6, w: 0, roll: 0, fl: i, br: i * .33, y: -.6, pitch: 0, tr: null, nh: 0, jt: 0, ep: 0, ek: 0 });
 }
+dolPlan();
 function updateDolphins(dt, t) {
-  for (const d of dolphins) {
-    d.a += dt * .07;
-    const off = Math.atan2(Math.sin(d.a - SHIP.a), Math.cos(d.a - SHIP.a));   // 經過飛船那一段往外繞
-    const R = DOL_R + d.lane + smooth(1 - Math.abs(off) / .4) * 4, x = Math.cos(d.a) * R, z = Math.sin(d.a) * R;
-    let y = -.18 + Math.sin(t * 1.6 + d.lane) * .07, pitch = Math.sin(t * 1.6 + d.lane) * .08;
-    if (d.jump >= 0) {
-      d.jump = Math.min(1, d.jump + dt / 1.3);
-      y = Math.sin(Math.PI * d.jump) * 2.2 - .2;
-      pitch = -Math.cos(Math.PI * d.jump) * .9;
-      if (d.jump >= 1) { d.jump = -1; d.jumpT = 6 + rnd() * 9; waterSplash(x, z, 1.2); }
-    } else if ((d.jumpT -= dt) <= 0) { d.jump = 0; waterSplash(x, z, 1.2); }
-    d.g.position.set(x, y, z);
-    d.g.rotation.y = Math.atan2(-Math.sin(d.a), Math.cos(d.a));
-    d.body.rotation.x = pitch;
-    d.tail.rotation.x = Math.sin(t * 6 + d.lane) * .35;
+  _dfm.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _dfr.setFromProjectionMatrix(_dfm);
+  // 帶頭點：去目的地（沿著島繞過去，路上左右蛇行），或繞著一個點兜圈子、繞到一半換方向游出 8 字
+  const P = pod, a = Math.atan2(P.z, P.x), r = Math.hypot(P.x, P.z), rem = () => (((P.ga - a) * P.dir) % TAU + TAU) % TAU;
+  if ((P.t -= dt) < 0 || (P.mode === 'go' && (rem() < .1 || rem() > TAU - .25))) dolPlan();
+  let cx, cz;
+  if (P.mode === 'go') {
+    const ac = a + P.dir * Math.min(rem(), .35);
+    const rc = clamp(r + (P.gr - r) * .5 + Math.sin(t * .4 + P.wv) * 1.6, dolMinR(ac) + .4, 32);   // 經過飛船、碼頭那段自然往外繞
+    cx = Math.cos(ac) * rc; cz = Math.sin(ac) * rc;
+  } else {
+    P.ph += P.spin * dt * P.v / 2.6;
+    if (P.flipT > 0 && (P.flipT -= dt) <= 0) P.spin *= -1;
+    cx = P.cx + Math.cos(P.ph + P.spin * .8) * 2.6; cz = P.cz + Math.sin(P.ph + P.spin * .8) * 2.6;
+  }
+  dolTurn(P, Math.atan2(cx - P.x, cz - P.z), .9, dt);
+  P.v += clamp(P.vT - P.v, -.8 * dt, .8 * dt);
+  P.x += Math.sin(P.h) * P.v * dt; P.z += Math.cos(P.h) * P.v * dt;
+  dolKeep(P);
+  dolShow(dt, dolView(P.x, P.z));
+  // 三隻照隊形跟：追自己的位置、落後就加速；快靠岸／靠近飛船就往外偏，順著邊游過去
+  const fx = Math.sin(P.h), fz = Math.cos(P.h), F = DOL_FORM[P.form];
+  dolphins.forEach((d, i) => {
+    let [sf, sr] = F[i];
+    if (P.form === 3) { sf += Math.sin(t * .31 + i * 2.1) * 1.1; sr += Math.cos(t * .23 + i * 1.3) * 1.1; }
+    d.sx = P.x + fx * sf - fz * sr; d.sz = P.z + fz * sf + fx * sr;
+    const s0 = Math.hypot(d.sx, d.sz), sLo = dolMinR(Math.atan2(d.sz, d.sx)) + .3, sk = s0 < sLo ? sLo / s0 : s0 > 34 ? 34 / s0 : 1;
+    d.sx *= sk; d.sz *= sk;   // 隊形位置落在游不到的地方（太靠岸、太外海）就挪回能游的水域，不然會一直撞邊界
+    if (d.jt > 0 && (d.jt -= dt) <= 0) dolTrick(d, 'hop');
+    // 換氣：身體順著一段圓弧滾過水面——頭先出水、背和背鰭拱起來、頭先下去、背鰭最後沒入，再到水下繞一小段回來（看不到）。
+    // 背鰭平平劃著水面走、或比頭先冒出來，看起來就是鯊魚。進度照游過的距離算，游越快換得越勤
+    const br0 = d.br, bq = (d.br = (d.br + Math.max(d.v, 1.2) * dt / (DOL_ARC + DOL_GLIDE)) % 1) * (DOL_ARC + DOL_GLIDE);
+    let y, pitch, roll, flap, sp = d.v;
+    if (bq < DOL_ARC) { const f = DOL_PH - bq / DOL_RR; y = -.05 - DOL_RR * (1 - Math.cos(f)); pitch = -f; }
+    else { const g = (bq - DOL_ARC) / DOL_GLIDE; y = -.05 - DOL_RR * (1 - Math.cos(DOL_PH)) - .3 * Math.sin(Math.PI * g); pitch = DOL_PH * Math.cos(Math.PI * g); }
+    if (!d.tr && br0 < .08 && d.br >= .08) waterSplash(d.x + Math.sin(d.h) * .5, d.z + Math.cos(d.h) * .5, .25, true);   // 頭出水那一下的小水花
+    const along = (d.sx - d.x) * fx + (d.sz - d.z) * fz, la = Math.max(2, 2 - along);   // 衝過頭（剛跳完）就把目標往前放，慢下來等，不回頭
+    let dx = d.sx + fx * la - d.x, dz = d.sz + fz * la - d.z;
+    const q = Math.hypot(dx, dz) || 1, dr = Math.hypot(d.x, d.z), m = dr - dolMinR(Math.atan2(d.z, d.x));
+    dx /= q; dz /= q;
+    if (m < 2.5) { const k = smooth((2.5 - m) / 2.5) * 1.6; dx += d.x / dr * k; dz += d.z / dr * k; }
+    if (dr > 33) { const k = smooth((dr - 33) / 2.5) * 1.6; dx -= d.x / dr * k; dz -= d.z / dr * k; }
+    for (const o of dolphins) {   // 別擠在一起：太近就往旁邊讓
+      if (o === d || o.tr) continue;
+      const ex = d.x - o.x, ez = d.z - o.z, eq = Math.hypot(ex, ez);
+      if (eq < 2.4 && eq > 1e-4) { const k = (2.4 - eq) / 2.4 * 1.2; dx += ex / eq * k; dz += ez / eq * k; }
+    }
+    if (!d.tr) {
+      dolTurn(d, Math.atan2(dx, dz), 2 + 2.5 * smooth((1 - m) / 2.5), dt);   // 越貼近邊界轉得越急，追隊伍游很快時也煞得住
+      d.vT = clamp(P.v + along * .9, .3, 5.5);
+      d.v += clamp(d.vT - d.v, -3 * dt, 3 * dt);
+      sp = d.v;
+      d.fl += dt * (3 + d.v * 1.6);
+      flap = Math.sin(d.fl) * .35;
+      d.roll += (clamp(-d.w * .35, -.45, .45) - d.roll) * Math.min(1, dt * 4);   // 轉彎時身體往內側傾
+      roll = d.roll;
+      if (d.ek > 0) { d.ek = Math.max(0, d.ek - dt / .35); pitch += d.ep * smooth(d.ek); }   // 剛落水：頭慢慢抬回來
+    } else {
+      const T = d.tr, u = T.u = Math.min(1, T.u + dt / T.dur);
+      let endP = 0;
+      if (T.k === 'hop') dolTurn(d, Math.atan2(dx, dz), 1.2, dt);   // 連跳時邊跳邊慢慢轉，跟得上隊伍轉彎
+      roll = d.roll *= 1 - Math.min(1, dt * 4);
+      if (T.k === 'walk') {   // 立起來 → 尾巴撥水倒退走 → 往前倒回水裡
+        const up = smooth(u / .18) * (1 - smooth((u - .82) / .18)), lean = Math.PI / 2 + .12;
+        sp = (T.v0 + (T.v - T.v0) * smooth(u / .18)) * (1 - smooth((u - .82) / .18));
+        y = -.2 + 1.12 * up + Math.sin(t * 16) * .04 * up + (T.y0 + .2) * (1 - smooth(u / .25));
+        pitch = T.ps * (1 - smooth(u / .18)) + (-lean + Math.sin(t * 9) * .05) * up;
+        flap = Math.sin(t * 22) * .45;
+        if (up > .9 && (T.sp -= dt) <= 0) { T.sp = .11; waterSplash(d.x + Math.sin(d.h) * .15, d.z + Math.cos(d.h) * .15, .35, true); }
+      } else {   // 拋物線：頭跟著軌跡抬起、放平、朝下；spin 邊跳邊轉兩圈，flip 整個往後翻一圈
+        sp = T.v;
+        y = Math.sin(Math.PI * u) * T.H - .2 + (T.y0 + .2) * (1 - smooth(u / .25));
+        const p0 = Math.atan(T.H * Math.PI / (T.dur * T.v)), traj = -Math.atan(T.H * Math.PI * Math.cos(Math.PI * u) / (T.dur * T.v));
+        pitch = T.ps + ((T.k === 'flip' ? -p0 - smooth(u) * (TAU - 2 * p0) : traj) - T.ps) * smooth(u / .15);
+        if (T.k === 'spin') roll = smooth((u - .08) / .84) * TAU * 2;
+        flap = Math.sin(d.fl += dt * 4) * .12;
+        endP = p0;   // 入水時頭朝下的角度（後空翻轉完一圈也是這個角度）
+      }
+      if (u >= 1) {
+        d.tr = null;
+        waterSplash(d.x, d.z, { hop: .6, jump: 1.1, spin: 1.1, flip: 1.3, walk: 1.2 }[T.k]);
+        d.v = T.k === 'walk' ? .8 : T.v * .7;
+        d.br = .524; d.ep = endP - .372; d.ek = 1;   // 接回換氣圓弧往下潛的那一段（那一刻剛好在 y＝-0.2、頭朝下 0.372）
+      }
+    }
+    d.y = y; d.pitch = pitch;
+    d.x += Math.sin(d.h) * sp * dt; d.z += Math.cos(d.h) * sp * dt;
+    dolKeep(d);
+    d.g.position.set(d.x, y, d.z);
+    d.g.rotation.y = d.h;
+    d.body.rotation.set(pitch, 0, roll);
+    d.tail.rotation.x = flap;
+  });
+  for (let i = 0; i < 3; i++) for (let j = i + 1; j < 3; j++) {   // 彼此別疊在一起
+    const A = dolphins[i], B = dolphins[j];
+    if (A.tr || B.tr) continue;
+    const dx = B.x - A.x, dz = B.z - A.z, q = Math.hypot(dx, dz);
+    if (q < 1.5 && q > 1e-4) { const k = (1.5 - q) / 2 / q * Math.min(1, dt * 8); A.x -= dx * k; A.z -= dz * k; B.x += dx * k; B.z += dz * k; }
   }
 }
 
@@ -2408,7 +2617,7 @@ const RESIDENTS = [
   { id: 'cat', name: '花捲', sub: '白底三花貓・會在島上散步，白天常窩在小蜜蜂機台頂睡午覺；你手上有魚時會跑來討', color: '#e0954f', icon: 'paw' },
   { id: 'crab', name: '寄居蟹', sub: '沙灘上三隻，靠近就縮進殼裡', color: '#e0663f', icon: 'paw' },
   { id: 'blob', name: '柑仔丁', sub: '橘色方塊小傢伙・在廣場和機台間跳來跳去', color: '#d97757', icon: 'paw' },
-  { id: 'dolphin', name: '海豚', sub: '在島外繞圈，點牠就跳出水面', color: '#5f86a6', icon: 'wave' },
+  { id: 'dolphin', name: '海豚', sub: '三隻結伴在島外游來游去，偶爾表演；點牠就跳給你看', color: '#5f86a6', icon: 'wave' },
 ];
 function petPos(id) {
   const v = new THREE.Vector3();
@@ -2426,7 +2635,11 @@ function petTap(id, fromList = false) {
   } else if (id === 'cat') { if (fromList) { cat.awakeT = 3; bubble(cat.g, '喵', .75); } else catTap(); }
   else if (id === 'blob') { blob.hop = 0; blob.body.position.y = .25; bubble(blob.g, '♪', 1.0); }
   else if (id.startsWith('crab')) { const c = crabs[+id.slice(4) || 0]; c.hide = 3; }
-  else if (id.startsWith('dolphin')) { const d = dolphins[+id.slice(7) || 0]; if (d.jump < 0) d.jumpT = 0; sfx('whistle', d.g); }
+  else if (id.startsWith('dolphin')) {   // 點了就表演一招，另外兩隻有時跟著跳
+    const d = dolphins[+id.slice(7) || 0];
+    if (dolTrick(d, ['spin', 'flip', 'walk', 'jump'][(rnd() * 4) | 0]) || dolTrick(d, 'jump') || dolTrick(d, 'hop')) dolphins.forEach(o => { if (o !== d && rnd() < .5) o.jt = .3 + rnd() * .5; });
+    sfx('whistle', d.g);
+  }
 }
 function focusPet(id) {
   if (state.flying || !RESIDENTS.some(r => r.id === id)) return;
@@ -2434,7 +2647,7 @@ function focusPet(id) {
   closeCard();
   follow = false;
   const t = petPos(id);
-  if (id === 'dolphin') { const d = dolphins[0], a = d.a + .07 * 1.1, R = DOL_R + d.lane; t.set(Math.cos(a) * R, 0, Math.sin(a) * R); }
+  if (id === 'dolphin') { const d = dolphins[0]; t.set(d.x + Math.sin(d.h) * d.v * 1.1, 0, d.z + Math.cos(d.h) * d.v * 1.1); }   // 鏡頭飛到的時候牠已經游到前面
   t.y += id === 'cat' ? .4 : .6;
   const off = camera.position.clone().sub(controls.target).setLength((isMobile() ? 1.3 : 1) * (id === 'dolphin' ? 16 : id === 'cat' ? 7 : 10));
   if (off.y < 4) off.y = 4;
@@ -3934,4 +4147,4 @@ tick();
 body.classList.remove('booting');
 
 /* 除錯／測試用的唯讀入口 */
-window.sanasai = { PLACE, GAMES, KEYS, CAB, keyState, state, ui, avatar, camera, controls, records: () => records, overflow: () => ({ bees: swarm && swarm.n, heap: heap && heap.layers, maze: mazeArea && mazeArea.n }), pets: () => ({ dog: dog.state, dogPos: dog.g.position.toArray().map(v => +v.toFixed(2)), cat: cat.awakeT > 0 || night > .6, crabs: crabs.map(c => +c.hide.toFixed(1)), blob: blob.state }), petTap, view: (pos, target) => { follow = false; fly = null; controls.enabled = true; camera.position.set(...pos); controls.target.set(...target); controls.update(); }, select: selectPlace, walkTo, overview, setTime, land, findPath, dolphins, ship, AV, FAR_ISLES, snd, SFX, setSound, flight, startFlight, skipFlight, throwBall, fetchS, fishing, startFishing, reel, feedCat, carry, catGo, catJump, rings, landNow, swing, divers, spawnDiver, cat, dog };
+window.sanasai = { PLACE, GAMES, KEYS, CAB, keyState, state, ui, avatar, camera, controls, records: () => records, overflow: () => ({ bees: swarm && swarm.n, heap: heap && heap.layers, maze: mazeArea && mazeArea.n }), pets: () => ({ dog: dog.state, dogPos: dog.g.position.toArray().map(v => +v.toFixed(2)), cat: cat.awakeT > 0 || night > .6, crabs: crabs.map(c => +c.hide.toFixed(1)), blob: blob.state }), petTap, view: (pos, target) => { follow = false; fly = null; controls.enabled = true; camera.position.set(...pos); controls.target.set(...target); controls.update(); }, select: selectPlace, walkTo, overview, setTime, land, findPath, dolphins, pod, dolTrick, updateDolphins, updateSplashes, ship, AV, FAR_ISLES, snd, SFX, setSound, flight, startFlight, skipFlight, throwBall, fetchS, fishing, startFishing, reel, feedCat, carry, catGo, catJump, rings, landNow, swing, divers, spawnDiver, cat, dog };
