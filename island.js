@@ -2611,6 +2611,641 @@ function updateDolphins(dt, t) {
   }
 }
 
+/* ---------- 外海的機械巨獸（Q 版） ----------
+   淺水區（離島中心 46～66，水到大腿）搖搖擺擺走來走去；要去深水區就在淺水區邊上蹲一下、跳起來、肚子先著水撲通落水，
+   整隻潛在水下游過去，水面上只看到背上一排排鋸齒鰭劃過去；回到淺水區頭先冒出來、站起來，像阿滿一樣甩甩身體把水甩掉。
+   點牠（或偶爾牠自己）會轉過來對著島吼、噴藍色火焰（電影版噴火時眼睛變藍），島升起半球形的防護罩擋下來；阿滿會對著牠叫。
+   開飛船靠近時牠會轉頭盯著飛船。
+   兩頭身半：大頭、圓肚子、短手短腳。頭頂（含冠）離水面最高約 19.7，要低於雲底 20.5；海底離島越遠越深，所以牠越往外走水淹得越高。
+   造型致敬電影版：深灰色裝甲配紅色發光線條、紅眼睛、頭頂的冠、嘴尖的鼻孔、下巴兩根刺、四根槍管手指、脖子兩側各三條粗管、
+   背上鋸齒狀的尖板、一節一節的尾巴、站著微微駝背。頭是積木疊出來的（一塊塊磚、頂上有凸點）。網站上不寫牠的名字。
+   預設的鳥瞰鏡頭往下看，只拍得到牠在畫面上緣；鏡頭壓低或從清單點牠才看得到全身。
+   身體是一節節的骨架（骨盆→身體→脖子→頭；兩腳、兩手、六節尾巴），每節用八角斷面接成管子，平面上色看起來像一片片裝甲 */
+const KJ_MIN = 46, KJ_SHELF = 66, KJ_MAX = 94, KJ_S = 1.15, KJ_SWIM = -.35;   // KJ_S：模型放大倍數（下面的身體尺寸都是放大前的）；KJ_SWIM：游泳時背在水面下多深
+const kjDepth = r => KJ_S * (r <= KJ_SHELF ? lerp(3.8, 4.8, smooth((r - KJ_MIN) / (KJ_SHELF - KJ_MIN))) : lerp(4.8, 12, smooth((r - KJ_SHELF) / 10)));   // 站著時腳底在水面下多深：水到大腿（水在膝蓋以下時，膝蓋露出水面看起來像站在水面上）
+const KJC = { top: 0x8e98a3, side: 0x6d7782, under: 0x434a53, dark: 0x353b43, band: 0x7d8793, band2: 0xaab3bd, plate: 0xa3adb7, claw: 0x2b3036, mouth: 0x3c1517, tooth: 0xe4e0d4, hole: 0x14171b };
+const KJ_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .5, metalness: .2 });   // 島上沒有環境貼圖，金屬度高只會整隻變暗
+const KJ_RED = glowMat(0xe01a10), KJ_EYE = glowMat(0xe8160c), KJ_SHINE = glowMat(0xfff0dc);   // 身上的紅色發光線條、紅眼睛、眼睛裡的亮點（晚上都會變亮；底色太亮的話晚上乘上去會偏橘）
+const KJ_HALO = new THREE.SpriteMaterial({ map: canvasTex(64, 64, (x, w, h) => { const g = x.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(.25, 'rgba(255,255,255,.5)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, w, h); }), color: 0xff4630, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 });   // 眼睛周圍的光暈（晚上、吼的時候）
+const KJ_EYE_RED = new THREE.Color(0xe8160c), KJ_EYE_BLUE = new THREE.Color(0x2a8cff), KJ_HALO_RED = new THREE.Color(0xff4630), KJ_HALO_BLUE = new THREE.Color(0x4aa8ff);
+function kjTube(rings, axis, paint = null, n = 8) {   // rings：[[中心], 寬方向半徑, 另一方向半徑]；axis 'y'＝直的（身體、腳、手），'z'＝橫的（頭、尾巴）
+  const pos = [], col = [], c = new THREE.Color();
+  const P = rings.map(([[x, y, z], ra, rb]) => ({ c: [x, y, z], p: [...Array(n)].map((_, k) => { const a = (k + .5) / n * TAU, u = Math.cos(a) * ra, v = Math.sin(a) * rb; return axis === 'y' ? [x + u, y, z + v] : [x + u, y + v, z]; }) }));
+  const tri = (A, B, C, out, i) => {   // out：這一面該朝的方向（從軸心往外），反了就調換頂點順序；朝上亮、朝旁邊中間、朝下暗
+    const ux = B[0] - A[0], uy = B[1] - A[1], uz = B[2] - A[2], vx = C[0] - A[0], vy = C[1] - A[1], vz = C[2] - A[2];
+    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    if (nx * out[0] + ny * out[1] + nz * out[2] < 0) { [B, C] = [C, B]; nx = -nx; ny = -ny; nz = -nz; }
+    const L = Math.hypot(nx, ny, nz) || 1;
+    nx /= L; ny /= L; nz /= L;
+    c.setHex((paint && paint(nx, ny, nz, i)) || (ny > .55 ? KJC.top : ny < -.45 ? KJC.under : KJC.side));
+    for (const v of [A, B, C]) { pos.push(v[0], v[1], v[2]); col.push(c.r, c.g, c.b); }
+  };
+  const mid = (...q) => [0, 1, 2].map(j => q.reduce((s, v) => s + v[j], 0) / q.length);
+  for (let i = 0; i < P.length - 1; i++) for (let k = 0; k < n; k++) {
+    const a = P[i].p[k], b = P[i].p[(k + 1) % n], d = P[i + 1].p[k], e = P[i + 1].p[(k + 1) % n], m = mid(a, b, d, e), o = mid(P[i].c, P[i + 1].c);
+    const out = [m[0] - o[0], m[1] - o[1], m[2] - o[2]];
+    tri(a, b, d, out, i); tri(b, e, d, out, i);
+  }
+  for (const [j, o] of [[0, 1], [P.length - 1, P.length - 2]]) {   // 兩頭封口
+    const R = P[j], out = [R.c[0] - P[o].c[0], R.c[1] - P[o].c[1], R.c[2] - P[o].c[2]];
+    for (let k = 0; k < n; k++) tri(R.c, R.p[k], R.p[(k + 1) % n], out, j);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  return g;
+}
+function kjPlate(L, [x, y, z], h, len, tilt = -1, w = .42, rz = 0) {   // 背上的尖板：壓扁的四角錐，尖端往後上方翹；[x,y,z]＝根部
+  const ax = -Math.sin(rz), ay = Math.cos(rz) * Math.cos(tilt), az = Math.cos(rz) * Math.sin(tilt);
+  part('pyr', [x + ax * h * .4, y + ay * h * .4, z + az * h * .4], [w, h, len], KJC.plate, { rx: tilt, rz, into: L });
+}
+BASE.wedge = (() => {   // 斜磚：底面、背面是滿的，斜面朝前上方
+  const A = [-.5, -.5, -.5], B = [.5, -.5, -.5], C = [.5, -.5, .5], D = [-.5, -.5, .5], E = [-.5, .5, -.5], F = [.5, .5, -.5];
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([[A, B, C], [A, C, D], [A, E, F], [A, F, B], [D, C, F], [D, F, E], [A, D, E], [B, F, C]].flat(2), 3));
+  g.computeVertexNormals();
+  return g;
+})();
+BASE.cyl10 = new THREE.CylinderGeometry(.5, .5, 1, 10).toNonIndexed();   // 積木頂上的凸點
+BASE.cyl10.deleteAttribute('uv');
+const KB = .84, KG = .07, KJ_CORE = 0x262a30;   // 積木：一格寬（凸點間距）、磚縫寬、磚縫後面看到的深色
+function kjBlock(L, layers, cz, color, noStud = []) {   // 疊磚：layers＝[這層底的高度, 層高, 格子們]；外圈和露出頂面的格子鋪成一塊塊磚（上下層方向交錯、接縫錯開），裡面塞深色擋住縫，露出的頂面放凸點
+  const key = (i, k) => i + ',' + k, ns = new Set(noStud.map(c => key(...c)));
+  layers.forEach(([y0, h, cells], n) => {
+    const S = new Set(cells.map(c => key(...c))), up = new Set(layers[n + 1] ? layers[n + 1][2].map(c => key(...c)) : []);
+    const vis = cells.filter(([i, k]) => !up.has(key(i, k)) || [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => !S.has(key(i + a, k + b))));
+    const al = n % 2, rows = new Map();   // al：這層的磚往哪排（0＝左右、1＝前後）
+    for (const c of vis) { const r = c[1 - al]; if (!rows.has(r)) rows.set(r, []); rows.get(r).push(c[al]); }
+    for (const [r, list] of rows) {
+      list.sort((a, b) => a - b);
+      for (let j = 0; j < list.length;) {
+        let e = j;
+        while (e + 1 < list.length && list[e + 1] === list[e] + 1) e++;   // 連在一起的一段
+        for (let c0 = list[j], first = (n + r) % 2 ? 2 : 3; c0 <= list[e];) {   // 切成 2～4 格一塊，每層起頭長度不同，接縫才會錯開
+          const c1 = Math.min(list[e], c0 + (c0 === list[j] ? first : 4) - 1), m = c1 - c0 + 1, mid = (c0 + c1) / 2;
+          if (al) part('box', [r * KB, y0 + h / 2, (cz(c0) + cz(c1)) / 2], [KB - KG, h - KG, m * KB - KG], color, { into: L });
+          else part('box', [mid * KB, y0 + h / 2, cz(r)], [m * KB - KG, h - KG, KB - KG], color, { into: L });
+          c0 = c1 + 1;
+        }
+        j = e + 1;
+      }
+    }
+    const is = cells.map(c => c[0]), ks = cells.map(c => c[1]), i0 = Math.min(...is), i1 = Math.max(...is), k0 = Math.min(...ks), k1 = Math.max(...ks);
+    const ya = n ? y0 - KG / 2 - .01 : y0 + .01, yb = y0 + h - KG / 2 - .015;
+    part('box', [(i0 + i1) / 2 * KB, (ya + yb) / 2, (cz(k0) + cz(k1)) / 2], [(i1 - i0 + 1) * KB - .1, yb - ya, (k1 - k0 + 1) * KB - .1], KJ_CORE, { into: L });
+    for (const [i, k] of cells) if (!up.has(key(i, k)) && !ns.has(key(i, k))) part('cyl10', [i * KB, y0 + h - KG / 2 + .1, cz(k)], [.5, .2, .5], color, { into: L });
+  });
+}
+function kjFin(L, [x, y, z], h, len, tilt, w, rz, [ox, oy, oz]) {   // 鋸齒狀的尖板：旁邊再黏一個小尖（電影版背上的板子很參差）；[ox,oy,oz]＝小尖離大尖多遠
+  kjPlate(L, [x, y, z], h, len, tilt, w, rz);
+  kjPlate(L, [x + ox, y + oy, z + oz], h * .55, len * .6, tilt - .2, w * .9, rz);
+}
+const kj = (() => {
+  const G = () => new THREE.Group(), mesh = (parent, list, mat = KJ_MAT) => parent.add(merged(list, mat, false));
+  const finMesh = (parent, list) => { const m = merged(list, KJ_MAT, false); m.userData.fin = true; parent.add(m); };
+  const g = G(), hip = G(), waist = G(), neck = G(), head = G(), jaw = G(), tip = G();
+  hip.rotation.order = 'YXZ';   // 游泳時身體往前斜趴，左右扭要繞著垂直軸
+  g.add(hip); hip.position.y = 4.9;
+  hip.add(waist); waist.position.set(0, .5, 0);
+  waist.add(neck); neck.position.set(0, 6.0, .25);
+  neck.add(head); head.position.set(0, .35, .15);
+  head.add(jaw); jaw.position.set(0, 1.0, 2.04);
+  head.add(tip); tip.position.set(0, 8.8, -2.1);   // 頭頂冠的最高點：量頭頂多高用
+  mesh(hip, [kjTube([[[0, -1.2, -.1], 2.5, 2.2], [[0, -.3, 0], 3.25, 2.9], [[0, .8, 0], 3.45, 3.05]], 'y')]);
+  // 身體：圓肚子一條條橫紋（中間夾紅色發光線）、胸口一顆紅色六角核心、背上三排鋸齒尖板（中間那排最大）、脖子兩側各三條粗管
+  const TOR = [[-1.5, 3.0, 2.7, -.1], [-.5, 3.75, 3.3, .1], [.7, 4.1, 3.6, .25], [2.0, 4.05, 3.55, .3], [3.3, 3.75, 3.3, .2], [4.5, 3.3, 2.95, .05], [5.4, 2.75, 2.55, -.05], [6.1, 2.15, 2.05, 0]];   // [高度, 半寬, 半厚, 前後]
+  const tAt = (y, j) => { let i = 0; while (i < TOR.length - 2 && TOR[i + 1][0] < y) i++; const A = TOR[i], B = TOR[i + 1]; return lerp(A[j], B[j], clamp((y - A[0]) / (B[0] - A[0]), 0, 1)); };
+  const frontZ = y => tAt(y, 3) + tAt(y, 2) * .924, backZ = y => tAt(y, 3) - tAt(y, 2) * .924;   // 八角形正前方、正後方那一面
+  const tor = [kjTube(TOR.map(([y, w, d, z]) => [[0, y, z], w, d]), 'y', (nx, ny, nz, i) => nz > .7 && i < 5 ? (i % 2 ? KJC.band : KJC.band2) : null)], torR = [], torF = [];
+  for (const y of [-.5, .7, 2.0]) part('box', [0, y, frontZ(y) + .03], [tAt(y, 1) * .74, .2, .12], 0, { into: torR });   // 橫紋之間的紅線（只在正前方那一面）
+  part('rbox', [0, 4.1, frontZ(4.1) - .1], [3.0, 2.0, .5], KJC.top, { rx: -.2, into: tor });   // 胸甲
+  part('cyl6', [0, 4.1, frontZ(4.1) + .12], [1.5, .3, 1.5], KJC.dark, { rx: Math.PI / 2 - .2, into: tor });
+  part('cyl6', [0, 4.1, frontZ(4.1) + .2], [1.05, .3, 1.05], 0, { rx: Math.PI / 2 - .2, into: torR });   // 胸口的紅色核心
+  for (const [y, h] of [[.4, 1.7], [1.7, 2.3], [3.0, 2.8], [4.2, 3.0], [5.3, 2.4]]) kjFin(torF, [0, y, backZ(y) + .3], h, h * .8, -1, 1.0, 0, [0, -h * .45, -.1]);
+  for (const s of [-1, 1]) for (const [y, h] of [[1.0, 1.3], [2.3, 1.8], [3.6, 2.1], [4.8, 1.8]]) kjFin(torF, [s * 1.6, y, backZ(y) * .9 + .3], h, h * .75, -.95, .7, -s * .5, [0, -h * .4, -.05]);   // 兩側往外張：從正面看肩膀後面冒出一圈尖板
+  mesh(waist, tor); mesh(waist, torR, KJ_RED); finMesh(waist, torF);
+  const nk = [kjTube([[[0, -.9, -.1], 2.5, 2.3], [[0, .2, 0], 2.3, 2.15], [[0, .9, .1], 2.0, 1.9]], 'y')];
+  for (const s of [-1, 1]) for (let j = 0; j < 3; j++) {   // 脖子後面兩側各三條粗管：從頭的後下方接到肩膀後面
+    const p0 = [s * (1.2 + j * .5), -1.4, -1.55 - j * .45], p1 = [s * (1.15 + j * .45), 1.1, -1.05 - j * .5];
+    const dx = p1[0] - p0[0], dy = p1[1] - p0[1], dz = p1[2] - p0[2], L = Math.hypot(dx, dy, dz);
+    part('cyl6', [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2, (p0[2] + p1[2]) / 2], [.55, L + .4, .55], KJC.top, { rx: Math.acos(dy / L), ry: Math.atan2(dx, dz), into: nk });
+  }
+  mesh(neck, nk);
+  // 頭：積木疊出來的。腦袋六層磚（最下和最上一層內縮一圈，輪廓才不會是方盒子）、頂上一顆顆凸點；嘴是窄一點的兩層磚、最前面一塊斜磚；
+  // 眼睛＝黑色方片上一片圓的紅色發光片；斜磚當眉毛（內側壓低）；頭頂一階一階疊高的冠；嘴尖兩片黑色鼻孔；嘴邊露出小尖牙；兩側一條紅色發光片
+  const hd = [], hdR = [], cz = k => -3 + (k + .5) * KB;   // cz：第 k 排格子中心的前後位置（0～5 排是腦袋，6～9 排是嘴）
+  const rect = (i0, i1, k0, k1) => { const c = []; for (let i = i0; i <= i1; i++) for (let k = k0; k <= k1; k++) c.push([i, k]); return c; };
+  kjBlock(hd, [[0, 1, rect(-3, 3, 1, 5)], ...[1, 2, 3, 4].map(y => [y, 1, rect(-4, 4, 0, 5)]), [5, 1, rect(-3, 3, 1, 5)]], cz, 0x7f8994, [[0, 1], [0, 2], [0, 3]]);   // 腦袋（冠蓋住的格子不放凸點）
+  kjBlock(hd, [[1.33, 1, rect(-2, 2, 6, 9)], [2.33, 1, rect(-2, 2, 6, 8)]], cz, 0x98a2ad, [[-1, 8], [1, 8], ...rect(-2, 2, 9, 9)]);   // 嘴（上顎）
+  part('wedge', [0, 2.83, cz(9)], [5 * KB - KG, 1 - KG, KB - KG], 0x98a2ad, { into: hd });   // 嘴尖的斜磚
+  part('box', [0, 1.165, cz(7.5) - .1], [5 * KB - .3, .31, 4 * KB - .3], KJC.mouth, { into: hd });   // 嘴縫
+  for (const [y, h, k0, k1] of [[6, 1, 1, 3], [7, 1, 1, 2]]) part('box', [0, y + h / 2, (cz(k0) + cz(k1)) / 2], [KB - KG, h - KG, (k1 - k0 + 1) * KB - KG], 0xaab3bd, { into: hd });   // 頭頂的冠：一階一階疊高
+  part('wedge', [0, 7.5, cz(3)], [KB - KG, 1 - KG, KB - KG], 0xaab3bd, { into: hd });
+  part('wedge', [0, 8.4, cz(1)], [KB - KG, .8 - KG, KB - KG], 0xaab3bd, { into: hd });
+  for (const s of [-1, 1]) {
+    part('box', [s * KB, 3.33 - KG / 2 + .06, cz(8)], [KB - KG, .12, KB - KG], KJC.hole, { into: hd });   // 鼻孔
+    part('wedge', [s * 1.85, 5.62, 2.34], [2 * KB, .55, .6], 0x4a525c, { rz: Math.PI + s * .2, into: hd });   // 眉毛：倒過來的斜磚，內側壓低
+    part('box', [s * 1.85, 4.45, 2.1], [2 * KB - .08, 2 * KB - .08, .12], KJC.hole, { into: hd });   // 眼睛底下的黑色方片
+    part('cone6', [s * 1.35, 1.1, cz(9) + .2], [.34, .55, .34], KJC.tooth, { rx: Math.PI, into: hd });   // 兩顆小尖牙
+    part('cone6', [s * .45, 1.18, cz(9) + .25], [.22, .35, .22], KJC.tooth, { rx: Math.PI, into: hd });
+    part('cone6', [s * 1.95, 1.15, cz(7)], [.26, .4, .26], KJC.tooth, { rx: Math.PI, into: hd });
+    kjPlate(hd, [s * 3.6, 4.6, -1.8], 1.4, 1.6, -.8, .33, -s * 1.2);   // 兩側的小角
+    part('box', [s * (4.5 * KB + .03), 2.5, cz(2)], [.1, .33, 3 * KB], 0, { into: hdR });   // 兩側的紅色發光片
+    const eye = vox(head, BASE.disc, KJ_EYE, [s * 1.85, 4.45, 2.22], [1.5, .12, 1.5], [Math.PI / 2, 0, 0]);   // 圓的紅色發光片
+    eye.castShadow = false;
+    vox(eye, BASE.disc, KJ_SHINE, [.2, .6, -.2], [.28, .3, .28]).castShadow = false;   // 眼睛裡的亮點（兩眼同一側）
+    const halo = new THREE.Sprite(KJ_HALO);
+    halo.position.set(s * 1.85, 4.45, 2.6); halo.scale.setScalar(3);
+    head.add(halo);
+  }
+  mesh(head, hd); mesh(head, hdR, KJ_RED);
+  const jw = [];   // 下巴：兩塊 2×4 的磚
+  for (const s of [-1, 1]) part('box', [s * KB, -.5, 2 * KB], [2 * KB - KG, 1 - KG, 4 * KB - KG], 0x5d656f, { into: jw });
+  part('box', [0, -.5, 2 * KB], [4 * KB - .1, 1 - KG - .03, 4 * KB - .1], KJ_CORE, { into: jw });
+  for (const s of [-1, 1]) {
+    part('cone6', [s * 1.2, .15, 3.25], [.28, .45, .28], KJC.tooth, { into: jw });
+    part('cone6', [s * .6, -1.35, 2.7], [.42, .9, .42], KJC.side, { rx: Math.PI - .45, into: jw });   // 下巴兩根刺
+  }
+  mesh(jaw, jw);
+  // 手：短短的；圓圓的肩甲外側一條紅線，四根槍管手指（指尖是空的）
+  const arms = [-1, 1].map(s => {
+    const sh = G(), el = G();
+    waist.add(sh); sh.position.set(s * 3.5, 4.5, .45);
+    sh.add(el); el.position.set(0, -1.9, .1);
+    const ua = [kjTube([[[0, .4, 0], 1.2, 1.2], [[0, -.9, .05], 1.12, 1.18], [[0, -1.9, .1], 1.0, 1.05]], 'y')], uaR = [];
+    part('ico1', [s * .3, .45, -.05], [2.75, 2.45, 2.7], KJC.top, { into: ua });
+    part('box', [s * 1.6, .55, -.05], [.18, .38, 1.5], 0, { rz: s * .25, into: uaR });
+    mesh(sh, ua); mesh(sh, uaR, KJ_RED);
+    const fa = [kjTube([[[0, .25, 0], 1.02, 1.08], [[0, -.9, .05], 1.12, 1.18], [[0, -1.75, .1], .98, 1.04]], 'y')];
+    part('rbox', [0, -2.15, .12], [2.0, 1.05, 1.7], KJC.side, { into: fa });
+    for (const fx of [-.66, -.22, .22, .66]) {
+      part('cyl6', [fx, -2.95, .2], [.5, 1.0, .5], KJC.side, { into: fa });
+      part('cyl6', [fx, -3.46, .2], [.28, .04, .28], KJC.hole, { into: fa });
+    }
+    mesh(el, fa);
+    return { sh, el };
+  });
+  // 腳：粗粗短短；護膝上一顆紅燈，腳掌四根腳趾
+  const legs = [1, -1].map(s => {
+    const th = G(), kn = G(), an = G();
+    hip.add(th); th.position.set(s * 2.35, -.2, .15);
+    th.add(kn); kn.position.set(0, -2.0, .1);
+    kn.add(an); an.position.set(0, -1.9, 0);
+    mesh(th, [kjTube([[[0, .9, -.1], 1.8, 1.9], [[0, -.3, 0], 2.05, 2.15], [[0, -1.3, .05], 1.85, 1.95], [[0, -2.1, .1], 1.55, 1.65]], 'y')]);
+    const sl = [kjTube([[[0, .3, 0], 1.5, 1.6], [[0, -1.0, .05], 1.45, 1.55], [[0, -1.95, .05], 1.35, 1.45]], 'y')], slR = [];
+    part('ico1', [0, .05, .95], [2.0, 1.8, 1.5], KJC.top, { into: sl });
+    part('cyl', [0, .05, 1.68], [.62, .12, .62], 0, { rx: Math.PI / 2, into: slR });
+    mesh(kn, sl); mesh(kn, slR, KJ_RED);
+    const ft = [];
+    part('rbox', [0, -.4, .55], [2.7, 1.1, 3.6], KJC.side, { into: ft });
+    for (const tx of [-.95, -.32, .32, .95]) part('cone6', [tx, -.5, 2.45], [.55, .9, .55], KJC.claw, { rx: Math.PI / 2, into: ft });
+    part('cone6', [0, -.55, -1.3], [.55, .8, .55], KJC.claw, { rx: -Math.PI / 2, into: ft });
+    mesh(an, ft);
+    return { th, kn, an };
+  });
+  // 尾巴：六節，一節一節像裝甲，每節背上一片鋸齒尖板，前兩節兩側還有小的；尾巴尖微微翹起來
+  const TL = [2.3, 2.2, 2.1, 2.0, 1.9, 1.8], TR = [2.2, 1.95, 1.7, 1.45, 1.2, .95, .7];
+  let parent = hip, at = [0, .1, -2.3];
+  const tail = TL.map((L, i) => {
+    const T = G();
+    parent.add(T); T.position.set(...at);
+    const r0 = TR[i], r1 = TR[i + 1], rm = (r0 + r1) / 2, rings = [[[0, 0, .3], r0 * .9, r0 * .84], [[0, .04, -L * .45], rm * 1.06, rm * .98], [[0, 0, -L], r1 * .98, r1 * .9]];
+    if (i === TL.length - 1) rings.push([[0, 0, -L - .7], .1, .1]);
+    const list = [kjTube(rings, 'z')], fin = [];
+    kjFin(fin, [0, rm * .85, -L * .45], 1.7 - i * .18, L * .7, -1.15, .75 - i * .06, 0, [0, -.05, -L * .4]);
+    if (i < 2) for (const s of [-1, 1]) kjPlate(fin, [s * rm * .5, rm * .7, -L * .45], 1.0 - i * .15, L * .5, -1.15, .45, -s * .45);
+    mesh(T, list); finMesh(T, fin);
+    parent = T; at = [0, 0, -L];
+    return T;
+  });
+  petHit(waist, 'kaiju', [0, 2.3, .2], [8.6, 8.4, 7.6]);
+  petHit(head, 'kaiju', [0, 3.4, 1.2], [7.8, 7.2, 8.8]);
+  g.scale.setScalar(KJ_S);
+  scene.add(g);
+  return { g, hip, waist, neck, head, jaw, tip, arms, legs, tail, TR, TL, back: new THREE.Vector3(0, 2.6, backZ(2.6)), bow: new THREE.Vector3(0, 5.4, backZ(5.4)) };   // back：背中間那一點（游泳時放在水面下）；bow：背的最前面（游泳時從這裡推出浪）
+})();
+/* 水面效果：身體（站著）、頭（撲水和站起來的時候）、尾巴穿過水面的地方一圈白浪；踩下去擴散的水圈；游泳時背鰭前面推出的浪和水花；撲進水裡、頭冒出水面、站起來、甩水的水花 */
+const KJ_FOAM_GEO = new THREE.RingGeometry(.62, 1, 28).rotateX(-Math.PI / 2), KJ_RIPPLE_GEO = new THREE.RingGeometry(.86, 1, 48).rotateX(-Math.PI / 2);
+const KJ_FOAM_THIN = new THREE.RingGeometry(.8, 1, 40).rotateX(-Math.PI / 2);   // 身體、頭比較粗，白浪圈要細
+const kjFoam = [0, 1, 2].map(i => { const m = new THREE.Mesh(i < 2 ? KJ_FOAM_THIN : KJ_FOAM_GEO, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false })); m.visible = false; scene.add(m); return m; });
+const kjRipples = [];
+function kjRipple(x, z, r0, r1, life, op) {
+  let q = kjRipples.find(o => o.t <= 0);
+  if (!q) {
+    if (kjRipples.length >= 30) return;
+    q = { m: new THREE.Mesh(KJ_RIPPLE_GEO, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false })), t: 0 };
+    scene.add(q.m); kjRipples.push(q);
+  }
+  Object.assign(q, { r0, r1, life, op, t: life });
+  q.m.position.set(x, .14, z); q.m.visible = true;
+}
+const kjSpray = (() => {
+  const N = 400, pos = new Float32Array(N * 3).fill(-999), g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const map = canvasTex(32, 32, (x, w, h) => { const gr = x.createRadialGradient(16, 16, 0, 16, 16, 16); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(.5, 'rgba(255,255,255,.8)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = gr; x.fillRect(0, 0, w, h); });
+  const m = new THREE.Points(g, new THREE.PointsMaterial({ size: 1.3, map, transparent: true, depthWrite: false }));
+  m.frustumCulled = false;
+  scene.add(m);
+  return { m, pos, vel: new Float32Array(N * 3), life: new Float32Array(N), i: 0, N };
+})();
+function kjBurst(x, y, z, n, spread, up) {   // 一顆顆白色水滴往上往外噴，再掉回水裡
+  const S = kjSpray;
+  for (let k = 0; k < n; k++) {
+    const i = S.i = (S.i + 1) % S.N, a = Math.random() * TAU, sp = spread * Math.sqrt(Math.random());
+    S.pos.set([x, y, z], i * 3);
+    S.vel.set([Math.cos(a) * sp, up * (.55 + Math.random() * .6), Math.sin(a) * sp], i * 3);
+    S.life[i] = 4;
+  }
+}
+function updateKjFx(dt) {
+  const S = kjSpray, P = S.pos;
+  let any = false;
+  for (let i = 0; i < S.N; i++) {
+    if (S.life[i] <= 0) continue;
+    any = true;
+    S.vel[i * 3 + 1] -= 6 * dt;   // 掉得比真的慢一點：東西大，水花看起來才夠大
+    P[i * 3] += S.vel[i * 3] * dt; P[i * 3 + 1] += S.vel[i * 3 + 1] * dt; P[i * 3 + 2] += S.vel[i * 3 + 2] * dt;
+    if (P[i * 3 + 1] < 0 || (S.life[i] -= dt) <= 0) { S.life[i] = 0; P[i * 3 + 1] = -999; }
+  }
+  if (any) S.m.geometry.attributes.position.needsUpdate = true;
+  for (const q of kjRipples) {
+    if (q.t <= 0) continue;
+    q.t -= dt;
+    const k = 1 - Math.max(0, q.t) / q.life;
+    q.m.scale.setScalar(lerp(q.r0, q.r1, 1 - (1 - k) * (1 - k)));
+    q.m.material.opacity = q.op * (1 - k);
+    if (q.t <= 0) q.m.visible = false;
+  }
+}
+/* 吼叫噴火：轉過來對著島，往後一仰、張嘴、眼睛變藍，往前一探噴出藍色火焰；島升起半球形的防護罩，火打在罩子上沿著罩面濺開 */
+const SHIELD_R = 29, SHIELD_H = 25, KJF_N = 1800, KJ_ROAR = 6.2;   // 罩子的半徑、高度（蓋住整座島、碼頭和停著的飛船）；火焰顆粒數；吼一次幾秒
+const kjFlame = (() => {   // 一顆顆火：剛噴出來白藍色、小顆，越飛越大、轉成深藍再帶點紫，打到罩子變成沿著罩面濺開的火花
+  const g = new THREE.BufferGeometry(), pos = new Float32Array(KJF_N * 3).fill(-999), dat = new Float32Array(KJF_N * 2).fill(1);   // dat：[飛了多久（0～1）, 0＝火、1＝火花]
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('aDat', new THREE.BufferAttribute(dat, 2));
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uScale: { value: 600 } },
+    vertexShader: `attribute vec2 aDat; uniform float uScale; varying vec2 vDat;
+      void main() { vDat = aDat; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv;
+        float s = aDat.y > .5 ? mix(1.4, .3, aDat.x) : mix(1.5, 8.5, sqrt(aDat.x));
+        gl_PointSize = aDat.x >= 1.0 ? 0.0 : min(240.0, s * uScale / -mv.z); }`,
+    fragmentShader: `varying vec2 vDat;
+      void main() { float r = length(gl_PointCoord - .5) * 2.0; if (r > 1.0) discard;
+        float a = (1.0 - r) * (1.0 - r), k = vDat.x; vec3 col;
+        if (vDat.y > .5) { col = vec3(.8, .97, 1.0); a *= 1.0 - k; }
+        else { col = k < .25 ? mix(vec3(.85, .95, 1.0), vec3(.25, .5, 1.0), k / .25) : mix(vec3(.25, .5, 1.0), vec3(.4, .2, .9), (k - .25) / .75); a *= (1.0 - k) * min(1.0, k / .05) * .42; }
+        gl_FragColor = vec4(col, a); }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const m = new THREE.Points(g, mat);
+  m.frustumCulled = false; m.visible = false;
+  scene.add(m);
+  return { m, mat, pos, dat, vel: new Float32Array(KJF_N * 3), age: new Float32Array(KJF_N), life: new Float32Array(KJF_N), i: 0 };
+})();
+const SH = { on: 0, rise: 1.1, hit: 0, up: false }, _shD = new THREE.Vector3(), SH_AT = new THREE.Vector3(0, 8, 0);
+const shield = (() => {   // 防護罩：半透明的六角格子，邊緣比較亮；從海面往上長出來，被打到的地方發白、一圈圈漣漪擴散出去，收掉時一格一格消失
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uT: { value: 0 }, uOn: { value: 0 }, uRise: { value: 1.1 }, uHit: { value: 0 }, uDir: { value: new THREE.Vector3(0, .3, 1).normalize() }, uCol: { value: new THREE.Color(0x6fdcff) } },
+    vertexShader: `varying vec3 vP; varying vec3 vN; varying vec3 vV;
+      void main() { vP = position; vec4 w = modelMatrix * vec4(position, 1.0);
+        vN = normalize(vec3(position.x / ${SHIELD_R}.0, position.y / ${SHIELD_H}.0, position.z / ${SHIELD_R}.0)); vV = cameraPosition - w.xyz;
+        gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `uniform float uT, uOn, uRise, uHit; uniform vec3 uDir, uCol; varying vec3 vP; varying vec3 vN; varying vec3 vV;
+      float hexd(vec2 p) { p = abs(p); return max(dot(p, vec2(.5, .8660254)), p.x); }
+      vec3 hex(vec2 uv) { vec2 r = vec2(1.0, 1.7320508), h = r * .5, a = mod(uv, r) - h, b = mod(uv - h, r) - h, gv = dot(a, a) < dot(b, b) ? a : b; return vec3(uv - gv, .5 - hexd(gv)); }
+      void main() {
+        vec3 p = normalize(vP);
+        vec3 hs = hex(vec2(atan(p.z, p.x) * 7.0028, asin(clamp(p.y, 0.0, 1.0)) * 12.0)), ht = hex(p.xz * 13.0);   // 側面用經緯度展開、頂上用俯視，中間交接
+        float wt = smoothstep(.55, .8, p.y), edge = mix(hs.z, ht.z, wt);
+        vec2 id = mix(hs.xy, ht.xy + 50.0, step(.5, wt));
+        float cell = fract(sin(dot(id, vec2(12.9898, 78.233))) * 43758.5453);
+        float line = smoothstep(.07, .0, edge), fres = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.2);
+        float d = acos(clamp(dot(p, normalize(uDir)), -1.0, 1.0));
+        float ring = max(0.0, sin(d * 22.0 - uT * 9.0)) * exp(-d * 1.8) * uHit, spot = exp(-d * d * 22.0) * uHit;
+        float rise = smoothstep(uRise, uRise - .12, p.y), lead = exp(-pow((p.y - uRise) * 16.0, 2.0)) * (1.0 - step(1.05, uRise));
+        float flick = .85 + .15 * sin(uT * 37.0 + cell * 20.0);
+        float a = ((.08 + fres * .55 + line * (.26 + .6 * uHit * exp(-d * 1.5))) * flick * rise * step(cell, uOn * 1.02) + lead * .9) * uOn + (ring * .45 + spot * 1.1) * rise * uOn;
+        gl_FragColor = vec4(mix(uCol, vec3(1.0), clamp(spot * .8 + line * .15, 0.0, 1.0)), a); }`,
+    transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+  });
+  const m = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 24, 0, TAU, 0, Math.PI / 2), mat);
+  m.scale.set(SHIELD_R, SHIELD_H, SHIELD_R); m.visible = false; m.renderOrder = 2;
+  scene.add(m);
+  const foot = new THREE.Mesh(new THREE.RingGeometry(SHIELD_R - .7, SHIELD_R + .5, 96).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x8fe6ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+  foot.position.y = .2; foot.visible = false;   // 罩子碰到海面的地方一圈光
+  scene.add(foot);
+  return { m, mat, foot };
+})();
+const KJ_MOUTH = new THREE.Sprite(new THREE.SpriteMaterial({ map: KJ_HALO.map, color: 0x7cc4ff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));   // 嘴裡蓄力的藍光
+KJ_MOUTH.position.set(0, 1.2, 5.6); KJ_MOUTH.visible = false;
+kj.head.add(KJ_MOUTH);
+function kjEmit(n, P, D) {   // 從嘴巴 P 往 D 的方向噴出 n 顆火（散開一點）
+  const F = kjFlame;
+  for (let k = 0; k < n; k++) {
+    const i = F.i = (F.i + 1) % KJF_N, sp = 30 + Math.random() * 14, j = .42;
+    F.pos.set([P.x + (Math.random() - .5) * .6, P.y + (Math.random() - .5) * .6, P.z + (Math.random() - .5) * .6], i * 3);
+    F.vel.set([(D.x + (Math.random() - .5) * j) * sp, (D.y + (Math.random() - .5) * j) * sp, (D.z + (Math.random() - .5) * j) * sp], i * 3);
+    F.age[i] = 0; F.life[i] = .8 + Math.random() * .25; F.dat[i * 2] = 0; F.dat[i * 2 + 1] = 0;
+  }
+}
+function updateFlame(dt) {
+  const F = kjFlame, R2 = SHIELD_R * SHIELD_R, H2 = SHIELD_H * SHIELD_H;
+  let any = false, hx = 0, hy = 0, hz = 0, hn = 0;
+  for (let i = 0; i < KJF_N; i++) {
+    if (F.dat[i * 2] >= 1) continue;
+    any = true;
+    const o = i * 3, spark = F.dat[i * 2 + 1] > .5;
+    let x = F.pos[o] + F.vel[o] * dt, y = F.pos[o + 1] + F.vel[o + 1] * dt, z = F.pos[o + 2] + F.vel[o + 2] * dt;
+    F.age[i] += dt;
+    if (!spark) {
+      F.vel[o] += (Math.random() - .5) * 40 * dt; F.vel[o + 1] += (2.5 + (Math.random() - .5) * 40) * dt; F.vel[o + 2] += (Math.random() - .5) * 40 * dt;   // 火是熱的，微微往上飄，一路亂竄
+      const q = (x * x + z * z) / R2 + y * y / H2;
+      if (SH.on > .3 && q < 1 && y > 0) {   // 打到防護罩：貼著罩面往四周濺開
+        const k = 1 / Math.sqrt(q);
+        x *= k; y *= k; z *= k;
+        let nx = x / R2, ny = y / H2, nz = z / R2;
+        const nl = Math.hypot(nx, ny, nz), vn = (F.vel[o] * nx + F.vel[o + 1] * ny + F.vel[o + 2] * nz) / nl;
+        nx /= nl; ny /= nl; nz /= nl;
+        F.vel[o] = (F.vel[o] - vn * nx) * .45 + nx * 3; F.vel[o + 1] = (F.vel[o + 1] - vn * ny) * .45 + ny * 3; F.vel[o + 2] = (F.vel[o + 2] - vn * nz) * .45 + nz * 3;
+        F.dat[i * 2 + 1] = 1; F.age[i] = 0; F.life[i] = .3 + Math.random() * .35;
+        hx += x; hy += y; hz += z; hn++;
+      }
+    } else { const k = 1 - Math.min(1, dt * 2.5); F.vel[o] *= k; F.vel[o + 1] *= k; F.vel[o + 2] *= k; }
+    F.pos[o] = x; F.pos[o + 1] = y; F.pos[o + 2] = z;
+    F.dat[i * 2] = Math.min(1, F.age[i] / F.life[i]);
+  }
+  if (hn) { SH.hit = Math.min(1, SH.hit + hn * .03); _shD.set(hx / hn / SHIELD_R, hy / hn / SHIELD_H, hz / hn / SHIELD_R).normalize(); shield.mat.uniforms.uDir.value.lerp(_shD, .2).normalize(); }
+  if (any) { F.m.geometry.attributes.position.needsUpdate = true; F.m.geometry.attributes.aDat.needsUpdate = true; F.mat.uniforms.uScale.value = renderer.domElement.height / (2 * Math.tan(camera.fov * Math.PI / 360)); }
+  F.m.visible = any;
+}
+function updateShield(dt, t) {
+  if (SH.up) { SH.on = Math.min(1, SH.on + dt * 3); SH.rise = Math.min(1.1, SH.rise + dt / .45); }
+  else SH.on = Math.max(0, SH.on - dt / 1.2);
+  SH.hit = Math.max(0, SH.hit - dt * 1.6);
+  const U = shield.mat.uniforms, vis = SH.on > .002;
+  U.uT.value = t; U.uOn.value = SH.on; U.uRise.value = SH.rise; U.uHit.value = SH.hit;
+  shield.m.visible = shield.foot.visible = vis;
+  shield.foot.material.opacity = SH.on * (.35 + SH.hit * .4);
+}
+function kjRoar(byTap = false) {   // 吼叫噴火；byTap＝點牠觸發（鏡頭會調到看得到整段的角度）。先轉身對著島（rt 是負的），轉正了才開始吼
+  const K = KJ;
+  if ((K.mode !== 'walk' && K.mode !== 'stand') || K.rcd > 0) return false;
+  Object.assign(K, { mode: 'roar', rt: -1, rt0: -1, rtw: 0, hv: 0, rcam: byTap, rsp: 100 + rnd() * 80, rsw: (rnd() < .5 ? -1 : 1) * (8 + rnd() * 4) });   // rsw：火往哪邊掃、掃多寬
+  return true;
+}
+const _rcA = new THREE.Vector3(), _rcH = new THREE.Vector3(), _rcM = new THREE.Vector3();
+function kjRoarCam() {   // 鏡頭：原本就看得到牠和火會打到的地方就不動；不然照你原本看的那一側，轉到最近的、看得到「牠＋火＋罩子」的角度（每次畫面才會跟著你和牠的位置不同）
+  const K = KJ, r = Math.hypot(K.x, K.z) || 1, ux = K.x / r, uz = K.z / r, C = camera.position, m = isMobile();
+  const H = _rcH.set(ux * SHIELD_R * .95, 8, uz * SHIELD_R * .95), M = _rcM.set(lerp(K.x, H.x, .65), 7, lerp(K.z, H.z, .65));   // 看的點偏向火打到罩子的地方：罩子和島才拍得進來
+  const sb = !m && ui.side ? $('#sidebar').getBoundingClientRect() : null, cov = sb && sb.width > 0 ? clamp((innerWidth - sb.left) / innerWidth, 0, .5) : 0;   // 電腦右邊的清單開著時蓋住畫面的比例
+  const seen = P => { _rcA.copy(P).project(camera); return _rcA.x > -.8 && _rcA.x < .8 - 2 * cov && Math.abs(_rcA.y) < .8 && _rcA.z < 1; };
+  if (seen(_rcA.set(K.x, 10, K.z)) && seen(H) && C.distanceTo(M) < 130) return;
+  const vx = C.x - M.x, vz = C.z - M.z, vl = Math.hypot(vx, vz) || 1, side = Math.sign(ux * vz - uz * vx) || 1;
+  const th = clamp(Math.acos(clamp((vx * ux + vz * uz) / vl, -1, 1)), m ? .26 : .55, m ? .87 : 1.9);   // 鏡頭偏離「島→牠」這條線幾度：0＝在牠背後、π＝在島這側（看不到罩子）；手機是直的畫面，偏後面一點
+  const a = Math.atan2(uz, ux) + side * th, d = 70, el = clamp(Math.atan2(C.y - M.y, vl), .25, .6);
+  const pos = new THREE.Vector3(M.x + Math.cos(a) * d * Math.cos(el), M.y + d * Math.sin(el), M.z + Math.sin(a) * d * Math.cos(el)), tgt = M.clone();
+  if (cov) {   // 清單蓋住右邊：鏡頭和看的點一起往右平移，畫面內容才會落在清單左邊那塊的中間
+    const sh = cov * d * camera.aspect * Math.tan(camera.fov * Math.PI / 360), fx = -Math.cos(a), fz = -Math.sin(a);
+    pos.x -= fz * sh; pos.z += fx * sh; tgt.x -= fz * sh; tgt.z += fx * sh;
+  }
+  follow = false;
+  flyTo({ pos, target: tgt }, 1.5);
+}
+/* 走到哪：繞著島挑下一個地方（鏡頭看得到的優先）。淺水區用走的，深水區用游的；中間會先站著看看四周 */
+const KJ = { x: Math.cos(-1.76) * 50, z: Math.sin(-1.76) * 50, h: .19, v: 0, vT: 0, mode: 'walk', u: 0, t: 0, ga: 0, gr: 52, dir: 1, deep: false, ph: 0, sw: 0, sp: 0, sd: 0, ly: 0, lp: 0, lyT: 0, lpT: 0, lookT: 3, tapT: 0, tl: 0, top: 21, cx: 0, cz: 0, wake: 0, so: .6, dp: 0, spl: false, tw: 9, rt: -1, rt0: -1, rtw: 0, hv: 0, rsw: 10, rq: 0, rcd: 0, rsp: 60, rcam: false };   // rt：這次吼了幾秒；rq：點牠後過多久吼；rcd：吼完多久內不再吼；rsp：多久之後才會自己吼
+let kjReady = false;   // 載入時就會先算一次姿勢，那時聲音、飛船都還沒建好，先別碰
+const _kA = new THREE.Vector3(), _kB = new THREE.Vector3(), _kC = new THREE.Vector3(), _kT = [...Array(7)].map(() => new THREE.Vector3());
+const kjView = (x, z) => _dfr.containsPoint(_dv3.set(x, 6, z)) && camera.position.distanceTo(_dv3) < 240;
+const kjCross = (a, b, at) => Math.floor((a - at) / TAU) !== Math.floor((b - at) / TAU);   // 走路的相位這一格有沒有經過 at
+function kjPlan() {
+  const K = KJ, a = Math.atan2(K.z, K.x), wet = K.mode === 'swim' || K.mode === 'dive', deep = rnd() < (wet ? .45 : .5);
+  const go = Math.cos(a + K.h) > 0 ? 1 : -1;   // 現在繞島的方向；走著的時候不改往反方向（掉頭要大迴轉），停下來之後才可能掉頭
+  let best = -1;
+  for (let i = 0; i < 10; i++) {   // 抽幾個候選點，鏡頭看得到的加分
+    const dir = K.v > .6 ? go : rnd() < .5 ? -1 : 1, ca = a + dir * (.5 + rnd() * 1.7), cr = deep ? 72 + rnd() * 14 : 49 + rnd() * 12;
+    const s = rnd() + (kjView(Math.cos(ca) * cr, Math.sin(ca) * cr) ? 1.3 : 0);
+    if (s > best) { best = s; Object.assign(K, { ga: ca, gr: cr, dir }); }
+  }
+  K.deep = deep; K.t = 150; K.dp = Math.atan2(Math.sin(K.ga - a), Math.cos(K.ga - a));
+  if (!wet && !deep && K.rsp <= 0 && K.rcd <= 0 && kjReady && !flight.phase && kjView(K.x, K.z) && rnd() < .5) kjRoar();
+  else if (!wet && !deep && rnd() < .35) { K.mode = 'stand'; K.t = 5 + rnd() * 6; K.so = (rnd() < .5 ? -1 : 1) * (.45 + rnd() * .4); }
+}
+function kjFloor(x, z) {   // 開飛船經過巨獸時至少要飛多高（離牠遠＝0），比照飛到遠島上空自動拉高
+  const K = KJ, d = Math.min(Math.hypot(x - K.x, z - K.z), Math.hypot(x - K.cx, z - K.cz));
+  return d < 15 ? lerp(K.top + 3, 0, smooth((d - 8) / 7)) : 0;
+}
+function updateKaiju(dt, t) {
+  const K = KJ, R = kj, a = Math.atan2(K.z, K.x), r = Math.hypot(K.x, K.z), u0 = K.u;
+  K.rcd -= dt; K.rsp -= dt;
+  if (K.rq > 0 && (K.rq -= dt) <= 0) kjRoar(true);   // 點牠：先轉頭看你，過一下才轉過去對著島吼
+  if (K.mode === 'stand') { if ((K.t -= dt) <= 0) { K.mode = 'walk'; K.t = 150; } }   // 站完照原本挑好的目的地走
+  else if (K.mode === 'roar') { K.rt0 = K.rt; if (K.rt >= 0 && (K.rt += dt) >= KJ_ROAR) { K.mode = 'walk'; K.t = 150; K.rcd = 6; } }
+  else if (K.mode === 'dive') { if ((K.u += dt / 3.4) >= 1) K.mode = 'swim'; }
+  else if (K.mode === 'rise') { if ((K.u += dt / 4) >= 1) { K.mode = 'shake'; K.u = 0; } }
+  else if (K.mode === 'shake') { if ((K.u += dt / 1.8) >= 1) K.mode = 'walk'; }   // 站起來先甩水，甩完才走
+  else {
+    const d = Math.atan2(Math.sin(K.ga - a), Math.cos(K.ga - a)), passed = Math.abs(d) < .08 || (d * K.dp < 0 && Math.abs(d) < 1);
+    K.dp = d;
+    if (passed || (K.t -= dt) <= 0) kjPlan();   // 走過目標那條線就算到了：等走到目標點本身，目標落在轉彎半徑裡面時會一直繞圈
+    if (K.mode === 'walk' && K.deep && r > KJ_SHELF - 1.5) { K.mode = 'dive'; K.u = 0; K.spl = false; }   // 走到淺水區邊上：跳進深水
+    else if (K.mode === 'swim' && !K.deep && r < KJ_SHELF + 1) { K.mode = 'rise'; K.u = 0; }   // 游回淺水區：站起來
+  }
+  const wet = K.mode === 'swim' || K.mode === 'dive';
+  // 轉向：繞著島往目的地走（不穿過島），游泳轉得比較快；站著時慢慢轉過來面向島；太靠近鏡頭就讓開
+  let hd;
+  if (K.mode === 'stand') hd = Math.atan2(-K.x, -K.z) + K.so;   // 斜斜地面向島：正面左右對稱看起來像雕像
+  else if (K.mode === 'roar') hd = Math.atan2(-K.x, -K.z);   // 吼的時候正對著島
+  else {
+    const d = Math.atan2(Math.sin(K.ga - a), Math.cos(K.ga - a)), ac = a + clamp(d, -.28, .28);
+    const rc = wet ? clamp(r + (K.gr - r) * .6, 61, KJ_MAX - 1) : clamp(r + (K.gr - r) * .6, KJ_MIN + .5, KJ_SHELF + .5);
+    let dx = Math.cos(ac) * rc - K.x, dz = Math.sin(ac) * rc - K.z;
+    const q = Math.hypot(dx, dz) || 1;
+    dx = dx / q + Math.sin(K.h) * .5; dz = dz / q + Math.cos(K.h) * .5;   // 偏好往前直走，不原地打轉
+    if (r > KJ_MAX - 14) { const k = smooth((r - KJ_MAX + 14) / 14) * 2.5; dx -= K.x / r * k; dz -= K.z / r * k; }   // 靠近邊界就提早往回轉（游泳轉彎半徑約 17），不要貼著邊界滑
+    if (r < KJ_MIN + 7) { const k = smooth((KJ_MIN + 7 - r) / 7) * 2.2; dx += K.x / r * k; dz += K.z / r * k; }
+    const cx = K.x - camera.position.x, cz = K.z - camera.position.z, cd = Math.hypot(cx, cz) || 1;
+    if (cd < 30 && camera.position.y < 28) {   // 鏡頭壓低在外海時別撞上鏡頭：往外推、再往行進方向那側偏，繞過去（只往外推會跟目的地拉扯、原地打轉）
+      const k = smooth((30 - cd) / 12) * 2, sd = Math.sign(Math.sin(K.h) * cz - Math.cos(K.h) * cx) || 1;
+      dx += (cx / cd + sd * cz / cd * .8) * k; dz += (cz / cd - sd * cx / cd * .8) * k;
+    }
+    hd = Math.atan2(dx, dz);
+  }
+  const w = K.mode === 'swim' ? .36 : K.mode === 'walk' ? .22 : K.mode === 'roar' ? .6 : K.mode === 'stand' || K.mode === 'shake' ? .1 : .14, hdiff = Math.atan2(Math.sin(hd - K.h), Math.cos(hd - K.h));
+  if (K.mode === 'roar') {   // 吼之前轉過去對著島：頭先轉，身體慢慢加速、快轉正時慢慢停；轉正了（或轉太久）才開始吼
+    K.hv = clamp(K.hv + clamp(5.5 * hdiff - 4.0 * K.hv, -3.0, 3.0) * dt, -1.7, 1.7);
+    K.h = Math.atan2(Math.sin(K.h + K.hv * dt), Math.cos(K.h + K.hv * dt));
+    if (K.rt < 0 && ((Math.abs(hdiff) < .05 && Math.abs(K.hv) < .1) || (K.rtw += dt) > 4)) { K.rt = 0; K.rt0 = -.001; }
+  } else {
+    const dh = clamp(hdiff, -w * dt, w * dt);
+    K.h = Math.atan2(Math.sin(K.h + dh), Math.cos(K.h + dh));
+  }
+  K.vT = K.mode === 'stand' || K.mode === 'shake' || K.mode === 'roar' ? 0 : K.mode === 'walk' ? 2.4 : K.mode === 'swim' ? 6 : K.mode === 'dive' ? lerp(2.4, 6, K.u) : lerp(3, .8, K.u);   // 站起來時先煞住，不然會衝進淺水區太裡面
+  if (K.mode === 'walk' || K.mode === 'swim') K.vT *= 1 - .75 * smooth((Math.abs(hdiff) - .6) / 1.4);   // 要大轉彎就先放慢，轉的圈才小（不然會一路衝到邊界）
+  K.v += clamp(K.vT - K.v, -(K.mode === 'rise' ? 2 : K.mode === 'roar' ? 2.5 : 1.2) * dt, .9 * dt);
+  K.x += Math.sin(K.h) * K.v * dt; K.z += Math.cos(K.h) * K.v * dt;
+  const r2 = Math.hypot(K.x, K.z), kk = r2 < KJ_MIN - 1 ? (KJ_MIN - 1) / r2 : r2 > KJ_MAX + 1 ? (KJ_MAX + 1) / r2 : 1;   // 保底：不會走進海豚游的水域，也不會撞上遠島
+  K.x *= kk; K.z *= kk;
+  // 姿勢：sp＝身體往前趴的程度（0 站直、1 游泳），sd＝沉到游泳深度的程度；撲水＝先蹲、跳起來、往前倒、肚子拍到水面；站起來＝先站直再甩水
+  let sp, sd, hop = 0, crouch = 0;
+  if (K.mode === 'dive') { const u = K.u; sp = smooth((u - .2) / .38); sd = smooth((u - .36) / .44); hop = Math.sin(Math.PI * clamp((u - .17) / .36, 0, 1)); crouch = smooth(u / .14) * (1 - smooth((u - .14) / .07)); }
+  else if (K.mode === 'rise') { sp = 1 - smooth((K.u - .1) / .7); sd = 1 - smooth(K.u / .75); }
+  else sp = sd = K.mode === 'swim' ? 1 : 0;
+  const ph0 = K.ph, sk = K.mode === 'shake' ? smooth(K.u / .12) * (1 - smooth((K.u - .45) / .55)) : 0;   // sk：甩水的力道
+  K.sp = sp; K.sd = sd;
+  K.ph += K.v * dt / (3.6 * KJ_S) * TAU * (1 - sp) + (K.mode === 'roar' ? Math.abs(K.hv) * dt * 2.6 : 0);   // 短腿小步：一步不到 2，兩步一個循環；吼之前轉身時原地踏步
+  K.sw += dt * (1.2 + K.v * .22) * Math.max(sp, .001);   // 游泳時尾巴左右擺的節奏
+  const gw = Math.max(smooth(K.v / 1.2) * (1 - sp), K.mode === 'roar' ? smooth(Math.abs(K.hv) / .45) * .85 : 0), ph = K.ph, sn = Math.sin(ph), cs = Math.cos(ph), sw = K.sw, sh = Math.sin(t * 19);
+  // 吼：0～1.1 秒往後仰、張嘴、眼睛變藍、嘴裡蓄藍光；1.1 秒往前一探，1.3～4.5 秒噴火（頭慢慢左右掃）；之後閉嘴、眼睛變回紅色
+  const T = K.mode === 'roar' ? K.rt : -1, T0 = K.mode === 'roar' ? K.rt0 : -1;
+  const rA = T < 0 ? 0 : smooth(T / 1.1) * (1 - smooth((T - 1.1) / .25)), rB = T < 0 ? 0 : smooth((T - 1.1) / .25) * (1 - smooth((T - 4.5) / .8)), rW = rA + rB;
+  const eb = T < 0 ? 0 : smooth(T / .9) * (1 - smooth((T - 4.6) / .7)), ch = T < 0 ? 0 : smooth(T / 1.2) * (1 - smooth((T - 4.4) / .5));   // eb：眼睛變藍的程度；ch：嘴裡的藍光
+  // 頭往哪看：站著時慢慢四處看；被點到就轉頭盯著你、歪頭；開飛船靠近就盯著飛船
+  if ((K.lookT -= dt) <= 0) { K.lookT = 2.5 + rnd() * 4; K.lyT = rnd() < .4 ? 0 : (rnd() - .5) * 1.5; K.lpT = (rnd() - .6) * .3; }
+  let ly = K.lyT * (1 - sp * .7), lp = K.lpT * (1 - sp), lr = .7;
+  const lookAt = (P, pmax) => {
+    const ca = Math.atan2(P.x - K.x, P.z - K.z);
+    ly = clamp(Math.atan2(Math.sin(ca - K.h), Math.cos(ca - K.h)), -1.1, 1.1) * (1 - sp * .6);
+    lp = clamp(Math.atan2(P.y - 13, Math.hypot(P.x - K.x, P.z - K.z)), -pmax, pmax) * (1 - sp);
+  };
+  if (K.tapT > 0) { K.tapT -= dt; lookAt(camera.position, .35); }
+  if (kjReady && flight.phase && Math.hypot(ship.position.x - K.x, ship.position.z - K.z) < 50) { lookAt(ship.position, .5); lr = 1.4; }
+  if (K.mode === 'roar' && K.rt < 0) { const ca = Math.atan2(-K.x, -K.z); ly = clamp(Math.atan2(Math.sin(ca - K.h), Math.cos(ca - K.h)), -.75, .75); lp = 0; lr = 1.5; }   // 吼之前轉身：頭先轉過去看島
+  ly *= 1 - rW; lp *= 1 - rW;
+  K.ly += clamp(ly - K.ly, -lr * dt, lr * dt); K.lp += clamp(lp - K.lp, -lr * .6 * dt, lr * .6 * dt);
+  K.tl += clamp((K.tapT > 0 ? .26 : 0) - K.tl, -.9 * dt, .9 * dt);
+  // 擺姿勢：站著／走路＝微微駝背、一搖一擺、尾巴尖翹著甩；游泳＝整隻趴平潛在水下、臉朝下、尾巴像鱷魚一樣左右擺、兩腳踢水
+  const B = (x, y) => lerp(x, y, sp);
+  R.g.position.set(K.x, 0, K.z);
+  R.g.rotation.y = K.h + Math.sin(sw) * .06 * sp;
+  R.hip.rotation.set(B(.04 + .03 * Math.cos(2 * ph) * gw, 1.45 + .02 * Math.sin(sw * 2)), .06 * sn * gw + .04 * Math.sin(sw) * sp - .1 * sk * sh, B(.08 * cs * gw + Math.sin(t * .7) * .015, .03 * Math.sin(sw)));
+  R.waist.rotation.set(B(.12 + Math.sin(t * 1.1) * .015, .1), -.05 * sn * gw + K.ly * .2 * (1 - sp) + .32 * sk * sh, .04 * cs * gw);
+  R.neck.rotation.set(B(-.08, 0) - K.lp * .3, K.ly * .3 + .2 * sk * Math.sin(t * 19 - .4), 0);
+  R.head.rotation.set(B(-.1, .1) - K.lp * .6, K.ly * .5 + .45 * sk * Math.sin(t * 19 - .8), K.tl);
+  R.head.position.z = .15 + smooth((sd - .55) / .4);   // 潛到水下後頭再往下收一點（頭比背鰭大，不收的話後腦勺會露出水面）
+  R.jaw.rotation.x = .04;
+  R.legs.forEach((L, i) => {
+    const p = ph + i * Math.PI, kick = sw * 2.2 + i * Math.PI;
+    L.th.rotation.set(B(-.05 - .5 * Math.sin(p) * gw, -.3 + .45 * Math.sin(kick)) - .35 * crouch + .5 * hop, 0, (i ? -1 : 1) * B(.05, .1));   // 負的＝往前跨
+    L.kn.rotation.x = B(.05 + .8 * Math.pow(Math.max(0, Math.cos(p)), 1.5) * gw, .5 + .3 * Math.sin(kick + 1)) + .7 * crouch;   // 往前跨的那段膝蓋彎起來
+    L.an.rotation.x = B(-(R.hip.rotation.x + L.th.rotation.x + L.kn.rotation.x), .6);   // 站著走時腳掌保持水平
+  });
+  R.arms.forEach((A, i) => {
+    const s = i ? 1 : -1;
+    A.sh.rotation.set(B(-.5 + .25 * Math.sin(ph + (i ? 0 : Math.PI)) * gw, -.4 + .2 * Math.sin(sw * 2 + i * Math.PI)) + .7 * crouch - 1.6 * hop, 0, s * (B(.32, .2) + .3 * sk * Math.sin(t * 19 + i * Math.PI)));   // 走路時手跟對側的腳一起擺；跳起來時兩手往前伸
+    A.el.rotation.x = B(-.85, -.6);
+  });
+  R.tail.forEach((T, i) => {
+    const yw = (.05 + .04 * i) * Math.sin(ph - .4 - i * .5) * gw + Math.sin(t * 1.2 - i * .5) * .05 * (1 - sp) * (1 - gw) + .12 * sk * Math.sin(t * 19 - i * .6);
+    const ys = (.1 + .06 * i) * Math.sin(sw - i * .7) * .5;
+    T.rotation.set(i ? B(i > 3 ? .2 : .06, 0) : B(-.32, -1.35), B(yw, ys), 0);
+  });
+  R.tail[0].position.z = -2.3 + 1.4 * smooth((sd - .55) / .4);   // 尾巴根部也往下收（趴平時尾巴根在背上，比背還高）
+  if (rW > 0) {   // 吼：rA＝往後仰、兩手張開，rB＝往前探、兩手往後收、頭左右掃
+    const mx = (v, a, b) => v * (1 - rW) + a * rA + b * rB, sweep = .034 * K.rsw * Math.sin((T - 1.3) * 1.9);
+    R.waist.rotation.x = mx(R.waist.rotation.x, -.28, .22);
+    R.neck.rotation.x = mx(R.neck.rotation.x, -.15, .05);
+    R.head.rotation.set(mx(R.head.rotation.x, -.5, .02), mx(R.head.rotation.y, 0, sweep), R.head.rotation.z * (1 - rW));
+    R.arms.forEach((A, i) => { const s = i ? 1 : -1; A.sh.rotation.x = mx(A.sh.rotation.x, -1.5, -.3); A.sh.rotation.z = mx(A.sh.rotation.z, s * .95, s * .5); A.el.rotation.x = mx(A.el.rotation.x, -.4, -.9); });
+    R.tail[0].rotation.x = mx(R.tail[0].rotation.x, -.05, -.3);
+  }
+  R.jaw.rotation.x = .04 + .55 * rA + (.75 + .04 * Math.sin(t * 40)) * rB;   // 張大嘴
+  KJ_EYE.userData.base.lerpColors(KJ_EYE_RED, KJ_EYE_BLUE, eb);   // 眼睛紅→藍（電影版噴火時眼睛變藍）
+  KJ_HALO.color.lerpColors(KJ_HALO_RED, KJ_HALO_BLUE, eb);
+  if (eb > 0) KJ_HALO.opacity = Math.max(KJ_HALO.opacity, eb * .9);   // 白天吼也看得到眼睛發光
+  KJ_MOUTH.visible = ch > .01;
+  KJ_MOUTH.material.opacity = ch * (.75 + .25 * Math.sin(t * 31));
+  KJ_MOUTH.scale.setScalar(2 + 3.5 * ch + rB * 1.5 * Math.sin(t * 23));
+  // 整隻放多深：先把根部放在 0 量背的高度；站著＝腳踩海底，游泳＝背剛好在水面下、只有背鰭露出來
+  R.g.updateMatrixWorld(true);
+  _kB.copy(R.back).applyMatrix4(R.waist.matrixWorld);
+  const ys = -kjDepth(Math.hypot(K.x, K.z)) + .15 * KJ_S * Math.cos(2 * ph) * gw + Math.sin(t * 1.1) * .05 * (1 - sp);   // 走路一步一沉（踩下去最低）
+  R.g.position.y = lerp(ys, KJ_SWIM + Math.sin(sw * 2) * .06 - _kB.y, sd) + KJ_S * (2.6 * hop - .7 * crouch - .35 * rA - .15 * rB);   // 吼的時候微微蹲低、站穩
+  R.g.updateMatrixWorld(true);
+  if (T >= 1.3 && T < 4.5) {   // 噴火：從嘴巴往島的中間噴（左右掃一點），會先打到防護罩
+    _kC.set(0, 1.0, 5.3).applyMatrix4(R.head.matrixWorld);
+    const sl = Math.hypot(K.x, K.z) || 1, sw2 = K.rsw * Math.sin((T - 1.3) * 1.9);
+    _kA.set(-K.z / sl * sw2 - _kC.x, 5 - _kC.y, K.x / sl * sw2 - _kC.z).normalize();
+    kjEmit(Math.floor(900 * dt + Math.random()), _kC, _kA);
+  }
+  if (K.rcam && kjReady) { K.rcam = false; kjRoarCam(); }   // 點牠吼：一開始轉身時鏡頭就調過去
+  if (T >= 0 && kjReady) {   // 吼的時間軸上的事：吼聲、阿滿叫、罩子升起來、火打到罩子、罩子收掉
+    const at = x => T0 < x && T >= x, awake = dog.state !== 'sleep' && dog.state !== 'bed';
+    if (at(.05)) sfx('kjRoar', R.head);
+    if (at(.3) && awake) { Object.assign(dog, { path: null, state: 'idle', t: 5 }); dog.g.rotation.y = Math.atan2(K.x - dog.g.position.x, K.z - dog.g.position.z); bubble(dog.g, '汪汪汪！', 1.25); }
+    if (at(1.3)) { if (SH.on < .05) SH.rise = -.1; SH.up = true; sfx('kjFlame', R.head, 3.2); sfx('shieldUp', SH_AT); }
+    if (at(1.9)) sfx('shieldHit', SH_AT, 3.2);
+    if (at(2.6) && awake) bubble(dog.g, '汪汪！', 1.25);
+    if (at(5.3)) { SH.up = false; sfx('shieldDown', SH_AT); }
+  }
+  // 水面：身體、頭、尾巴穿過水面的地方一圈白浪；腳踩下去水圈擴散出去
+  const foamAt = (m, P, Q, ra, rb, op, sq = 1) => {
+    if ((P.y > 0) === (Q.y > 0)) return false;
+    const f = P.y / (P.y - Q.y), s = lerp(ra, rb, f) * KJ_S * (1.12 + Math.sin(t * 2.6 + m.id) * .04);
+    m.position.set(lerp(P.x, Q.x, f), .14, lerp(P.z, Q.z, f));
+    m.scale.set(s, 1, s * sq); m.rotation.y = K.h;
+    m.material.opacity = op;
+    return (m.visible = true);
+  };
+  _kA.set(0, 3, .2).applyMatrix4(R.waist.matrixWorld); _kB.set(0, -4.6, .2).applyMatrix4(R.hip.matrixWorld);
+  if (!foamAt(kjFoam[0], _kA, _kB, 3.9, 4.3, .45 * (1 - sd), .88)) kjFoam[0].visible = false;
+  _kA.set(0, 7, .3).applyMatrix4(R.head.matrixWorld); _kB.set(0, .3, .3).applyMatrix4(R.head.matrixWorld);
+  if (!foamAt(kjFoam[1], _kA, _kB, 3.3, 3.6, .45 * sd, .95)) kjFoam[1].visible = false;
+  R.legs.forEach((L, i) => {
+    if (gw > .3 && kjFoam[0].visible && kjCross(ph0, K.ph, Math.PI / 2 + i * Math.PI)) {   // 往前跨到底、踩下去：水圈從那隻腳擴散出去
+      L.an.getWorldPosition(_kC);
+      const m = kjFoam[0], dx = _kC.x - m.position.x, dz = _kC.z - m.position.z, q = Math.hypot(dx, dz) || 1, e = m.scale.x * .9;
+      kjRipple(_kC.x, _kC.z, 3, 12, 2.6, .5);
+      kjBurst(m.position.x + dx / q * e, .3, m.position.z + dz / q * e, 10, 2.5, 3.5);
+      if (kjReady) sfx('kjStep', _kC);
+    }
+  });
+  R.tail.forEach((T, i) => T.getWorldPosition(_kT[i]));
+  _kT[6].set(0, 0, -R.TL[5]).applyMatrix4(R.tail[5].matrixWorld);
+  let tf = false;
+  for (let i = 0; i < 6 && !tf; i++) tf = foamAt(kjFoam[2], _kT[i], _kT[i + 1], R.TR[i], R.TR[i + 1], .55 * (1 - sd));
+  if (!tf) kjFoam[2].visible = false;
+  R.head.getWorldPosition(_kA); R.tip.getWorldPosition(_kB);
+  K.top = Math.max(_kB.y + .6, 3); K.cx = _kA.x; K.cz = _kA.z;   // 頭頂（含頭上的冠）
+  if (sd > .8 && K.v > 1.5) {   // 游泳：背鰭最前面推出浪、背鰭劃過水面濺起小水花
+    if ((K.wake -= dt) <= 0) {
+      K.wake = .55;
+      _kC.copy(R.bow).applyMatrix4(R.waist.matrixWorld);
+      kjRipple(_kC.x, _kC.z, 1.5, 7, 2.4, .45);
+      if (Math.random() < .6) kjBurst(_kC.x, .2, _kC.z, 5, 1.6, 2.4);
+    }
+    if (Math.random() < dt * 8) { const f = (Math.random() - .3) * 7; _kC.copy(R.back).applyMatrix4(R.waist.matrixWorld); kjBurst(_kC.x + Math.sin(K.h) * f, .25, _kC.z + Math.cos(K.h) * f, 2, .7, 1.8); }
+  }
+  if (K.mode === 'rise') {   // 站起來：頭頂一冒出水面就嘩一聲
+    R.tip.getWorldPosition(_kC);
+    if (K.tw < 0 && _kC.y >= 0) { R.head.getWorldPosition(_kA); kjBurst(_kA.x, .5, _kA.z, 70, 4, 7); kjRipple(_kA.x, _kA.z, 3, 15, 3.2, .65); if (kjReady) sfx('kjSplash', _kA, 1.4); }
+    K.tw = _kC.y;
+  } else K.tw = -1;
+  if (K.mode === 'dive' && !K.spl && K.u > .35) {   // 肚子拍到水面：撲通一大片水花
+    _kB.set(0, 2.5, 3.2).applyMatrix4(R.waist.matrixWorld);
+    if (_kB.y < .6) {
+      K.spl = true;
+      kjBurst(_kB.x, .5, _kB.z, 220, 8, 11);
+      kjRipple(_kB.x, _kB.z, 5, 20, 3.5, .7); kjRipple(_kB.x, _kB.z, 2.5, 13, 2.6, .6);
+      if (kjReady) sfx('kjSplash', _kB, 2.4);
+    }
+  }
+  if (K.mode === 'rise' && K.u > .1 && K.u < .7) for (let k = 0; k < 4; k++) {   // 站起來時水從頭上、肩膀和背上嘩啦啦流下來
+    _kB.set((Math.random() - .5) * 7, 1 + Math.random() * 6, (Math.random() - .6) * 6).applyMatrix4((k & 1 ? R.head : R.waist).matrixWorld);
+    if (_kB.y > .5) kjBurst(_kB.x, _kB.y, _kB.z, 1, .8, .4);
+  }
+  if (K.mode === 'shake' && u0 < .08 && K.u >= .08 && kjReady) sfx('kjShake', R.head);
+  if (sk > .25) for (let k = 0; k < 5; k++) {   // 甩水：水滴往四面八方飛
+    _kB.set((Math.random() - .5) * 7.5, .5 + Math.random() * 6.5, (Math.random() - .5) * 6).applyMatrix4((k % 3 ? R.head : R.waist).matrixWorld);
+    if (_kB.y > .5) kjBurst(_kB.x, _kB.y, _kB.z, 1, 6, 2.5);
+  }
+  updateKjFx(dt); updateFlame(dt); updateShield(dt, t);
+}
+kjPlan();
+Object.assign(KJ, { mode: 'stand', t: 9, h: .19 + .6 });   // 一開始站在島北邊外海、面向島：開場鏡頭從海上飛向島時就看得到牠
+updateKaiju(0, 0);
+kjReady = true;
+
 /* 清單「島民」：點了鏡頭飛過去、牠會有反應 */
 const RESIDENTS = [
   { id: 'dog', name: '阿滿', sub: '柴犬・常在島上閒晃，你走動牠會跟著', color: '#d8894b', icon: 'paw' },
@@ -2618,10 +3253,11 @@ const RESIDENTS = [
   { id: 'crab', name: '寄居蟹', sub: '沙灘上三隻，靠近就縮進殼裡', color: '#e0663f', icon: 'paw' },
   { id: 'blob', name: '柑仔丁', sub: '橘色方塊小傢伙・在廣場和機台間跳來跳去', color: '#d97757', icon: 'paw' },
   { id: 'dolphin', name: '海豚', sub: '三隻結伴在島外游來游去，偶爾表演；點牠就跳給你看', color: '#5f86a6', icon: 'wave' },
+  { id: 'kaiju', name: '機械巨獸', sub: '在外海搖搖擺擺地走、潛水時只露出背鰭；點牠會對著島噴藍色火焰，島會升起防護罩', color: '#7b8794', icon: 'wave' },
 ];
 function petPos(id) {
   const v = new THREE.Vector3();
-  return ({ dog: dog.g, cat: cat.g, crab: crabs[0].g, blob: blob.g, dolphin: dolphins[0].g })[id].getWorldPosition(v);
+  return ({ dog: dog.g, cat: cat.g, crab: crabs[0].g, blob: blob.g, dolphin: dolphins[0].g, kaiju: kj.waist })[id].getWorldPosition(v);
 }
 function petTap(id, fromList = false) {
   if (id === 'me') return swing();
@@ -2640,12 +3276,19 @@ function petTap(id, fromList = false) {
     if (dolTrick(d, ['spin', 'flip', 'walk', 'jump'][(rnd() * 4) | 0]) || dolTrick(d, 'jump') || dolTrick(d, 'hop')) dolphins.forEach(o => { if (o !== d && rnd() < .5) o.jt = .3 + rnd() * .5; });
     sfx('whistle', d.g);
   }
+  else if (id === 'kaiju') { KJ.tapT = 3.5; if ((KJ.mode === 'walk' || KJ.mode === 'stand') && KJ.rcd <= 0 && KJ.rq <= 0) KJ.rq = .7; }   // 轉頭盯著你，過一下轉過去對著島吼、噴火
 }
 function focusPet(id) {
   if (state.flying || !RESIDENTS.some(r => r.id === id)) return;
   if (isMobile()) { ui.side = false; syncLayout(); }
   closeCard();
   follow = false;
+  if (id === 'kaiju') {   // 從島這側看過去、仰角壓低，拍得到全身（仰角不低於旋轉控制的下限，飛到後才不會跳一下）
+    const K = KJ, a = Math.atan2(-K.z, -K.x) + (Math.sin(K.h - Math.atan2(-K.x, -K.z)) > 0 ? -.6 : .6), d = (isMobile() ? 64 : 50) * (K.sd > .5 ? .85 : 1), lead = K.v * (K.sd > .5 ? 2.4 : 1.4);   // 游泳時只露出背鰭：靠近一點；游得快，對準牠前面一點，鏡頭飛到後牠才會游進畫面中間   // 斜斜地從牠前方那側看（正面左右對稱像雕像）
+    const t = new THREE.Vector3(K.x + Math.sin(K.h) * lead, K.sd > .5 ? 1 : 9.5, K.z + Math.cos(K.h) * lead);
+    flyTo({ pos: new THREE.Vector3(t.x + Math.cos(a) * d * .97, t.y + d * .235, t.z + Math.sin(a) * d * .97), target: t }, 1.4, () => petTap(id, true));
+    return;
+  }
   const t = petPos(id);
   if (id === 'dolphin') { const d = dolphins[0]; t.set(d.x + Math.sin(d.h) * d.v * 1.1, 0, d.z + Math.cos(d.h) * d.v * 1.1); }   // 鏡頭飛到的時候牠已經游到前面
   t.y += id === 'cat' ? .4 : .6;
@@ -2653,7 +3296,7 @@ function focusPet(id) {
   if (off.y < 4) off.y = 4;
   flyTo({ pos: t.clone().add(off), target: t }, 1.1, () => petTap(id, true));
 }
-function updatePets(dt, t) { updateDog(dt, t); updateCat(dt, t); updateCrabs(dt, t); updateBlob(dt, t); updateFish(dt); updateDolphins(dt, t); updateSplashes(dt); updateBall(dt); updateFishing(dt, t); updateDivers(dt, t); }
+function updatePets(dt, t) { updateDog(dt, t); updateCat(dt, t); updateCrabs(dt, t); updateBlob(dt, t); updateFish(dt); updateDolphins(dt, t); updateKaiju(dt, t); updateSplashes(dt); updateBall(dt); updateFishing(dt, t); updateDivers(dt, t); }
 
 /* ---------- 日夜（預設跟著現在時間） ---------- */
 const DAY = [
@@ -2700,6 +3343,7 @@ function applyDay(min) {
   stars.material.opacity = Math.pow(night, 1.4);
   for (const m of marqueeMats) m.color.setScalar(lerp(.95, 1.7, night));
   if (mazeArea) mazeArea.flies.material.opacity = night * .9;
+  KJ_HALO.opacity = smooth((night - .3) / .5) * .75;
   renderer.toneMappingExposure = lerp(1.0, .95, night);
 }
 const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60; };
@@ -3353,7 +3997,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && !s
 addEventListener('storage', e => { if (e.key && !e.key.startsWith('sanasai_')) refresh(); });
 
 /* ---------- 開飛船：走上坡道起飛後換你駕駛，穿過三台機台上空的光圈；三個都過就一鏡到底衝上太空、跳光速、降落回碼頭 ---------- */
-const flight = { phase: null, t: 0, walking: false, yaw: Math.PI, bank: 0, pitch: 0, speed: 0, boostBtn: false, far: false, clock: 0, sec: -1, done: false, jumped: false, from: new THREE.Vector3(), route: null, dur: 1 };
+const flight = { phase: null, t: 0, walking: false, yaw: Math.PI, bank: 0, pitch: 0, speed: 0, boostBtn: false, far: false, clock: 0, sec: -1, done: false, jumped: false, from: new THREE.Vector3(), route: null, dur: 1, kl: 0 };
 const steer = { id: null, x0: 0, y0: 0, x: 0, y: 0 };
 const V3 = a => new THREE.Vector3(...a);
 const FLY = { board: 1.4, lift: 2.2, climb: 7, hyper: 1.1, descent: 9, touch: 2.6, off: 1.3 };
@@ -3542,6 +4186,7 @@ function landNow() {   // 按「降落」：從現在的位置自動飛回碼頭
   const pts = p.z > 12 ? [p, ahead, V3([SHIP.x, 6, SHIP.z + 9]), V3([SHIP.x, 3.4, SHIP.z])] : [p, ahead, V3([SHIP.x, 10, 4]), V3([SHIP.x, 6, 13.5]), V3([SHIP.x, 3.4, SHIP.z])];
   F.route = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
   F.dur = Math.max(3, F.route.getLength() / 6);
+  F.kl = 0;
   nextFlight('return');
 }
 function skipFlight() {
@@ -3687,6 +4332,7 @@ function updateFlight(dt) {
     p.y += inp.y * 6 * dt;
     let floor = r < 21 ? 8.6 : 2.4;   // 島上空要高過機台和樹，海上可以貼著飛
     for (const I of FAR_ISLES) { const d = Math.hypot(p.x - I.x, p.z - I.z); if (d < I.r + 6) floor = Math.max(floor, lerp(I.top, 2.4, smooth((d - I.r) / 6))); }   // 飛到遠島上空自動拉高
+    floor = Math.max(floor, kjFloor(p.x, p.z));   // 經過外海的巨獸也是：從牠頭上飛過去
     if (p.y < floor) p.y = lerp(p.y, floor, Math.min(1, dt * 4));
     p.y = Math.min(p.y, 30);
     F.bank = lerp(F.bank, turn * .4, Math.min(1, dt * 4));
@@ -3793,8 +4439,10 @@ function updateFlight(dt) {
     avatar.visible = true; mePin.obj.visible = true; F.walking = true;
     nextFlight('off');
   } else if (F.phase === 'return') {   // 按「降落」：自動飛回碼頭上空
-    const k = Math.min(1, F.t / F.dur), u = 1 - (1 - k) * (1 - k);
-    poseShip(F.route.getPointAt(u, _fp), F.route.getTangentAt(u, _ft), dt);
+    const k = Math.min(1, F.t / F.dur), u = 1 - (1 - k) * (1 - k), rp = F.route.getPointAt(u, _fp);
+    F.kl = lerp(F.kl, Math.max(0, kjFloor(rp.x, rp.z) - rp.y), Math.min(1, dt * 3));   // 回程路上經過巨獸就拉高
+    rp.y += F.kl;
+    poseShip(rp, F.route.getTangentAt(u, _ft), dt);
     camera.fov = lerp(camera.fov, baseFov(), Math.min(1, dt * 3));
     camera.updateProjectionMatrix();
     chaseCam(dt, 3);
@@ -3912,11 +4560,11 @@ $('#btn-sound').addEventListener('click', () => setSound(!snd.on));
 soundUI();
 
 const _sv = new THREE.Vector3(), _sdir = new THREE.Vector3(), _sx = new THREE.Vector3(), _ssp = new THREE.Vector3();
-function place(at) {   // 聲音的位置 → [音量, 左右]：以鏡頭看的地方當耳朵，越遠越小聲，左右照鏡頭的方向
+function place(at, ref = 14) {   // 聲音的位置 → [音量, 左右]：以鏡頭看的地方當耳朵，越遠越小聲（ref＝多遠時小一半；巨獸的聲音傳得遠），左右照鏡頭的方向
   if (!at) return [1, 0];
   const p = at.isObject3D ? at.getWorldPosition(_sv) : at, d = p.distanceTo(controls.target), v = _sdir.copy(p).sub(camera.position);
   _sx.set(1, 0, 0).applyQuaternion(camera.quaternion);
-  return [1 / (1 + (d / 14) ** 2), clamp(v.dot(_sx) / Math.max(4, v.length()) * 1.3, -.8, .8)];
+  return [1 / (1 + (d / ref) ** 2), clamp(v.dot(_sx) / Math.max(4, v.length()) * 1.3, -.8, .8)];
 }
 function osc(out, { type = 'sine', f = 440, f2 = 0, curve = null, t = 0, dur = .2, v = .2, a = .005, filter = null, vib = null }) {
   const c = snd.ctx, t0 = c.currentTime + t, o = c.createOscillator(), g = c.createGain();
@@ -3987,11 +4635,45 @@ const SFX = {
   warp(o) { hiss(o, { dur: 1.15, v: .16, a: .9, f: 300, f2: 5000, q: 1.2 }); osc(o, { type: 'sawtooth', f: 180, f2: 1400, dur: 1.15, v: .05, a: .9, filter: ['lowpass', 2500, 1] }); },
   boom(o) { osc(o, { f: 95, f2: 32, dur: 1.3, v: .3 }); hiss(o, { dur: 1.1, v: .22, type: 'lowpass', f: 900, f2: 90, q: .7 }); },
   land(o) { osc(o, { f: 70, f2: 40, dur: .35, v: .2 }); hiss(o, { t: .05, dur: .7, v: .05, type: 'highpass', f: 3000, q: .5 }); },
+  // 外海的巨獸
+  kjRoar(o) {   // 機械巨獸的吼聲：低沉的咆哮＋金屬感的尖嘯＋一口氣的雜訊
+    osc(o, { type: 'sawtooth', curve: [62, 92, 84, 58], dur: 2.3, v: .3, a: .25, filter: ['lowpass', 650, 1.2], vib: [7, 5] });
+    osc(o, { type: 'sawtooth', curve: [240, 500, 440, 260], dur: 2.0, v: .12, a: .2, filter: ['bandpass', 1050, 4], vib: [11, 16] });
+    osc(o, { type: 'square', curve: [370, 760, 690, 420], dur: 1.9, v: .045, a: .25, filter: ['bandpass', 1500, 6] });
+    hiss(o, { dur: 2.2, v: .12, a: .3, f: 650, f2: 260, q: .8 });
+  },
+  kjFlame(o, dur = 3.2) {   // 噴火：一直轟轟響的風聲（忽大忽小）＋低低的隆隆聲＋劈哩啪啦
+    const c = snd.ctx, t0 = c.currentTime, s = c.createBufferSource(), f = biq('bandpass', 700, .7), g = c.createGain(), l = c.createOscillator(), lg = c.createGain();
+    s.buffer = snd.noise; s.loop = true;
+    f.frequency.setValueAtTime(400, t0); f.frequency.linearRampToValueAtTime(900, t0 + .3); f.frequency.linearRampToValueAtTime(650, t0 + dur);
+    g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(.24, t0 + .25); g.gain.setValueAtTime(.24, t0 + dur - .4); g.gain.linearRampToValueAtTime(0, t0 + dur);
+    l.frequency.value = 7; lg.gain.value = .05; l.connect(lg).connect(g.gain);
+    s.connect(f).connect(g).connect(o);
+    s.start(t0, Math.random() * 1.5); l.start(t0); s.stop(t0 + dur + .05); l.stop(t0 + dur + .05);
+    osc(o, { f: 48, dur, v: .16, a: .3 });
+    for (let i = 0; i < 22; i++) hiss(o, { t: Math.random() * (dur - .2), dur: .05, v: .06, type: 'highpass', f: 2500 + Math.random() * 2000, q: .6 });
+  },
+  shieldUp(o) { osc(o, { curve: [170, 520, 470], dur: .8, v: .13, a: .05 }); osc(o, { type: 'triangle', curve: [1046, 1568], t: .08, dur: .7, v: .05, vib: [9, 14] }); hiss(o, { dur: .6, v: .05, type: 'highpass', f: 3500, f2: 6000, q: .5 }); },
+  shieldHit(o, dur = 3) {   // 火打在防護罩上：電流的嗡嗡聲＋滋滋聲
+    const c = snd.ctx, t0 = c.currentTime, x = c.createOscillator(), g = c.createGain(), l = c.createOscillator(), lg = c.createGain();
+    x.type = 'square'; x.frequency.value = 118;
+    g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(.05, t0 + .15); g.gain.setValueAtTime(.05, t0 + dur - .3); g.gain.linearRampToValueAtTime(0, t0 + dur);
+    l.frequency.value = 17; lg.gain.value = .025; l.connect(lg).connect(g.gain);
+    x.connect(biq('lowpass', 900, 1)).connect(g).connect(o);
+    x.start(t0); l.start(t0); x.stop(t0 + dur + .05); l.stop(t0 + dur + .05);
+    for (let i = 0; i < 16; i++) hiss(o, { t: Math.random() * (dur - .2), dur: .07, v: .05, type: 'highpass', f: 4000, q: .7 });
+  },
+  shieldDown(o) { osc(o, { curve: [520, 300, 140], dur: .9, v: .1, a: .02 }); hiss(o, { dur: .7, v: .04, type: 'highpass', f: 5000, f2: 1500, q: .5 }); },
+  kjStep(o) { osc(o, { f: 78, f2: 36, dur: .34, v: .24 }); hiss(o, { dur: .25, v: .08, type: 'lowpass', f: 600, q: .6 }); },   // 腳踩進水裡的悶響
+  kjSplash(o, size = 2) { SFX.splash(o, size); osc(o, { f: 85, f2: 32, dur: .3 + size * .15, v: .1 * size }); },
+  kjShake(o) { for (let i = 0; i < 10; i++) hiss(o, { t: i * .1, dur: .09, v: .07, type: 'highpass', f: 1800, q: .5 }); },   // 甩水：一陣嘩嘩嘩
 };
+Object.assign(SFX.kjRoar, { ref: 70 }); Object.assign(SFX.kjFlame, { ref: 55 }); Object.assign(SFX.kjSplash, { ref: 40 }); Object.assign(SFX.kjStep, { ref: 26 }); Object.assign(SFX.kjShake, { ref: 30 });   // 巨獸的聲音傳得遠
+for (const k of ['shieldUp', 'shieldHit', 'shieldDown']) SFX[k].ref = 45;
 function lfoAt(hz, depth, param, t0, dur) { const o = snd.ctx.createOscillator(), g = snd.ctx.createGain(); o.type = 'square'; o.frequency.value = hz; g.gain.value = depth; o.connect(g).connect(param); o.start(t0); o.stop(t0 + dur); }
 function sfx(name, at, ...args) {   // at：聲音從哪裡來（3D 物件或位置；不給＝介面音效，不分遠近）
   if (!snd.on || !snd.ctx || snd.ctx.state !== 'running') return;
-  const [v, pan] = place(at);
+  const [v, pan] = place(at, SFX[name].ref);
   if (v < .015) return;
   const g = snd.ctx.createGain();
   g.gain.value = v;
@@ -4147,4 +4829,4 @@ tick();
 body.classList.remove('booting');
 
 /* 除錯／測試用的唯讀入口 */
-window.sanasai = { PLACE, GAMES, KEYS, CAB, keyState, state, ui, avatar, camera, controls, records: () => records, overflow: () => ({ bees: swarm && swarm.n, heap: heap && heap.layers, maze: mazeArea && mazeArea.n }), pets: () => ({ dog: dog.state, dogPos: dog.g.position.toArray().map(v => +v.toFixed(2)), cat: cat.awakeT > 0 || night > .6, crabs: crabs.map(c => +c.hide.toFixed(1)), blob: blob.state }), petTap, view: (pos, target) => { follow = false; fly = null; controls.enabled = true; camera.position.set(...pos); controls.target.set(...target); controls.update(); }, select: selectPlace, walkTo, overview, setTime, land, findPath, dolphins, pod, dolTrick, updateDolphins, updateSplashes, ship, AV, FAR_ISLES, snd, SFX, setSound, flight, startFlight, skipFlight, throwBall, fetchS, fishing, startFishing, reel, feedCat, carry, catGo, catJump, rings, landNow, swing, divers, spawnDiver, cat, dog };
+window.sanasai = { PLACE, GAMES, KEYS, CAB, keyState, state, ui, avatar, camera, controls, records: () => records, overflow: () => ({ bees: swarm && swarm.n, heap: heap && heap.layers, maze: mazeArea && mazeArea.n }), pets: () => ({ dog: dog.state, dogPos: dog.g.position.toArray().map(v => +v.toFixed(2)), cat: cat.awakeT > 0 || night > .6, crabs: crabs.map(c => +c.hide.toFixed(1)), blob: blob.state }), petTap, view: (pos, target) => { follow = false; fly = null; controls.enabled = true; camera.position.set(...pos); controls.target.set(...target); controls.update(); }, select: selectPlace, walkTo, overview, setTime, land, findPath, dolphins, pod, dolTrick, updateDolphins, updateSplashes, ship, AV, FAR_ISLES, snd, SFX, setSound, flight, startFlight, skipFlight, throwBall, fetchS, fishing, startFishing, reel, feedCat, carry, catGo, catJump, rings, landNow, swing, divers, spawnDiver, cat, dog, KJ, kj, updateKaiju, kjDepth, kjFloor, kjRipples, kjSpray, kjRoar, kjFlame, SH, shield };
