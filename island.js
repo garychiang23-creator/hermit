@@ -2733,7 +2733,7 @@ const kj = (() => {
   }
   mesh(neck, nk);
   // 頭：積木疊出來的。腦袋六層磚（最下和最上一層內縮一圈，輪廓才不會是方盒子）、頂上一顆顆凸點；嘴是窄一點的兩層磚、最前面一塊斜磚；
-  // 眼睛＝黑色方片上一片圓的紅色發光片；斜磚當眉毛（內側壓低）；頭頂一階一階疊高的冠；嘴尖兩片黑色鼻孔；嘴邊露出小尖牙；兩側一條紅色發光片
+  // 眼睛＝橫的黑色 1×2 片上一條橫的紅色發光片（噴火時內側往下斜、瞇起來）；斜磚當眉毛（內側壓低，噴火時壓得更低更斜）；頭頂一階一階疊高的冠；嘴尖兩片黑色鼻孔；嘴邊露出小尖牙；兩側一條紅色發光片
   const hd = [], hdR = [], cz = k => -3 + (k + .5) * KB;   // cz：第 k 排格子中心的前後位置（0～5 排是腦袋，6～9 排是嘴）
   const rect = (i0, i1, k0, k1) => { const c = []; for (let i = i0; i <= i1; i++) for (let k = k0; k <= k1; k++) c.push([i, k]); return c; };
   kjBlock(hd, [[0, 1, rect(-3, 3, 1, 5)], ...[1, 2, 3, 4].map(y => [y, 1, rect(-4, 4, 0, 5)]), [5, 1, rect(-3, 3, 1, 5)]], cz, 0x7f8994, [[0, 1], [0, 2], [0, 3]]);   // 腦袋（冠蓋住的格子不放凸點）
@@ -2743,20 +2743,28 @@ const kj = (() => {
   for (const [y, h, k0, k1] of [[6, 1, 1, 3], [7, 1, 1, 2]]) part('box', [0, y + h / 2, (cz(k0) + cz(k1)) / 2], [KB - KG, h - KG, (k1 - k0 + 1) * KB - KG], 0xaab3bd, { into: hd });   // 頭頂的冠：一階一階疊高
   part('wedge', [0, 7.5, cz(3)], [KB - KG, 1 - KG, KB - KG], 0xaab3bd, { into: hd });
   part('wedge', [0, 8.4, cz(1)], [KB - KG, .8 - KG, KB - KG], 0xaab3bd, { into: hd });
+  const eyes = [], brows = [];
   for (const s of [-1, 1]) {
     part('box', [s * KB, 3.33 - KG / 2 + .06, cz(8)], [KB - KG, .12, KB - KG], KJC.hole, { into: hd });   // 鼻孔
-    part('wedge', [s * 1.85, 5.62, 2.34], [2 * KB, .55, .6], 0x4a525c, { rz: Math.PI + s * .2, into: hd });   // 眉毛：倒過來的斜磚，內側壓低
-    part('box', [s * 1.85, 4.45, 2.1], [2 * KB - .08, 2 * KB - .08, .12], KJC.hole, { into: hd });   // 眼睛底下的黑色方片
+    const BL = [], EL = [], eg = new THREE.Group();
+    part('wedge', [0, 0, 0], [2 * KB, .55, .6], 0x4a525c, { into: BL });   // 眉毛：倒過來的斜磚，內側壓低（另外一塊，噴火時會動）
+    const bw = merged(BL, KJ_MAT, false);
+    bw.position.set(s * 1.85, 5.62, 2.34); bw.rotation.z = Math.PI + s * .2; bw.userData.s = s;
+    head.add(bw); brows.push(bw);
+    eg.position.set(s * 1.85, 4.6, 2.1); eg.userData.s = s;   // 一隻眼睛：黑色片＋發光片＋亮點一起斜
+    part('box', [0, 0, 0], [2 * KB - .08, KB - .02, .12], KJC.hole, { into: EL });
+    eg.add(merged(EL, KJ_MAT, false));
+    head.add(eg); eyes.push(eg);
     part('cone6', [s * 1.35, 1.1, cz(9) + .2], [.34, .55, .34], KJC.tooth, { rx: Math.PI, into: hd });   // 兩顆小尖牙
     part('cone6', [s * .45, 1.18, cz(9) + .25], [.22, .35, .22], KJC.tooth, { rx: Math.PI, into: hd });
     part('cone6', [s * 1.95, 1.15, cz(7)], [.26, .4, .26], KJC.tooth, { rx: Math.PI, into: hd });
     kjPlate(hd, [s * 3.6, 4.6, -1.8], 1.4, 1.6, -.8, .33, -s * 1.2);   // 兩側的小角
     part('box', [s * (4.5 * KB + .03), 2.5, cz(2)], [.1, .33, 3 * KB], 0, { into: hdR });   // 兩側的紅色發光片
-    const eye = vox(head, BASE.disc, KJ_EYE, [s * 1.85, 4.45, 2.22], [1.5, .12, 1.5], [Math.PI / 2, 0, 0]);   // 圓的紅色發光片
-    eye.castShadow = false;
-    vox(eye, BASE.disc, KJ_SHINE, [.2, .6, -.2], [.28, .3, .28]).castShadow = false;   // 眼睛裡的亮點（兩眼同一側）
+    const eye = vox(eg, BASE.box, KJ_EYE, [0, 0, .1], [1.42, .56, .08]);   // 橫的紅色發光片
+    eye.castShadow = false; eg.userData.glow = eye;
+    vox(eye, BASE.box, KJ_SHINE, [.3, .2, .6], [.18, .3, .5]).castShadow = false;   // 亮點（兩眼同一側）
     const halo = new THREE.Sprite(KJ_HALO);
-    halo.position.set(s * 1.85, 4.45, 2.6); halo.scale.setScalar(3);
+    halo.position.set(s * 1.85, 4.6, 2.6); halo.scale.setScalar(3);
     head.add(halo);
   }
   mesh(head, hd); mesh(head, hdR, KJ_RED);
@@ -2823,7 +2831,7 @@ const kj = (() => {
   petHit(head, 'kaiju', [0, 3.4, 1.2], [7.8, 7.2, 8.8]);
   g.scale.setScalar(KJ_S);
   scene.add(g);
-  return { g, hip, waist, neck, head, jaw, tip, arms, legs, tail, TR, TL, back: new THREE.Vector3(0, 2.6, backZ(2.6)), bow: new THREE.Vector3(0, 5.4, backZ(5.4)) };   // back：背中間那一點（游泳時放在水面下）；bow：背的最前面（游泳時從這裡推出浪）
+  return { g, hip, waist, neck, head, jaw, tip, eyes, brows, arms, legs, tail, TR, TL, back: new THREE.Vector3(0, 2.6, backZ(2.6)), bow: new THREE.Vector3(0, 5.4, backZ(5.4)) };   // back：背中間那一點（游泳時放在水面下）；bow：背的最前面（游泳時從這裡推出浪）
 })();
 /* 水面效果：身體（站著）、頭（撲水和站起來的時候）、尾巴穿過水面的地方一圈白浪；踩下去擴散的水圈；游泳時背鰭前面推出的浪和水花；撲進水裡、頭冒出水面、站起來、甩水的水花 */
 const KJ_FOAM_GEO = new THREE.RingGeometry(.62, 1, 28).rotateX(-Math.PI / 2), KJ_RIPPLE_GEO = new THREE.RingGeometry(.86, 1, 48).rotateX(-Math.PI / 2);
@@ -3153,6 +3161,8 @@ function updateKaiju(dt, t) {
   KJ_EYE.userData.base.lerpColors(KJ_EYE_RED, KJ_EYE_BLUE, eb);   // 眼睛紅→藍（電影版噴火時眼睛變藍）
   KJ_HALO.color.lerpColors(KJ_HALO_RED, KJ_HALO_BLUE, eb);
   if (eb > 0) KJ_HALO.opacity = Math.max(KJ_HALO.opacity, eb * .9);   // 白天吼也看得到眼睛發光
+  R.eyes.forEach(E => { E.rotation.z = E.userData.s * .3 * eb; E.userData.glow.scale.y = .56 * (1 - .45 * eb); });   // 噴火時眼睛變兇：內側往下斜、瞇起來
+  R.brows.forEach(W => { W.rotation.z = Math.PI + W.userData.s * (.2 + .32 * eb); W.position.y = 5.62 - .3 * eb; });   // 眉毛壓低、更斜
   KJ_MOUTH.visible = ch > .01;
   KJ_MOUTH.material.opacity = ch * (.75 + .25 * Math.sin(t * 31));
   KJ_MOUTH.scale.setScalar(2 + 3.5 * ch + rB * 1.5 * Math.sin(t * 23));
