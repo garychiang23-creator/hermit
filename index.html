@@ -46,6 +46,47 @@
   #fh-time { font-family: var(--display); font-size: 15px; min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; }
   .flight-hud .btn { height: 40px; padding: 0 14px; font-size: 14px; touch-action: none; }
   body.flying .dock, body.flying.autopilot #joystick { display: none; }
+  /* 開巨獸：吼（按住蓄力，金色蓄力條）、跺腳、煙火、鏡頭、下來；畫面上滑鼠是準星 */
+  .ride-hud .btn { min-width: 50px; }
+  body.riding:not(.touch) canvas { cursor: crosshair; }
+  @media (max-width: 480px) { .ride-hud { gap: 5px; padding: 6px 6px 6px 8px; } .ride-hud .btn { min-width: 0; padding: 0 11px; } #rh-roar { min-width: 58px; } }
+  .ride-hud .btn:disabled { opacity: .38; cursor: default; }
+  #rh-roar { position: relative; overflow: hidden; min-width: 72px; }
+  #rh-roar::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, #f2c14e calc(var(--chg, 0) * 100%), transparent 0); opacity: .9; }
+  #rh-roar span, #rh-roar kbd { position: relative; }
+  .ride-hud kbd { font: 600 10.5px var(--ui); color: var(--ink-3); border: 1px solid var(--line-2); border-radius: 5px; padding: 1px 4px; margin-left: 2px; }
+  .ride-hud .btn.primary kbd { color: rgba(255, 255, 255, .7); border-color: rgba(255, 255, 255, .35); }
+  body.touch .ride-hud kbd { display: none; }
+  #rh-roar.ready { border-color: #d29d33; box-shadow: 0 0 0 3px rgba(242, 193, 78, .45), 0 0 18px rgba(242, 193, 78, .8); animation: rhPulse .45s ease-in-out infinite alternate; }
+  @keyframes rhPulse { to { box-shadow: 0 0 0 5px rgba(242, 193, 78, .25), 0 0 26px rgba(255, 210, 90, 1); } }
+  /* 開機完先秀幾秒操作說明：電腦在按鈕列正上方，手機在左上角（取代提示列，一項一行，不擋到駕駛艙）；底下金線＝還剩幾秒 */
+  .ride-help { position: fixed; z-index: 13; left: calc((100vw - var(--side-w)) / 2); bottom: calc(86px + var(--sb)); padding: 12px 18px 16px; border-radius: 18px; opacity: 0; visibility: hidden; pointer-events: none; transform: translate(-50%, 10px); transition: opacity .35s, transform .35s, visibility 0s .35s; }
+  .ride-help.on { opacity: 1; visibility: visible; transform: translate(-50%, 0); transition: opacity .35s, transform .35s; }
+  body.help-on .hint { opacity: 0; pointer-events: none; }
+  .rhp-title { display: block; font-size: 11.5px; font-weight: 600; letter-spacing: .14em; color: var(--ink-3); margin-bottom: 9px; }
+  .rhp-rows { display: grid; grid-template-columns: auto 1fr; gap: 9px 12px; align-items: center; }
+  .rhp-ic { justify-self: center; }
+  .rhp-tx { font-size: 12px; line-height: 1.35; color: var(--ink-2); white-space: nowrap; }
+  .rhp-tx b { display: block; font-size: 13.5px; color: var(--ink); }
+  .rhp-tx small { font-size: inherit; }
+  .ride-help kbd { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; font: 600 11.5px var(--ui); color: var(--ink-2); background: #fff; border: 1px solid var(--line-2); border-bottom-width: 2.5px; border-radius: 6px; }
+  .ride-help kbd.roar { min-width: 40px; height: 28px; border-radius: 9px; font-size: 14px; color: var(--ink); }
+  .rhp-arrows { display: grid; grid-template-columns: repeat(3, 19px); grid-auto-rows: 19px; gap: 2px; }
+  .rhp-arrows kbd { min-width: 0; height: auto; padding: 0; font-size: 11px; animation: rhpKey 2.4s infinite; }   /* ↑ ← → 輪流按下去，跟搖桿示範同一個節奏 */
+  .rhp-arrows .u { grid-area: 1 / 2; } .rhp-arrows .l { grid-area: 2 / 1; animation-delay: .8s; } .rhp-arrows .d { grid-area: 2 / 2; animation: none; } .rhp-arrows .r { grid-area: 2 / 3; animation-delay: 1.6s; }
+  @keyframes rhpKey { 0%, 25% { background: var(--ink); color: #fff; border-color: var(--ink); } 33%, 100% { background: #fff; color: var(--ink-2); border-color: var(--line-2); } }
+  .rhp-joy { --j: 8px; display: block; position: relative; width: 34px; height: 34px; border-radius: 50%; background: rgba(22, 33, 58, .07); border: 1.5px solid var(--line-2); }
+  .rhp-joy::after { content: ''; position: absolute; left: 9px; top: 9px; width: 13px; height: 13px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(15, 22, 42, .3); animation: rhpJoy 2.4s ease-in-out infinite; }
+  @keyframes rhpJoy { 0%, 100% { transform: none; } 12%, 25% { transform: translateY(calc(-1 * var(--j))); } 45%, 58% { transform: translateX(calc(-1 * var(--j))); } 78%, 91% { transform: translateX(var(--j)); } }
+  .rhp-bar { position: absolute; left: 18px; right: 18px; bottom: 7px; height: 2px; border-radius: 2px; background: var(--gold); opacity: .6; transform-origin: left; }
+  body.touch .rhp-key, body:not(.touch) .rhp-touch { display: none; }
+  @media (min-width: 821px) { body.riding .hint { left: calc((100vw - var(--side-w)) / 2); transform: translateX(-50%); bottom: calc(86px + var(--sb)); } }   /* 開巨獸：提示放按鈕列正上方（放左下會被按鈕列蓋住） */
+  @media (max-height: 500px) and (min-width: 821px) {   /* 手機橫拿：畫面矮，說明卡改成兩排、只留重點，不把巨獸整隻蓋住 */
+    .ride-help { padding: 9px 14px 12px; }
+    .rhp-title, .rhp-tx small { display: none; }
+    .rhp-rows { grid-template-columns: auto auto auto auto; gap: 6px 10px; }
+    .rhp-tx b { font-size: 12.5px; }
+  }
   .catch-card { position: fixed; z-index: 14; top: calc(84px + var(--st)); left: calc((100vw - var(--side-w)) / 2); transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 12px 18px 12px 14px; border-radius: 18px; animation: pop .35s ease; }
   .catch-card .cf { width: 54px; height: 27px; flex: none; }
   .catch-card .cf path { fill: var(--c); }
@@ -326,6 +367,17 @@
     .hint { left: 12px; top: calc(66px + var(--st)); bottom: auto; max-width: calc(100vw - 132px); font-size: 12px; padding: 6px 13px 6px 6px; }
     .hint .halo { width: 22px; height: 22px; }
     body.sheet-open .hint { display: none; }
+    .ride-help { left: 12px; top: calc(66px + var(--st)); bottom: auto; max-width: calc(100vw - 132px); padding: 10px 14px 13px 10px; border-radius: 16px; transform: translateY(-8px); }
+    .ride-help.on { transform: none; }
+    .rhp-title { display: none; }
+    .rhp-rows { gap: 7px 9px; }
+    .rhp-tx { font-size: 11.5px; }
+    .rhp-tx b { display: inline; font-size: 13px; margin-right: 5px; }
+    .rhp-joy { --j: 5px; width: 26px; height: 26px; }
+    .rhp-joy::after { left: 5.5px; top: 5.5px; width: 12px; height: 12px; }
+    .ride-help kbd.roar { min-width: 34px; height: 24px; font-size: 13px; }
+    .rhp-bar { left: 14px; right: 14px; bottom: 5px; }
+    body.sheet-open .ride-help { display: none; }
     .toast { top: calc(66px + var(--st)); left: 12px; transform: translateY(-8px); max-width: calc(100vw - 130px); font-size: 13px; }
     .toast.show { transform: none; }
     .catch-card { top: calc(118px + var(--st)); width: calc(100vw - 32px); }
@@ -333,6 +385,7 @@
   @media (prefers-reduced-motion: reduce) {
     .card, .log, .intro, #ending { animation: none; }
     .coin3d { animation: none; }
+    .rhp-arrows kbd, .rhp-joy::after { animation: none; }
     #app { transition: none; }
   }
 </style>
@@ -425,6 +478,30 @@
   <button class="btn" id="fh-boost" type="button">加速</button>
   <button class="btn primary" id="fh-land" type="button">降落</button>
 </div>
+<div class="flight-hud ride-hud panel" id="ride-hud" hidden>
+  <button class="btn" id="rh-roar" type="button" title="點一下噴火（往你瞄的地方）；按住蓄力，放開是合體大招"><span>吼</span><kbd>空白鍵</kbd></button>
+  <button class="btn" id="rh-stomp" type="button">跺腳<kbd>F</kbd></button>
+  <button class="btn" id="rh-works" type="button">煙火<kbd>R</kbd></button>
+  <button class="btn" id="rh-view" type="button" title="換鏡頭：遠景／背後／正面／駕駛艙（也可以拖曳畫面轉、滾輪或兩指縮放）"><span>鏡頭</span><kbd>C</kbd></button>
+  <button class="btn primary" id="rh-off" type="button">下來<kbd>Esc</kbd></button>
+</div>
+<div class="ride-help panel" id="ride-help" role="note">
+  <b class="rhp-title">操作說明</b>
+  <div class="rhp-rows">
+    <span class="rhp-ic rhp-key"><span class="rhp-arrows"><kbd class="u">↑</kbd><kbd class="l">←</kbd><kbd class="d">↓</kbd><kbd class="r">→</kbd></span></span>
+    <span class="rhp-tx rhp-key"><b>走路</b><small>↑ 前進・↓ 倒退・← → 轉彎</small></span>
+    <span class="rhp-ic rhp-touch"><i class="rhp-joy"></i></span>
+    <span class="rhp-tx rhp-touch"><b>走路</b><small>推左下的搖桿</small></span>
+    <span class="rhp-ic"><kbd>點畫面</kbd></span>
+    <span class="rhp-tx"><b>噴火</b><small>點哪裡就往哪裡噴</small></span>
+    <span class="rhp-ic"><kbd class="rhp-key">空白鍵</kbd><kbd class="rhp-touch roar">吼</kbd></span>
+    <span class="rhp-tx"><b>按住蓄力</b><small>放開是合體大招</small></span>
+    <span class="rhp-ic"><kbd>拖曳</kbd></span>
+    <span class="rhp-tx rhp-key"><b>轉鏡頭</b><small>滾輪縮放</small></span>
+    <span class="rhp-tx rhp-touch"><b>轉鏡頭</b><small>兩指縮放</small></span>
+  </div>
+  <i class="rhp-bar" id="rhp-bar"></i>
+</div>
 <div class="catch-card panel" id="catch-card" hidden role="status" aria-live="polite">
   <svg class="cf" viewBox="0 0 48 24" aria-hidden="true"><path d="M3 12c6-8 20-10 30-4l9-6v20l-9-6c-10 6-24 4-30-4z"/><circle cx="12" cy="10" r="1.6"/></svg>
   <div><b>釣到了！</b><span id="catch-text"></span><small>花捲聞到魚味了，會跑過來討</small></div>
@@ -473,6 +550,6 @@
   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="./island.js?v=2.13.3"></script>
+<script type="module" src="./island.js?v=2.15.1"></script>
 </body>
 </html>

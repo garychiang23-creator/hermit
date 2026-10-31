@@ -22,6 +22,7 @@ const DEBUG = (location.protocol === 'file:' || location.hostname === 'localhost
 
 /* ---------- 小工具 ---------- */
 const lerp = (a, b, t) => a + (b - a) * t;
+const approach = (v, to, s) => v < to ? Math.min(to, v + s) : Math.max(to, v - s);   // 往 to 走，每次最多 s
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const smooth = t => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
 const easeIO = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -1423,20 +1424,23 @@ const AV = {};
   add(AV.hoodDown, new RoundedBoxGeometry(.36, .22, .14, 2, .06), M(ROBE), [0, 1.06, -.18], [1, 1, 1], [-.25, 0, 0]);
   // 頭：爆炸頭的年輕隱士——一大團小方塊堆成的捲髮，臉露在前面
   {
-    const h = new THREE.Group(), HM = [0x3a2618, 0x2e1e13, 0x4a3220].map(M), curl = new RoundedBoxGeometry(1, 1, 1, 1, .25), hr = mulberry32(7);
+    const h = new THREE.Group(), HM = [0x3a2618, 0x2e1e13, 0x4a3220].map(M), curl = new RoundedBoxGeometry(1, 1, 1, 1, .25), hr = mulberry32(7), EYE = M(0x1d2233);
     h.position.set(0, 1.24, 0);
     AV.body.add(h);
+    Object.assign(AV, { head: h, hair: new THREE.Group(), HM, HM0: HM.map(m => m.color.clone()), eyeMat: EYE, curls: [] });   // 變身時捲髮變金色、往上豎，眼睛變青綠色
+    h.add(AV.hair);
     add(h, new RoundedBoxGeometry(.42, .4, .38, 2, .1), M(SKIN), [0, -.03, .03]);
-    add(h, new RoundedBoxGeometry(.62, .52, .56, 2, .2), HM[0], [0, .13, -.07]);   // 捲髮的芯
+    add(AV.hair, new RoundedBoxGeometry(.62, .52, .56, 2, .2), HM[0], [0, .13, -.07]);   // 捲髮的芯
     for (let i = 0; i < 64; i++) {   // 表面一顆顆捲毛：球面上平均撒點，臉前面和下巴以下留空
       const y = 1 - (i + .5) / 32, r = Math.sqrt(1 - y * y), a = i * 2.39996, x = Math.cos(a) * r, z = Math.sin(a) * r;
       if ((z > .25 && y < .25) || y < -.55) continue;
       const k = .15 + hr() * .07;
-      add(h, curl, HM[i % 3], [x * .36, .13 + y * .3, -.07 + z * .34], [k, k, k], [hr() * 1.5, hr() * 1.5, 0]);
+      const m = add(AV.hair, curl, HM[i % 3], [x * .36, .13 + y * .3, -.07 + z * .34], [k, k, k], [hr() * 1.5, hr() * 1.5, 0]);
+      AV.curls.push({ m, p: m.position.clone(), n: new THREE.Vector3(x, y, z), k, ph: i * 1.7 });
     }
     for (const sx of [-1, 1]) {
       add(h, new THREE.BoxGeometry(.1, .03, .03), HM[1], [sx * .1, .07, .225]);
-      add(h, new THREE.BoxGeometry(.06, .07, .02), M(0x1d2233), [sx * .1, -.005, .225]);
+      add(h, new THREE.BoxGeometry(.06, .07, .02), EYE, [sx * .1, -.005, .225]);
       add(h, new THREE.BoxGeometry(.02, .02, .01), M(0xffffff), [sx * .1 + .012, .012, .237]);
       add(h, new THREE.BoxGeometry(.03, .02, .02), M(0xb5644f), [sx * .055, -.11, .225], [1, 1, 1], [0, 0, sx * .5]);   // 嘴角上揚
     }
@@ -1502,6 +1506,9 @@ marker.rotation.x = -Math.PI / 2;
 scene.add(marker);
 
 const walk = { path: null, i: 0, phase: 0, moving: false, onArrive: null };
+/* 騎巨獸的狀態（程式在「騎巨獸」那一段）。放在這裡：巨獸載入時就會先算一次姿勢，那時要讀得到 */
+const ride = { phase: null, t: 0, offer: 0, ctl: false, p: new THREE.Vector3(), from: new THREE.Vector3(), to: new THREE.Vector3(), dir: new THREE.Vector3(), dur: 1, hold: -1, shake: 0, stand: 0, pitOff: 0, arc: 10, ho: 0, help: 0 };   // stand：放煙火時在駕駛艙裡站起來的程度；pitOff：你下來後多久收起駕駛艙；help：操作說明還要秀幾秒
+const aim = { T: new THREE.Vector3(), mode: 'none', nx: 0, ny: 0, t: 0, kind: 'sea' };   // 你瞄的地方：mode 'screen'＝跟著滑鼠／手指（每幀重算）、'world'＝點過的那一點、'none'＝牠前面
 function walkTo(x, z, { follow: f = false, onArrive = null, mark = false } = {}) {
   const path = findPath(avatar.position.x, avatar.position.z, x, z);
   if (!path) return false;
@@ -1514,6 +1521,7 @@ const keysDown = {};
 const joy = { x: 0, y: 0 };
 const _fw = new THREE.Vector3(), _rt = new THREE.Vector3(), _mv = new THREE.Vector3();
 function updateAvatar(dt) {
+  if (ride.phase) return;   // 騎巨獸（飛過去、騎著、飛回來）：位置和姿勢在 updateRide 裡擺
   if (flight.phase) {   // 飛行中：分身在船上，只有走坡道時擺腿
     const sw = flight.walking ? Math.sin(walk.phase += dt * 9) * .65 : 0;
     AV.legL.rotation.x = sw; AV.legR.rotation.x = -sw; AV.armL.rotation.x = -sw * .8;
@@ -1914,7 +1922,7 @@ function updateCat(dt, t) {
     }
     return catPose(dt, t, 'jump');
   }
-  const wantsFish = carry.color !== null && !flight.phase;
+  const wantsFish = carry.color !== null && !flight.phase && !ride.phase;
   if (wantsFish && !['seek', 'beg', 'toFish', 'eat', 'happy'].includes(c.state)) {   // 聞到魚味
     bubble(c.g, '喵？', .75);
     if (c.perch) { catJump(false, 'seek'); return catPose(dt, t, 'jump'); }
@@ -1972,7 +1980,7 @@ function updateCat(dt, t) {
     }
   } else if (c.state === 'follow') {   // 吃飽了跟著你走一段
     speed = 3;
-    if ((c.followT -= dt) <= 0 || flight.phase) { c.state = 'idle'; c.t = 2; c.path = null; }
+    if ((c.followT -= dt) <= 0 || flight.phase || ride.phase) { c.state = 'idle'; c.t = 2; c.path = null; }
     else if (dAv > 1.9) { if ((c.repath -= dt) <= 0) { goTo(c, av.x - Math.sin(avatar.rotation.y) * 1.2, av.z - Math.cos(avatar.rotation.y) * 1.2); c.repath = .6; } }
     else { c.path = null; turnTo(c.g, av.x - p.x, av.z - p.z, dt); }
   }
@@ -2057,6 +2065,7 @@ function updateBlob(dt, t) {
   const jump = moving ? Math.abs(Math.sin(B.hop)) * .14 : B.state === 'tap' ? Math.abs(Math.sin(t * 8)) * .05 : 0;
   p.y = groundY(p.x, p.z);
   B.body.position.y = jump;
+  if (B.jolt > 0) { B.jolt -= dt; B.body.position.y += Math.sin((1 - Math.max(0, B.jolt) / .6) * Math.PI) * .55; }   // 被跺腳的浪嚇得跳起來
   B.body.scale.set(1 + (moving && jump < .02 ? .08 : 0), 1 - (moving && jump < .02 ? .1 : 0), 1);
 }
 /* 海裡：魚偶爾跳出水面，三隻海豚結伴在島外到處游、偶爾表演 */
@@ -2099,7 +2108,8 @@ function updateFish(dt) {
   for (const f of fishes) {
     if (f.u < 0) {
       if ((f.t -= dt) > 0) continue;
-      const a = rnd() * TAU, r = islandR(a) * (1.07 + rnd() * .25), x = Math.cos(a) * r, z = Math.sin(a) * r;
+      const a = f.fa ?? rnd() * TAU, r = islandR(a) * (1.07 + rnd() * .25), x = Math.cos(a) * r, z = Math.sin(a) * r;   // fa：跺腳的浪打上岸的地方（嚇得在那裡跳出來）
+      f.fa = null;
       if ((Math.abs(x) < 4.5 && z > 14) || Math.hypot(x - SHIP.x, z - SHIP.z) < SHIP.r + 2) { f.t = .5; continue; }   // 不要跳在碼頭（釣魚點）附近或飛船底下
       const h = rnd() * TAU;
       f.from.set(x, 0, z); f.dir.set(Math.cos(h), 0, Math.sin(h));
@@ -2628,6 +2638,7 @@ const KJ_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading:
 const KJ_RED = glowMat(0xe01a10), KJ_EYE = glowMat(0xe8160c), KJ_SHINE = glowMat(0xfff0dc);   // 身上的紅色發光線條、紅眼睛、眼睛裡的亮點（晚上都會變亮；底色太亮的話晚上乘上去會偏橘）
 const KJ_HALO = new THREE.SpriteMaterial({ map: canvasTex(64, 64, (x, w, h) => { const g = x.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(.25, 'rgba(255,255,255,.5)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, w, h); }), color: 0xff4630, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 });   // 眼睛周圍的光暈（晚上、吼的時候）
 const KJ_EYE_RED = new THREE.Color(0xe8160c), KJ_EYE_BLUE = new THREE.Color(0x2a8cff), KJ_HALO_RED = new THREE.Color(0xff4630), KJ_HALO_BLUE = new THREE.Color(0x4aa8ff);
+const KJ_EYE_GOLD = new THREE.Color(0xffb412), KJ_HALO_GOLD = new THREE.Color(0xffc640), KJ_ACT = { stomp: 2.3, works: 20 };   // 合體大招時眼睛變金色；開著時的招式各幾秒（煙火秀放完會先結束）
 function kjTube(rings, axis, paint = null, n = 8) {   // rings：[[中心], 寬方向半徑, 另一方向半徑]；axis 'y'＝直的（身體、腳、手），'z'＝橫的（頭、尾巴）
   const pos = [], col = [], c = new THREE.Color();
   const P = rings.map(([[x, y, z], ra, rb]) => ({ c: [x, y, z], p: [...Array(n)].map((_, k) => { const a = (k + .5) / n * TAU, u = Math.cos(a) * ra, v = Math.sin(a) * rb; return axis === 'y' ? [x + u, y, z + v] : [x + u, y + v, z]; }) }));
@@ -2703,7 +2714,7 @@ function kjFin(L, [x, y, z], h, len, tilt, w, rz, [ox, oy, oz]) {   // 鋸齒狀
 }
 const kj = (() => {
   const G = () => new THREE.Group(), mesh = (parent, list, mat = KJ_MAT) => parent.add(merged(list, mat, false));
-  const finMesh = (parent, list) => { const m = merged(list, KJ_MAT, false); m.userData.fin = true; parent.add(m); };
+  const finMesh = (parent, list) => { const m = merged(list, KJ_MAT, false); m.userData.fin = true; parent.add(m); return m; };
   const g = G(), hip = G(), waist = G(), neck = G(), head = G(), jaw = G(), tip = G();
   hip.rotation.order = 'YXZ';   // 游泳時身體往前斜趴，左右扭要繞著垂直軸
   g.add(hip); hip.position.y = 4.9;
@@ -2717,14 +2728,15 @@ const kj = (() => {
   const TOR = [[-1.5, 3.0, 2.7, -.1], [-.5, 3.75, 3.3, .1], [.7, 4.1, 3.6, .25], [2.0, 4.05, 3.55, .3], [3.3, 3.75, 3.3, .2], [4.5, 3.3, 2.95, .05], [5.4, 2.75, 2.55, -.05], [6.1, 2.15, 2.05, 0]];   // [高度, 半寬, 半厚, 前後]
   const tAt = (y, j) => { let i = 0; while (i < TOR.length - 2 && TOR[i + 1][0] < y) i++; const A = TOR[i], B = TOR[i + 1]; return lerp(A[j], B[j], clamp((y - A[0]) / (B[0] - A[0]), 0, 1)); };
   const frontZ = y => tAt(y, 3) + tAt(y, 2) * .924, backZ = y => tAt(y, 3) - tAt(y, 2) * .924;   // 八角形正前方、正後方那一面
-  const tor = [kjTube(TOR.map(([y, w, d, z]) => [[0, y, z], w, d]), 'y', (nx, ny, nz, i) => nz > .7 && i < 5 ? (i % 2 ? KJC.band : KJC.band2) : null)], torR = [], torF = [];
+  const tor = [kjTube(TOR.map(([y, w, d, z]) => [[0, y, z], w, d]), 'y', (nx, ny, nz, i) => nz > .7 && i < 5 ? (i % 2 ? KJC.band : KJC.band2) : null)], torR = [], torF = [[], [], []];   // 背鰭照高度分三段：蓄力時從尾巴往頭一段段亮起來
   for (const y of [-.5, .7, 2.0]) part('box', [0, y, frontZ(y) + .03], [tAt(y, 1) * .74, .2, .12], 0, { into: torR });   // 橫紋之間的紅線（只在正前方那一面）
   part('rbox', [0, 4.1, frontZ(4.1) - .1], [3.0, 2.0, .5], KJC.top, { rx: -.2, into: tor });   // 胸甲
   part('cyl6', [0, 4.1, frontZ(4.1) + .12], [1.5, .3, 1.5], KJC.dark, { rx: Math.PI / 2 - .2, into: tor });
   part('cyl6', [0, 4.1, frontZ(4.1) + .2], [1.05, .3, 1.05], 0, { rx: Math.PI / 2 - .2, into: torR });   // 胸口的紅色核心
-  for (const [y, h] of [[.4, 1.7], [1.7, 2.3], [3.0, 2.8], [4.2, 3.0], [5.3, 2.4]]) kjFin(torF, [0, y, backZ(y) + .3], h, h * .8, -1, 1.0, 0, [0, -h * .45, -.1]);
-  for (const s of [-1, 1]) for (const [y, h] of [[1.0, 1.3], [2.3, 1.8], [3.6, 2.1], [4.8, 1.8]]) kjFin(torF, [s * 1.6, y, backZ(y) * .9 + .3], h, h * .75, -.95, .7, -s * .5, [0, -h * .4, -.05]);   // 兩側往外張：從正面看肩膀後面冒出一圈尖板
-  mesh(waist, tor); mesh(waist, torR, KJ_RED); finMesh(waist, torF);
+  for (const [y, h] of [[.4, 1.7], [1.7, 2.3], [3.0, 2.8], [4.2, 3.0], [5.3, 2.4]]) kjFin(torF[y < 2 ? 0 : y < 3.8 ? 1 : 2], [0, y, backZ(y) + .3], h, h * .8, -1, 1.0, 0, [0, -h * .45, -.1]);
+  for (const s of [-1, 1]) for (const [y, h] of [[1.0, 1.3], [2.3, 1.8], [3.6, 2.1], [4.8, 1.8]]) kjFin(torF[y < 2 ? 0 : y < 3.8 ? 1 : 2], [s * 1.6, y, backZ(y) * .9 + .3], h, h * .75, -.95, .7, -s * .5, [0, -h * .4, -.05]);   // 兩側往外張：從正面看肩膀後面冒出一圈尖板
+  mesh(waist, tor); mesh(waist, torR, KJ_RED);
+  const finsW = torF.map(L => finMesh(waist, L));
   const nk = [kjTube([[[0, -.9, -.1], 2.5, 2.3], [[0, .2, 0], 2.3, 2.15], [[0, .9, .1], 2.0, 1.9]], 'y')];
   for (const s of [-1, 1]) for (let j = 0; j < 3; j++) {   // 脖子後面兩側各三條粗管：從頭的後下方接到肩膀後面
     const p0 = [s * (1.2 + j * .5), -1.4, -1.55 - j * .45], p1 = [s * (1.15 + j * .45), 1.1, -1.05 - j * .5];
@@ -2823,7 +2835,7 @@ const kj = (() => {
     const list = [kjTube(rings, 'z')], fin = [];
     kjFin(fin, [0, rm * .85, -L * .45], 1.7 - i * .18, L * .7, -1.15, .75 - i * .06, 0, [0, -.05, -L * .4]);
     if (i < 2) for (const s of [-1, 1]) kjPlate(fin, [s * rm * .5, rm * .7, -L * .45], 1.0 - i * .15, L * .5, -1.15, .45, -s * .45);
-    mesh(T, list); finMesh(T, fin);
+    mesh(T, list); T.userData.fin = finMesh(T, fin);
     parent = T; at = [0, 0, -L];
     return T;
   });
@@ -2831,7 +2843,58 @@ const kj = (() => {
   petHit(head, 'kaiju', [0, 3.4, 1.2], [7.8, 7.2, 8.8]);
   g.scale.setScalar(KJ_S);
   scene.add(g);
-  return { g, hip, waist, neck, head, jaw, tip, eyes, brows, arms, legs, tail, TR, TL, back: new THREE.Vector3(0, 2.6, backZ(2.6)), bow: new THREE.Vector3(0, 5.4, backZ(5.4)) };   // back：背中間那一點（游泳時放在水面下）；bow：背的最前面（游泳時從這裡推出浪）
+  const fins = [...tail.map(T => T.userData.fin).reverse(), ...finsW];   // 從尾巴尖到肩膀後面：合體大招蓄力時照這個順序亮金色
+  for (const m of fins) { m.material = KJ_MAT.clone(); m.material.emissive.setHex(0xffa412); m.material.emissiveIntensity = 0; }
+  return { g, hip, waist, neck, head, jaw, tip, eyes, brows, arms, legs, tail, fins, TR, TL, back: new THREE.Vector3(0, 2.6, backZ(2.6)), bow: new THREE.Vector3(0, 5.4, backZ(5.4)) };   // back：背中間那一點（游泳時放在水面下）；bow：背的最前面（游泳時從這裡推出浪）
+})();
+/* 駕駛艙：頭頂前面一個玻璃泡泡。平常收在頭裡面（看不到），你飛過來才升上來、兩片艙蓋往兩邊打開；
+   裡面一張紅色座椅、前面一排會亮的按鈕和兩根操縱桿（座標＝頭的局部座標，跟著頭一起放大） */
+const PIT = { up: 0, open: 0, upT: 0, openT: 0, lit: 0, litT: 0, fast: false };   // up：升起來的程度；open：艙蓋打開的程度；lit：按鈕亮的程度（開機時亮起來）
+const SEAT = new THREE.Vector3(0, 6.57, 1.0), PIT_DOWN = -1.75;   // 坐墊上面；收起來時往下沉多少
+const pit = (() => {
+  const g = new THREE.Group(), L = [], LT = [];
+  g.position.y = PIT_DOWN; g.visible = false;
+  kj.head.add(g);
+  part('rbox', [0, 6.05, 1.3], [2.5, .5, 2.1], 0x4a525c, { into: L });   // 底座（蓋住頭頂的凸點）
+  part('box', [0, 6.48, 1.0], [.62, .18, .52], 0xb3322a, { into: L });   // 座椅
+  part('box', [0, 6.88, .74], [.62, .7, .14], 0xb3322a, { rx: -.18, into: L });   // 椅背
+  part('wedge', [0, 6.72, 1.98], [1.5, .62, .5], 0x353b43, { ry: Math.PI, into: L });   // 儀表板：斜面朝座椅
+  for (const s of [-1, 1]) {
+    part('cyl6', [s * .3, 6.48, 1.42], [.07, .34, .07], 0x2b3036, { into: L });   // 兩根操縱桿
+    part('sphere', [s * .3, 6.66, 1.42], [.13, .13, .13], 0xc8302a, { into: L });
+  }
+  [0xff4a3a, 0x4ad8ff, 0xffc53a, 0x7dff6a, 0xff6fb0, 0x4ad8ff].forEach((c, i) => part('box', [(i - 2.5) * .19, 6.93, 2.15], [.11, .04, .08], c, { rx: -.89, into: LT }));   // 儀表板上緣一排按鈕（坐在駕駛艙往前看，畫面下緣就是這排燈）
+  part('box', [0, 6.7, 1.96], [.5, .025, .08], 0x47c95a, { rx: -.89, into: LT });   // 一條綠色螢幕
+  g.add(merged(L, KJ_MAT, false));
+  const litMat = new THREE.MeshBasicMaterial({ vertexColors: true });
+  litMat.color.setScalar(.12);
+  g.add(merged(LT, litMat, false));
+  const metal = new THREE.MeshStandardMaterial({ color: 0x5d656f, roughness: .45, metalness: .3, flatShading: true });
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(1, .07, 6, 36).rotateX(Math.PI / 2), metal);
+  rim.position.set(0, 6.3, 1.3); rim.scale.set(1.15, 1, 1.0);
+  g.add(rim);
+  const glass = new THREE.ShaderMaterial({   // 玻璃：正面幾乎透明、邊緣反白，一道斜斜的反光；裡面的金色火焰會把玻璃照成淡金色
+    uniforms: { uDim: { value: 0 }, uGold: { value: 0 } },
+    vertexShader: `varying vec3 vN, vV, vL;
+      void main() { vec4 w = modelMatrix * vec4(position, 1.0); vN = normalize(mat3(modelMatrix) * normal); vV = cameraPosition - w.xyz; vL = position; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `uniform float uDim, uGold; varying vec3 vN, vV, vL;
+      void main() { float f = 1.0 - abs(dot(normalize(vN), normalize(vV)));
+        float st = smoothstep(.09, .0, abs(vL.z * .8 + vL.y * .6 - .45)) * .55;
+        float a = .08 + .5 * f * f * f + st * .5;
+        vec3 c = mix(vec3(.62, .88, 1.0), vec3(1.0), clamp(f * f + st, 0.0, 1.0)) * (1.0 - uDim * .55);
+        c = mix(c, vec3(1.0, .8, .38), uGold * .45);
+        gl_FragColor = vec4(c, a * (1.0 - uDim * .35) + uGold * .06); }`,
+    transparent: true, depthWrite: false, side: THREE.DoubleSide,
+  });
+  const halves = [-1, 1].map(s => {   // 兩片艙蓋：鉸鍊在外側下緣，打開時往兩邊翻下去
+    const h = new THREE.Group(), m = new THREE.Mesh(new THREE.SphereGeometry(1, 22, 10, s > 0 ? Math.PI / 2 : -Math.PI / 2, Math.PI, 0, Math.PI / 2), glass);
+    h.position.set(s * 1.15, 6.3, 1.3);
+    m.position.x = -s * 1.15; m.scale.set(1.15, 1.65, 1.0); m.renderOrder = 4;
+    h.add(m);
+    g.add(h);
+    return h;
+  });
+  return { g, halves, glass, litMat };
 })();
 /* 水面效果：身體（站著）、頭（撲水和站起來的時候）、尾巴穿過水面的地方一圈白浪；踩下去擴散的水圈；游泳時背鰭前面推出的浪和水花；撲進水裡、頭冒出水面、站起來、甩水的水花 */
 const KJ_FOAM_GEO = new THREE.RingGeometry(.62, 1, 28).rotateX(-Math.PI / 2), KJ_RIPPLE_GEO = new THREE.RingGeometry(.86, 1, 48).rotateX(-Math.PI / 2);
@@ -2893,17 +2956,21 @@ const kjFlame = (() => {   // 一顆顆火：剛噴出來白藍色、小顆，�
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setAttribute('aDat', new THREE.BufferAttribute(dat, 2));
   const mat = new THREE.ShaderMaterial({
-    uniforms: { uScale: { value: 600 } },
+    uniforms: { uScale: { value: 600 }, uGold: { value: 0 } },   // uGold：合體大招時火變成金色
     vertexShader: `attribute vec2 aDat; uniform float uScale; varying vec2 vDat;
       void main() { vDat = aDat; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv;
         float s = aDat.y > .5 ? mix(1.4, .3, aDat.x) : mix(1.5, 8.5, sqrt(aDat.x));
         gl_PointSize = aDat.x >= 1.0 ? 0.0 : min(240.0, s * uScale / -mv.z); }`,
-    fragmentShader: `varying vec2 vDat;
+    fragmentShader: `uniform float uGold; varying vec2 vDat;
       void main() { float r = length(gl_PointCoord - .5) * 2.0; if (r > 1.0) discard;
-        float a = (1.0 - r) * (1.0 - r), k = vDat.x; vec3 col;
-        if (vDat.y > .5) { col = vec3(.8, .97, 1.0); a *= 1.0 - k; }
-        else { col = k < .25 ? mix(vec3(.85, .95, 1.0), vec3(.25, .5, 1.0), k / .25) : mix(vec3(.25, .5, 1.0), vec3(.4, .2, .9), (k - .25) / .75); a *= (1.0 - k) * min(1.0, k / .05) * .42; }
-        gl_FragColor = vec4(col, a); }`,
+        float a = (1.0 - r) * (1.0 - r), k = vDat.x; vec3 col, gc;
+        if (vDat.y > .5) { col = vec3(.8, .97, 1.0); gc = vec3(1.0, .93, .62); a *= 1.0 - k; }
+        else {
+          col = k < .25 ? mix(vec3(.85, .95, 1.0), vec3(.25, .5, 1.0), k / .25) : mix(vec3(.25, .5, 1.0), vec3(.4, .2, .9), (k - .25) / .75);
+          gc = k < .25 ? mix(vec3(1.0, .98, .82), vec3(1.0, .76, .2), k / .25) : mix(vec3(1.0, .76, .2), vec3(1.0, .42, .08), (k - .25) / .75);
+          a *= (1.0 - k) * min(1.0, k / .05) * .42;
+        }
+        gl_FragColor = vec4(mix(col, gc, uGold), a); }`,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   });
   const m = new THREE.Points(g, mat);
@@ -2948,10 +3015,10 @@ const shield = (() => {   // 防護罩：半透明的六角格子，邊緣比較
 const KJ_MOUTH = new THREE.Sprite(new THREE.SpriteMaterial({ map: KJ_HALO.map, color: 0x7cc4ff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));   // 嘴裡蓄力的藍光
 KJ_MOUTH.position.set(0, 1.2, 5.6); KJ_MOUTH.visible = false;
 kj.head.add(KJ_MOUTH);
-function kjEmit(n, P, D) {   // 從嘴巴 P 往 D 的方向噴出 n 顆火（散開一點）
+function kjEmit(n, P, D, v = 30, j = .42) {   // 從嘴巴 P 往 D 的方向噴出 n 顆火（散開一點）；v＝速度、j＝散開多少
   const F = kjFlame;
   for (let k = 0; k < n; k++) {
-    const i = F.i = (F.i + 1) % KJF_N, sp = 30 + Math.random() * 14, j = .42;
+    const i = F.i = (F.i + 1) % KJF_N, sp = v + Math.random() * 14;
     F.pos.set([P.x + (Math.random() - .5) * .6, P.y + (Math.random() - .5) * .6, P.z + (Math.random() - .5) * .6], i * 3);
     F.vel.set([(D.x + (Math.random() - .5) * j) * sp, (D.y + (Math.random() - .5) * j) * sp, (D.z + (Math.random() - .5) * j) * sp], i * 3);
     F.age[i] = 0; F.life[i] = .8 + Math.random() * .25; F.dat[i * 2] = 0; F.dat[i * 2 + 1] = 0;
@@ -2959,7 +3026,7 @@ function kjEmit(n, P, D) {   // 從嘴巴 P 往 D 的方向噴出 n 顆火（散
 }
 function updateFlame(dt) {
   const F = kjFlame, R2 = SHIELD_R * SHIELD_R, H2 = SHIELD_H * SHIELD_H;
-  let any = false, hx = 0, hy = 0, hz = 0, hn = 0;
+  let any = false, hx = 0, hy = 0, hz = 0, hn = 0, sn = 0, sx = 0, sz = 0;   // sn：這一幀打到海面的火（變成蒸氣）
   for (let i = 0; i < KJF_N; i++) {
     if (F.dat[i * 2] >= 1) continue;
     any = true;
@@ -2978,11 +3045,17 @@ function updateFlame(dt) {
         F.vel[o] = (F.vel[o] - vn * nx) * .45 + nx * 3; F.vel[o + 1] = (F.vel[o + 1] - vn * ny) * .45 + ny * 3; F.vel[o + 2] = (F.vel[o + 2] - vn * nz) * .45 + nz * 3;
         F.dat[i * 2 + 1] = 1; F.age[i] = 0; F.life[i] = .3 + Math.random() * .35;
         hx += x; hy += y; hz += z; hn++;
-      }
+      } else if (kjReady && y < .25 && F.vel[o + 1] < 0) {   // 打到海面：嘶一聲變成一團蒸氣
+        if (Math.random() < .2) steamPuff(x, .5, z, 2.4 + Math.random() * 1.8, 1.5 + Math.random() * .9, .55, (Math.random() - .5) * 1.6, 1.6 + Math.random() * 1.6, (Math.random() - .5) * 1.6);
+        sn++; sx += x; sz += z;
+        F.dat[i * 2] = 1; F.pos[o + 1] = -999;
+        continue;
+      } else if (kjReady && y > 17 && cloudHit(x, y, z)) { F.dat[i * 2] = 1; F.pos[o + 1] = -999; continue; }   // 鑽進雲裡：把雲燒熱
     } else { const k = 1 - Math.min(1, dt * 2.5); F.vel[o] *= k; F.vel[o + 1] *= k; F.vel[o + 2] *= k; }
     F.pos[o] = x; F.pos[o + 1] = y; F.pos[o + 2] = z;
     F.dat[i * 2] = Math.min(1, F.age[i] / F.life[i]);
   }
+  if (sn) seaHit(sx / sn, sz / sn, sn, dt);
   if (hn) { SH.hit = Math.min(1, SH.hit + hn * .03); _shD.set(hx / hn / SHIELD_R, hy / hn / SHIELD_H, hz / hn / SHIELD_R).normalize(); shield.mat.uniforms.uDir.value.lerp(_shD, .2).normalize(); }
   if (any) { F.m.geometry.attributes.position.needsUpdate = true; F.m.geometry.attributes.aDat.needsUpdate = true; F.mat.uniforms.uScale.value = renderer.domElement.height / (2 * Math.tan(camera.fov * Math.PI / 360)); }
   F.m.visible = any;
@@ -2996,11 +3069,19 @@ function updateShield(dt, t) {
   shield.m.visible = shield.foot.visible = vis;
   shield.foot.material.opacity = SH.on * (.35 + SH.hit * .4);
 }
-function kjRoar(byTap = false) {   // 吼叫噴火；byTap＝點牠觸發（鏡頭會調到看得到整段的角度）。先轉身對著島（rt 是負的），轉正了才開始吼
-  const K = KJ;
-  if ((K.mode !== 'walk' && K.mode !== 'stand') || K.rcd > 0) return false;
-  Object.assign(K, { mode: 'roar', rt: -1, rt0: -1, rtw: 0, hv: 0, rcam: byTap, rsp: 100 + rnd() * 80, rsw: (rnd() < .5 ? -1 : 1) * (8 + rnd() * 4) });   // rsw：火往哪邊掃、掃多寬
+function kjRoar(byTap = false, rider = false, gold = false) {   // 吼叫噴火；byTap＝點牠觸發（鏡頭會調到看得到整段的角度）。先轉身對著島（rt 是負的），轉正了才開始吼
+  const K = KJ;   // rider＝你騎著叫牠吼：不轉身，往牠面對的方向噴（你可以慢慢轉著瞄準）；gold＝蓄滿力的合體大招，噴金色光束
+  if ((K.mode !== 'walk' && K.mode !== 'stand') || (K.rcd > 0 && !rider)) return false;
+  Object.assign(K, { mode: 'roar', rt: -1, rt0: -1, rtw: 0, hv: 0, rcam: byTap, rsp: 100 + rnd() * 80, rsw: (rnd() < .5 ? -1 : 1) * (8 + rnd() * 4), rFree: rider, rGold: gold, rIsle: false });   // rsw：火往哪邊掃、掃多寬
+  if (rider) { K.rt = 0; K.rt0 = -.001; }   // 騎著不用轉身（從頭開始往後仰：從中間開始的話頭會一下子往後彈）
   return true;
+}
+function shieldHitT(P, D) {   // 從 P 往 D 會在多遠打到罩子（半徑 SHIELD_R、高 SHIELD_H 的半球）；打不到回傳 -1
+  const px = P.x / SHIELD_R, py = P.y / SHIELD_H, pz = P.z / SHIELD_R, dx = D.x / SHIELD_R, dy = D.y / SHIELD_H, dz = D.z / SHIELD_R;
+  const a = dx * dx + dy * dy + dz * dz, b = 2 * (px * dx + py * dy + pz * dz), c = px * px + py * py + pz * pz - 1, q = b * b - 4 * a * c;
+  if (q < 0) return -1;
+  const t = (-b - Math.sqrt(q)) / (2 * a);
+  return t > 0 && P.y + D.y * t > 0 ? t : -1;
 }
 const _rcA = new THREE.Vector3(), _rcH = new THREE.Vector3(), _rcM = new THREE.Vector3();
 function kjRoarCam() {   // 鏡頭：原本就看得到牠和火會打到的地方就不動；不然照你原本看的那一側，轉到最近的、看得到「牠＋火＋罩子」的角度（每次畫面才會跟著你和牠的位置不同）
@@ -3021,9 +3102,9 @@ function kjRoarCam() {   // 鏡頭：原本就看得到牠和火會打到的地�
   flyTo({ pos, target: tgt }, 1.5);
 }
 /* 走到哪：繞著島挑下一個地方（鏡頭看得到的優先）。淺水區用走的，深水區用游的；中間會先站著看看四周 */
-const KJ = { x: Math.cos(-1.76) * 50, z: Math.sin(-1.76) * 50, h: .19, v: 0, vT: 0, mode: 'walk', u: 0, t: 0, ga: 0, gr: 52, dir: 1, deep: false, ph: 0, sw: 0, sp: 0, sd: 0, ly: 0, lp: 0, lyT: 0, lpT: 0, lookT: 3, tapT: 0, tl: 0, top: 21, cx: 0, cz: 0, wake: 0, so: .6, dp: 0, spl: false, tw: 9, rt: -1, rt0: -1, rtw: 0, hv: 0, rsw: 10, rq: 0, rcd: 0, rsp: 60, rcam: false };   // rt：這次吼了幾秒；rq：點牠後過多久吼；rcd：吼完多久內不再吼；rsp：多久之後才會自己吼
+const KJ = { x: Math.cos(-1.76) * 50, z: Math.sin(-1.76) * 50, h: .19, v: 0, vT: 0, mode: 'walk', u: 0, t: 0, ga: 0, gr: 52, dir: 1, deep: false, ph: 0, sw: 0, sp: 0, sd: 0, ly: 0, lp: 0, lyT: 0, lpT: 0, lookT: 3, tapT: 0, tl: 0, top: 21, cx: 0, cz: 0, wake: 0, so: .6, dp: 0, spl: false, tw: 9, rt: -1, rt0: -1, rtw: 0, hv: 0, rsw: 10, rq: 0, rcd: 0, rsp: 60, rcam: false, rFree: false, rGold: false, rIsle: false, chg: 0, bump: 0, fg: 0, rc: [0, 0], imp: false, boot: -1, hu: 0, fv: 30, ff: [0, 0, 0, 0, 0, 0, 0, 0, 0], mk: 0 };   // chg：合體大招蓄力（0～1）；bump：你落在牠頭上的那一下；fg：背鰭金光；rc：放煙火時兩隻手的後座力；rt：這次吼了幾秒；rq：點牠後過多久吼；rcd：吼完多久內不再吼；rsp：多久之後才會自己吼
 let kjReady = false;   // 載入時就會先算一次姿勢，那時聲音、飛船都還沒建好，先別碰
-const _kA = new THREE.Vector3(), _kB = new THREE.Vector3(), _kC = new THREE.Vector3(), _kT = [...Array(7)].map(() => new THREE.Vector3());
+const _kA = new THREE.Vector3(), _kB = new THREE.Vector3(), _kC = new THREE.Vector3(), _kD = new THREE.Vector3(), _kT = [...Array(7)].map(() => new THREE.Vector3());
 const kjView = (x, z) => _dfr.containsPoint(_dv3.set(x, 6, z)) && camera.position.distanceTo(_dv3) < 240;
 const kjCross = (a, b, at) => Math.floor((a - at) / TAU) !== Math.floor((b - at) / TAU);   // 走路的相位這一格有沒有經過 at
 function kjPlan() {
@@ -3039,19 +3120,29 @@ function kjPlan() {
   if (!wet && !deep && K.rsp <= 0 && K.rcd <= 0 && kjReady && !flight.phase && kjView(K.x, K.z) && rnd() < .5) kjRoar();
   else if (!wet && !deep && rnd() < .35) { K.mode = 'stand'; K.t = 5 + rnd() * 6; K.so = (rnd() < .5 ? -1 : 1) * (.45 + rnd() * .4); }
 }
+function kjRideMode(K, r, inp) {   // 你騎著：有推就走、沒推就站（蓄力時站著不動）；往外走到淺水區邊上撲進水裡游，游回淺水區站起來
+  const out = Math.cos(K.h - Math.atan2(K.x, K.z));   // >0＝正往外海走
+  if (K.mode === 'swim') { if (r < KJ_SHELF + 1 && out < 0) { K.mode = 'rise'; K.u = 0; } return; }
+  if (K.chg <= 0 && r > KJ_SHELF - 1.5 && inp.y > .3 && out > .2) { K.mode = 'dive'; K.u = 0; K.spl = false; return; }
+  K.mode = K.chg <= 0 && (Math.abs(inp.y) > .12 || Math.abs(inp.x) > .12) ? 'walk' : 'stand';
+}
 function kjFloor(x, z) {   // 開飛船經過巨獸時至少要飛多高（離牠遠＝0），比照飛到遠島上空自動拉高
   const K = KJ, d = Math.min(Math.hypot(x - K.x, z - K.z), Math.hypot(x - K.cx, z - K.cz));
   return d < 15 ? lerp(K.top + 3, 0, smooth((d - 8) / 7)) : 0;
 }
 function updateKaiju(dt, t) {
   const K = KJ, R = kj, a = Math.atan2(K.z, K.x), r = Math.hypot(K.x, K.z), u0 = K.u;
+  const rd = kjReady && ride.ctl, wait = kjReady && !ride.ctl && ['charge', 'fly', 'hover'].includes(ride.phase), inp = rd ? pilotInput() : null;   // rd：你騎在牠頭上、牠聽你的；wait：你正飛過來，牠停下來等你
   K.rcd -= dt; K.rsp -= dt;
-  if (K.rq > 0 && (K.rq -= dt) <= 0) kjRoar(true);   // 點牠：先轉頭看你，過一下才轉過去對著島吼
-  if (K.mode === 'stand') { if ((K.t -= dt) <= 0) { K.mode = 'walk'; K.t = 150; } }   // 站完照原本挑好的目的地走
-  else if (K.mode === 'roar') { K.rt0 = K.rt; if (K.rt >= 0 && (K.rt += dt) >= KJ_ROAR) { K.mode = 'walk'; K.t = 150; K.rcd = 6; } }
+  if (K.rq > 0 && (K.rq -= dt) <= 0 && !rd && !wait) kjRoar(true);   // 點牠：先轉頭看你，過一下才轉過去對著島吼
+  if (K.mode === 'stand') { if (rd) kjRideMode(K, r, inp); else if (!wait && (K.t -= dt) <= 0) { K.mode = 'walk'; K.t = 150; } }   // 站完照原本挑好的目的地走；騎著＝聽你的
+  else if (K.mode === 'roar') { K.rt0 = K.rt; if (K.rt >= 0 && (K.rt += dt * (K.rFree && (K.rt < 1.3 || K.rt > 4.5) ? 2.4 : 1)) >= KJ_ROAR) { K.mode = rd ? 'stand' : 'walk'; K.t = 150; K.rcd = rd ? 0 : 6; K.rFree = K.rGold = false; } }
   else if (K.mode === 'dive') { if ((K.u += dt / 3.4) >= 1) K.mode = 'swim'; }
   else if (K.mode === 'rise') { if ((K.u += dt / 4) >= 1) { K.mode = 'shake'; K.u = 0; } }
-  else if (K.mode === 'shake') { if ((K.u += dt / 1.8) >= 1) K.mode = 'walk'; }   // 站起來先甩水，甩完才走
+  else if (K.mode === 'shake') { if ((K.u += dt / 1.8) >= 1) K.mode = rd || wait ? 'stand' : 'walk'; }   // 站起來先甩水，甩完才走
+  else if (K.mode === 'stomp' || K.mode === 'works') { if ((K.u += dt / KJ_ACT[K.mode]) >= 1) { K.mode = 'stand'; K.t = 3; } }   // 騎著時的招式：跺腳、放煙火
+  else if (rd) kjRideMode(K, r, inp);
+  else if (wait) { if (K.mode === 'walk') { K.mode = 'stand'; K.t = 3; } else if (K.mode === 'swim') { K.mode = 'rise'; K.u = 0; } }   // 停下來等你；在潛水就浮上來接你
   else {
     const d = Math.atan2(Math.sin(K.ga - a), Math.cos(K.ga - a)), passed = Math.abs(d) < .08 || (d * K.dp < 0 && Math.abs(d) < 1);
     K.dp = d;
@@ -3060,10 +3151,24 @@ function updateKaiju(dt, t) {
     else if (K.mode === 'swim' && !K.deep && r < KJ_SHELF + 1) { K.mode = 'rise'; K.u = 0; }   // 游回淺水區：站起來
   }
   const wet = K.mode === 'swim' || K.mode === 'dive';
+  if (rd) {   // 你騎著：左右轉向、前後走（倒退慢一點）；吼的時候慢慢轉著瞄準；蓄力、跺腳、放煙火、撲水、浮上來的時候不轉
+    const tr = K.mode === 'swim' ? 1.0 : (K.mode === 'walk' || K.mode === 'stand') && K.chg <= 0 ? .75 : K.mode === 'roar' ? .3 : 0;
+    let want = -inp.x * tr;
+    if (K.mode === 'roar' && K.rFree) {   // 噴火時你瞄的地方在頭轉不到的角度：身體跟著轉過去
+      aimTarget(_kD);
+      const dy = Math.atan2(Math.sin(Math.atan2(_kD.x - K.x, _kD.z - K.z) - K.h), Math.cos(Math.atan2(_kD.x - K.x, _kD.z - K.z) - K.h));
+      if (Math.abs(dy) > .55) want += Math.sign(dy) * Math.min(1.1, (Math.abs(dy) - .4) * 2.2);
+    }
+    if (K.mode === 'works' && fw.show) want = clamp(Math.atan2(Math.sin(fw.show.h - K.h), Math.cos(fw.show.h - K.h)) * 1.8, -.7, .7);   // 放煙火：轉過去面向鏡頭和島
+    K.hv = lerp(K.hv, want, Math.min(1, dt * 5));
+    K.h = Math.atan2(Math.sin(K.h + K.hv * dt), Math.cos(K.h + K.hv * dt));
+    K.vT = K.mode === 'walk' ? (inp.y >= 0 ? inp.y * 3.2 : inp.y * 1.3) : K.mode === 'swim' ? Math.max(0, inp.y) * 7.5 : K.mode === 'dive' ? lerp(2.4, 6, K.u) : K.mode === 'rise' ? lerp(3, .8, K.u) : 0;
+  } else {
   // 轉向：繞著島往目的地走（不穿過島），游泳轉得比較快；站著時慢慢轉過來面向島；太靠近鏡頭就讓開
   let hd;
   if (K.mode === 'stand') hd = Math.atan2(-K.x, -K.z) + K.so;   // 斜斜地面向島：正面左右對稱看起來像雕像
   else if (K.mode === 'roar') hd = Math.atan2(-K.x, -K.z);   // 吼的時候正對著島
+  else if (K.mode === 'stomp' || K.mode === 'works') hd = K.h;
   else {
     const d = Math.atan2(Math.sin(K.ga - a), Math.cos(K.ga - a)), ac = a + clamp(d, -.28, .28);
     const rc = wet ? clamp(r + (K.gr - r) * .6, 61, KJ_MAX - 1) : clamp(r + (K.gr - r) * .6, KJ_MIN + .5, KJ_SHELF + .5);
@@ -3088,9 +3193,10 @@ function updateKaiju(dt, t) {
     const dh = clamp(hdiff, -w * dt, w * dt);
     K.h = Math.atan2(Math.sin(K.h + dh), Math.cos(K.h + dh));
   }
-  K.vT = K.mode === 'stand' || K.mode === 'shake' || K.mode === 'roar' ? 0 : K.mode === 'walk' ? 2.4 : K.mode === 'swim' ? 6 : K.mode === 'dive' ? lerp(2.4, 6, K.u) : lerp(3, .8, K.u);   // 站起來時先煞住，不然會衝進淺水區太裡面
+  K.vT = K.mode === 'walk' ? 2.4 : K.mode === 'swim' ? 6 : K.mode === 'dive' ? lerp(2.4, 6, K.u) : K.mode === 'rise' ? lerp(3, .8, K.u) : 0;   // 站起來時先煞住，不然會衝進淺水區太裡面
   if (K.mode === 'walk' || K.mode === 'swim') K.vT *= 1 - .75 * smooth((Math.abs(hdiff) - .6) / 1.4);   // 要大轉彎就先放慢，轉的圈才小（不然會一路衝到邊界）
-  K.v += clamp(K.vT - K.v, -(K.mode === 'rise' ? 2 : K.mode === 'roar' ? 2.5 : 1.2) * dt, .9 * dt);
+  }
+  K.v += clamp(K.vT - K.v, -(K.mode === 'rise' ? 2 : K.mode === 'roar' ? 2.5 : rd ? 2.6 : 1.2) * dt, (rd ? 1.7 : .9) * dt);   // 你騎著：起步、煞車都快一點，不然按了半天才動
   K.x += Math.sin(K.h) * K.v * dt; K.z += Math.cos(K.h) * K.v * dt;
   const r2 = Math.hypot(K.x, K.z), kk = r2 < KJ_MIN - 1 ? (KJ_MIN - 1) / r2 : r2 > KJ_MAX + 1 ? (KJ_MAX + 1) / r2 : 1;   // 保底：不會走進海豚游的水域，也不會撞上遠島
   K.x *= kk; K.z *= kk;
@@ -3101,9 +3207,9 @@ function updateKaiju(dt, t) {
   else sp = sd = K.mode === 'swim' ? 1 : 0;
   const ph0 = K.ph, sk = K.mode === 'shake' ? smooth(K.u / .12) * (1 - smooth((K.u - .45) / .55)) : 0;   // sk：甩水的力道
   K.sp = sp; K.sd = sd;
-  K.ph += K.v * dt / (3.6 * KJ_S) * TAU * (1 - sp) + (K.mode === 'roar' ? Math.abs(K.hv) * dt * 2.6 : 0);   // 短腿小步：一步不到 2，兩步一個循環；吼之前轉身時原地踏步
+  K.ph += K.v * dt / (3.6 * KJ_S) * TAU * (1 - sp) + (K.mode === 'roar' || rd ? Math.abs(K.hv) * dt * 2.6 : 0);   // 短腿小步：一步不到 2，兩步一個循環；吼之前轉身時原地踏步
   K.sw += dt * (1.2 + K.v * .22) * Math.max(sp, .001);   // 游泳時尾巴左右擺的節奏
-  const gw = Math.max(smooth(K.v / 1.2) * (1 - sp), K.mode === 'roar' ? smooth(Math.abs(K.hv) / .45) * .85 : 0), ph = K.ph, sn = Math.sin(ph), cs = Math.cos(ph), sw = K.sw, sh = Math.sin(t * 19);
+  const gw = Math.max(smooth(Math.abs(K.v) / 1.2) * (1 - sp), K.mode === 'roar' || rd ? smooth(Math.abs(K.hv) / .45) * .85 : 0), ph = K.ph, sn = Math.sin(ph), cs = Math.cos(ph), sw = K.sw, sh = Math.sin(t * 19);
   // 吼：0～1.1 秒往後仰、張嘴、眼睛變藍、嘴裡蓄藍光；1.1 秒往前一探，1.3～4.5 秒噴火（頭慢慢左右掃）；之後閉嘴、眼睛變回紅色
   const T = K.mode === 'roar' ? K.rt : -1, T0 = K.mode === 'roar' ? K.rt0 : -1;
   const rA = T < 0 ? 0 : smooth(T / 1.1) * (1 - smooth((T - 1.1) / .25)), rB = T < 0 ? 0 : smooth((T - 1.1) / .25) * (1 - smooth((T - 4.5) / .8)), rW = rA + rB;
@@ -3119,7 +3225,10 @@ function updateKaiju(dt, t) {
   if (K.tapT > 0) { K.tapT -= dt; lookAt(camera.position, .35); }
   if (kjReady && flight.phase && Math.hypot(ship.position.x - K.x, ship.position.z - K.z) < 50) { lookAt(ship.position, .5); lr = 1.4; }
   if (K.mode === 'roar' && K.rt < 0) { const ca = Math.atan2(-K.x, -K.z); ly = clamp(Math.atan2(Math.sin(ca - K.h), Math.cos(ca - K.h)), -.75, .75); lp = 0; lr = 1.5; }   // 吼之前轉身：頭先轉過去看島
-  ly *= 1 - rW; lp *= 1 - rW;
+  if (wait) { _kC.copy(avatar.position); _kC.y += 1; lookAt(_kC, .45); lr = 1.6; }   // 你飛過來：轉頭看著你
+  if (rd && aimLook() && (K.mode === 'walk' || K.mode === 'stand' || K.mode === 'roar')) { aimTarget(_kD); lookAt(_kD, 1.0); lr = K.mode === 'roar' ? 2.4 : 1.6; }   // 你開著：頭轉過去看你瞄的地方（滑鼠指著、剛點過）
+  else if (rd) { ly = clamp(K.hv * .7, -.5, .5) * (1 - sp * .6); lp = K.mode === 'works' ? .32 : K.mode === 'stomp' && K.u < .4 ? -.18 : 0; lr = 1.2; }   // 頭往轉彎那邊偏一點；放煙火時抬頭看天空，跺腳前低頭看腳
+  if (!K.rFree) { ly *= 1 - rW; lp *= 1 - rW; }   // 你開著噴火：頭一直對著瞄的地方
   K.ly += clamp(ly - K.ly, -lr * dt, lr * dt); K.lp += clamp(lp - K.lp, -lr * .6 * dt, lr * .6 * dt);
   K.tl += clamp((K.tapT > 0 ? .26 : 0) - K.tl, -.9 * dt, .9 * dt);
   // 擺姿勢：站著／走路＝微微駝背、一搖一擺、尾巴尖翹著甩；游泳＝整隻趴平潛在水下、臉朝下、尾巴像鱷魚一樣左右擺、兩腳踢水
@@ -3130,7 +3239,9 @@ function updateKaiju(dt, t) {
   R.waist.rotation.set(B(.12 + Math.sin(t * 1.1) * .015, .1), -.05 * sn * gw + K.ly * .2 * (1 - sp) + .32 * sk * sh, .04 * cs * gw);
   R.neck.rotation.set(B(-.08, 0) - K.lp * .3, K.ly * .3 + .2 * sk * Math.sin(t * 19 - .4), 0);
   R.head.rotation.set(B(-.1, .1) - K.lp * .6, K.ly * .5 + .45 * sk * Math.sin(t * 19 - .8), K.tl);
-  R.head.position.z = .15 + smooth((sd - .55) / .4);   // 潛到水下後頭再往下收一點（頭比背鰭大，不收的話後腦勺會露出水面）
+  K.hu = approach(K.hu, rd ? 1 : 0, dt * .8);   // 你開著游泳：抬著頭游（駕駛艙露出水面），像鱷魚一樣
+  R.neck.rotation.x -= 1.15 * sp * K.hu; R.head.rotation.x -= .3 * sp * K.hu;
+  R.head.position.z = .15 + smooth((sd - .55) / .4) * (1 - K.hu);   // 潛到水下後頭再往下收一點（頭比背鰭大，不收的話後腦勺會露出水面）
   R.jaw.rotation.x = .04;
   R.legs.forEach((L, i) => {
     const p = ph + i * Math.PI, kick = sw * 2.2 + i * Math.PI;
@@ -3150,43 +3261,106 @@ function updateKaiju(dt, t) {
   });
   R.tail[0].position.z = -2.3 + 1.4 * smooth((sd - .55) / .4);   // 尾巴根部也往下收（趴平時尾巴根在背上，比背還高）
   if (rW > 0) {   // 吼：rA＝往後仰、兩手張開，rB＝往前探、兩手往後收、頭左右掃
-    const mx = (v, a, b) => v * (1 - rW) + a * rA + b * rB, sweep = .034 * K.rsw * Math.sin((T - 1.3) * 1.9);
+    const mx = (v, a, b) => v * (1 - rW) + a * rA + b * rB, sweep = .034 * K.rsw * Math.sin((T - 1.3) * 1.9), F = K.rFree;   // F：你開著噴——噴的時候頭對著你瞄的地方，不左右掃
     R.waist.rotation.x = mx(R.waist.rotation.x, -.28, .22);
-    R.neck.rotation.x = mx(R.neck.rotation.x, -.15, .05);
-    R.head.rotation.set(mx(R.head.rotation.x, -.5, .02), mx(R.head.rotation.y, 0, sweep), R.head.rotation.z * (1 - rW));
+    R.neck.rotation.x = mx(R.neck.rotation.x, -.15, F ? R.neck.rotation.x : .05);
+    R.head.rotation.set(mx(R.head.rotation.x, -.5, F ? R.head.rotation.x : .02), mx(R.head.rotation.y, F ? R.head.rotation.y : 0, F ? R.head.rotation.y : sweep), R.head.rotation.z * (1 - rW));
     R.arms.forEach((A, i) => { const s = i ? 1 : -1; A.sh.rotation.x = mx(A.sh.rotation.x, -1.5, -.3); A.sh.rotation.z = mx(A.sh.rotation.z, s * .95, s * .5); A.el.rotation.x = mx(A.el.rotation.x, -.4, -.9); });
     R.tail[0].rotation.x = mx(R.tail[0].rotation.x, -.05, -.3);
   }
-  R.jaw.rotation.x = .04 + .55 * rA + (.75 + .04 * Math.sin(t * 40)) * rB;   // 張大嘴
-  KJ_EYE.userData.base.lerpColors(KJ_EYE_RED, KJ_EYE_BLUE, eb);   // 眼睛紅→藍（電影版噴火時眼睛變藍）
-  KJ_HALO.color.lerpColors(KJ_HALO_RED, KJ_HALO_BLUE, eb);
-  if (eb > 0) KJ_HALO.opacity = Math.max(KJ_HALO.opacity, eb * .9);   // 白天吼也看得到眼睛發光
-  R.eyes.forEach(E => { E.rotation.z = E.userData.s * .3 * eb; E.userData.glow.scale.y = .56 * (1 - .45 * eb); });   // 噴火時眼睛變兇：內側往下斜、瞇起來
-  R.brows.forEach(W => { W.rotation.z = Math.PI + W.userData.s * (.2 + .32 * eb); W.position.y = 5.62 - .3 * eb; });   // 眉毛壓低、更斜
-  KJ_MOUTH.visible = ch > .01;
-  KJ_MOUTH.material.opacity = ch * (.75 + .25 * Math.sin(t * 31));
-  KJ_MOUTH.scale.setScalar(2 + 3.5 * ch + rB * 1.5 * Math.sin(t * 23));
+  let wl = 0, stD = 0;   // 跺腳：抬腳的程度、踩下去那一下往下沉
+  if (K.mode === 'stomp') {   // 跺腳：右腳抬高、身體往後仰、兩手張開保持平衡，用力踩下去；踩到水那一刻水花炸開、一圈浪往島推過去
+    const T2 = K.u * KJ_ACT.stomp, wa = smooth(T2 / .5) * (1 - smooth((T2 - 1.2) / .8)), L = R.legs[1];
+    wl = smooth(T2 / .7) * (1 - smooth((T2 - .78) / .12));
+    stD = T2 >= .9 ? Math.sin(Math.min(1, (T2 - .9) / .45) * Math.PI) : 0;
+    L.th.rotation.x = lerp(L.th.rotation.x, -1.2, wl); L.kn.rotation.x = lerp(L.kn.rotation.x, 1.3, wl); L.an.rotation.x = lerp(L.an.rotation.x, -.1, wl);
+    R.hip.rotation.z -= .1 * wl; R.waist.rotation.x += -.14 * wl + .12 * stD;
+    R.arms.forEach((A, i) => { const s = i ? 1 : -1; A.sh.rotation.z = lerp(A.sh.rotation.z, s * 1.05, wa); A.sh.rotation.x = lerp(A.sh.rotation.x, -.9, wa); });
+    if (!K.imp && T2 >= .9) {   // 踩下去了
+      K.imp = true;
+      R.g.updateMatrixWorld(true); L.an.getWorldPosition(_kC);
+      kjBurst(_kC.x, .4, _kC.z, 260, 9, 10); kjRipple(_kC.x, _kC.z, 3, 30, 3.4, .8); kjRipple(_kC.x, _kC.z, 2, 18, 2.4, .7);
+      if (kjReady) { sfx('stomp', _kC); rideStompHit(_kC.x, _kC.z); }
+    }
+  }
+  let mo = 0;   // 煙火秀最後：抬頭張嘴發射大金柳
+  if (K.mode === 'works') {   // 放煙火：兩手舉高、八根槍管手指朝天，一根接一根發射（每發一次那隻手往後一頓）；最後抬頭張嘴
+    const st = kjReady && fw.show ? fw.show.t : K.u * KJ_ACT.works, wa = smooth((st - 1.0) / .7) * (1 - smooth((st - 18.2) / .9));
+    R.arms.forEach((A, i) => { const s = i ? 1 : -1; K.rc[i] = Math.max(0, K.rc[i] - dt * 6); A.sh.rotation.x = lerp(A.sh.rotation.x, -2.75 + .18 * K.rc[i], wa); A.sh.rotation.z = lerp(A.sh.rotation.z, s * .3, wa); A.el.rotation.x = lerp(A.el.rotation.x, -.12 + .35 * K.rc[i], wa); });
+    R.waist.rotation.x -= .08 * wa;
+    mo = smooth((st - 13.6) / .55) * (1 - smooth((st - 15.1) / .7));
+    K.mk = Math.max(0, K.mk - dt * 3);
+    R.waist.rotation.x -= .07 * mo; R.neck.rotation.x -= .3 * mo - .25 * K.mk; R.head.rotation.x -= .6 * mo - .2 * K.mk;   // 發射那一下頭往後一頓
+  }
+  for (let i = 0; i < 9; i++) K.ff[i] = Math.max(0, K.ff[i] - dt * 2.5);   // 背鰭發射時亮一下
+  if (K.boot >= 0 && (K.boot += dt) > 2.4) K.boot = -1;   // 開機：0.3 秒眼睛閃金光、0.45 秒起一道金光從頭沿著背鰭跑到尾巴、1.1 秒抬頭吼一聲
+  const bt = K.boot, bE = bt >= 0 ? smooth((bt - .3) / .15) * (1 - smooth((bt - .75) / .35)) : 0, bR = bt >= 0 ? smooth((bt - 1.05) / .25) * (1 - smooth((bt - 1.75) / .4)) : 0;
+  if (bR > 0) { R.neck.rotation.x -= .12 * bR; R.head.rotation.x -= .3 * bR; }
+  if (kjReady && bt >= 1.05 && bt - dt < 1.05) sfx('kjRoar', R.head);
+  if (K.chg > 0) {   // 合體大招蓄力：微微蹲低、兩手往後收、低頭、全身微微發抖（放開後隨著往後仰慢慢退掉）
+    const c = smooth(K.chg / .3) * (1 - rW);
+    R.waist.rotation.x += .1 * c; R.waist.rotation.y += .012 * Math.sin(t * 53) * K.chg;
+    R.head.rotation.x += .14 * c;
+    R.arms.forEach(A => { A.sh.rotation.x = lerp(A.sh.rotation.x, .25, c * .8); A.el.rotation.x = lerp(A.el.rotation.x, -1.3, c * .8); });
+  }
+  if (K.bump > 0) { K.bump = Math.max(0, K.bump - dt / .6); R.neck.rotation.x += .2 * Math.sin((1 - K.bump) * Math.PI); }   // 你落在頭上：頭被壓得一低
+  if (K.mode === 'roar' && K.rGold) K.chg = T < 1.3 ? 1 : Math.max(0, K.chg - dt * 2);   // 大招：蓄好的力撐到光束噴出來
+  R.jaw.rotation.x = .04 + .55 * rA + (.75 + .04 * Math.sin(t * 40)) * rB + .75 * mo + .55 * bR;   // 張大嘴
+  const gC = Math.max(K.chg, K.rGold ? eb : 0, bE), eA = Math.max(eb, K.chg * .8, bE * .7), chA = Math.max(ch, K.chg * .85, mo * .9);   // gC：變金色的程度（合體大招）
+  KJ_EYE.userData.base.lerpColors(KJ_EYE_RED, KJ_EYE_BLUE, K.rGold ? 0 : eb);   // 眼睛紅→藍（電影版噴火時眼睛變藍）；大招變金色
+  KJ_HALO.color.lerpColors(KJ_HALO_RED, KJ_HALO_BLUE, K.rGold ? 0 : eb);
+  if (gC > 0) { KJ_EYE.userData.base.lerp(KJ_EYE_GOLD, gC); KJ_HALO.color.lerp(KJ_HALO_GOLD, gC); }
+  if (eA > 0) KJ_HALO.opacity = Math.max(KJ_HALO.opacity, eA * .9);   // 白天吼也看得到眼睛發光
+  R.eyes.forEach(E => { E.rotation.z = E.userData.s * .3 * eA; E.userData.glow.scale.y = .56 * (1 - .45 * eA); });   // 噴火時眼睛變兇：內側往下斜、瞇起來
+  R.brows.forEach(W => { W.rotation.z = Math.PI + W.userData.s * (.2 + .32 * eA); W.position.y = 5.62 - .3 * eA; });   // 眉毛壓低、更斜
+  KJ_MOUTH.visible = chA > .01;
+  KJ_MOUTH.material.color.setHex(gC > .01 || mo > .01 ? 0xffd25c : 0x7cc4ff);
+  KJ_MOUTH.material.opacity = chA * (.75 + .25 * Math.sin(t * 31));
+  KJ_MOUTH.scale.setScalar(2 + 3.5 * chA + rB * 1.5 * Math.sin(t * 23));
+  K.fg = Math.max(K.fg - dt * .8, K.rGold ? rB : 0);   // 背鰭的金光：蓄力時從尾巴尖往肩膀一段段亮起來，光束噴完慢慢退
+  const bp = bt >= 0 ? 8.6 - (bt - .45) * 10 : -99, pw = kjReady && ride.ctl ? 1 : 0;   // bp：開機那道金光跑到第幾節；pw：你開著＝背鰭微微一明一暗
+  R.fins.forEach((m, i) => { m.material.emissiveIntensity = Math.max(smooth(K.chg * 10.5 - i), K.fg * (.75 + .25 * Math.sin(t * 14 - i * .7)), Math.exp(-(i - bp) * (i - bp) / 1.6), K.ff[i], pw * (.13 + .08 * Math.sin(t * 2.2 - i * .6))) * (2.1 + (kjReady ? night : 0) * 1.1); });   // 載入時 night 還沒宣告（TDZ），先當白天
   // 整隻放多深：先把根部放在 0 量背的高度；站著＝腳踩海底，游泳＝背剛好在水面下、只有背鰭露出來
   R.g.updateMatrixWorld(true);
   _kB.copy(R.back).applyMatrix4(R.waist.matrixWorld);
   const ys = -kjDepth(Math.hypot(K.x, K.z)) + .15 * KJ_S * Math.cos(2 * ph) * gw + Math.sin(t * 1.1) * .05 * (1 - sp);   // 走路一步一沉（踩下去最低）
-  R.g.position.y = lerp(ys, KJ_SWIM + Math.sin(sw * 2) * .06 - _kB.y, sd) + KJ_S * (2.6 * hop - .7 * crouch - .35 * rA - .15 * rB);   // 吼的時候微微蹲低、站穩
+  R.g.position.y = lerp(ys, KJ_SWIM + Math.sin(sw * 2) * .06 - _kB.y, sd) + KJ_S * (2.6 * hop - .7 * crouch - .35 * rA - .15 * rB + .2 * wl - .5 * stD - .3 * K.chg * (1 - rW));   // 吼的時候微微蹲低、站穩；跺腳抬腳時身體抬高、踩下去一沉
   R.g.updateMatrixWorld(true);
   if (T >= 1.3 && T < 4.5) {   // 噴火：從嘴巴往島的中間噴（左右掃一點），會先打到防護罩
     _kC.set(0, 1.0, 5.3).applyMatrix4(R.head.matrixWorld);
-    const sl = Math.hypot(K.x, K.z) || 1, sw2 = K.rsw * Math.sin((T - 1.3) * 1.9);
-    _kA.set(-K.z / sl * sw2 - _kC.x, 5 - _kC.y, K.x / sl * sw2 - _kC.z).normalize();
-    kjEmit(Math.floor(900 * dt + Math.random()), _kC, _kA);
+    kjFlame.mat.uniforms.uGold.value = K.rGold ? 1 : 0;
+    let fv = 30;
+    if (K.rFree && kjReady) {   // 你開著：往你瞄的地方噴（頭還沒轉過去就先往頭朝的方向）；火往島那邊去，罩子才升起來
+      aimTarget(_kD);
+      _kA.copy(_kD).sub(_kC);
+      const dist = _kA.length() || 1;
+      _kA.divideScalar(dist);
+      _kB.set(0, 0, 1).transformDirection(R.head.matrixWorld);
+      if (_kA.dot(_kB) < .8) _kA.lerp(_kB, .55).normalize();
+      fv = clamp(dist / .72, 30, 125);   // 遠的地方噴得快一點，火才飛得到（雲在一百多外也燒得到）
+      const tS = shieldHitT(_kC, _kA);
+      if (tS > 0 && tS < dist + 12 && !K.rIsle) {
+        K.rIsle = true;
+        if (SH.on < .05) SH.rise = -.1;
+        SH.up = true; sfx('shieldUp', SH_AT); sfx('shieldHit', SH_AT, Math.max(.6, 4.5 - T));
+        if (dog.state !== 'sleep' && dog.state !== 'bed') { Object.assign(dog, { path: null, state: 'idle', t: 5 }); dog.g.rotation.y = Math.atan2(K.x - dog.g.position.x, K.z - dog.g.position.z); bubble(dog.g, '汪汪汪！', 1.25); }
+      }
+    } else {
+      const sl = Math.hypot(K.x, K.z) || 1, sw2 = K.rsw * Math.sin((T - 1.3) * 1.9);
+      _kA.set(-K.z / sl * sw2 - _kC.x, 5 - _kC.y, K.x / sl * sw2 - _kC.z).normalize();
+    }
+    if (K.rGold && kjReady) kjBeam(_kC, _kA, dt);
+    else kjEmit(Math.floor(900 * dt + Math.random()), _kC, _kA, fv, .42 * Math.sqrt(30 / fv));
   }
   if (K.rcam && kjReady) { K.rcam = false; kjRoarCam(); }   // 點牠吼：一開始轉身時鏡頭就調過去
   if (T >= 0 && kjReady) {   // 吼的時間軸上的事：吼聲、阿滿叫、罩子升起來、火打到罩子、罩子收掉
     const at = x => T0 < x && T >= x, awake = dog.state !== 'sleep' && dog.state !== 'bed';
     if (at(.05)) sfx('kjRoar', R.head);
-    if (at(.3) && awake) { Object.assign(dog, { path: null, state: 'idle', t: 5 }); dog.g.rotation.y = Math.atan2(K.x - dog.g.position.x, K.z - dog.g.position.z); bubble(dog.g, '汪汪汪！', 1.25); }
-    if (at(1.3)) { if (SH.on < .05) SH.rise = -.1; SH.up = true; sfx('kjFlame', R.head, 3.2); sfx('shieldUp', SH_AT); }
-    if (at(1.9)) sfx('shieldHit', SH_AT, 3.2);
-    if (at(2.6) && awake) bubble(dog.g, '汪汪！', 1.25);
-    if (at(5.3)) { SH.up = false; sfx('shieldDown', SH_AT); }
+    if (at(.3) && awake && !K.rFree) { Object.assign(dog, { path: null, state: 'idle', t: 5 }); dog.g.rotation.y = Math.atan2(K.x - dog.g.position.x, K.z - dog.g.position.z); bubble(dog.g, '汪汪汪！', 1.25); }
+    if (at(1.3)) { if (!K.rFree) { if (SH.on < .05) SH.rise = -.1; SH.up = true; sfx('shieldUp', SH_AT); } sfx(K.rGold ? 'beam' : 'kjFlame', R.head, 3.2); }   // 騎著時罩子等火真的朝島過來才升（上面噴火那段）
+    if (at(1.9) && !K.rFree) sfx('shieldHit', SH_AT, 3.2);
+    if (at(2.6) && awake && (!K.rFree || K.rIsle)) bubble(dog.g, '汪汪！', 1.25);
+    if (at(5.3) && SH.up) { SH.up = false; sfx('shieldDown', SH_AT); }
   }
   // 水面：身體、頭、尾巴穿過水面的地方一圈白浪；腳踩下去水圈擴散出去
   const foamAt = (m, P, Q, ra, rb, op, sq = 1) => {
@@ -3263,7 +3437,7 @@ const RESIDENTS = [
   { id: 'crab', name: '寄居蟹', sub: '沙灘上三隻，靠近就縮進殼裡', color: '#e0663f', icon: 'paw' },
   { id: 'blob', name: '柑仔丁', sub: '橘色方塊小傢伙・在廣場和機台間跳來跳去', color: '#d97757', icon: 'paw' },
   { id: 'dolphin', name: '海豚', sub: '三隻結伴在島外游來游去，偶爾表演；點牠就跳給你看', color: '#5f86a6', icon: 'wave' },
-  { id: 'kaiju', name: '機械巨獸', sub: '在外海搖搖擺擺地走、潛水時只露出背鰭；點牠會對著島噴藍色火焰，島會升起防護罩', color: '#7b8794', icon: 'wave' },
+  { id: 'kaiju', name: '機械巨獸', sub: '在外海搖搖擺擺地走、潛水時只露出背鰭；點牠會對著島噴藍色火焰，島會升起防護罩；點過之後還可以飛上去，坐進頭頂的駕駛艙開牠', color: '#7b8794', icon: 'wave' },
 ];
 function petPos(id) {
   const v = new THREE.Vector3();
@@ -3286,7 +3460,7 @@ function petTap(id, fromList = false) {
     if (dolTrick(d, ['spin', 'flip', 'walk', 'jump'][(rnd() * 4) | 0]) || dolTrick(d, 'jump') || dolTrick(d, 'hop')) dolphins.forEach(o => { if (o !== d && rnd() < .5) o.jt = .3 + rnd() * .5; });
     sfx('whistle', d.g);
   }
-  else if (id === 'kaiju') { KJ.tapT = 3.5; if ((KJ.mode === 'walk' || KJ.mode === 'stand') && KJ.rcd <= 0 && KJ.rq <= 0) KJ.rq = .7; }   // 轉頭盯著你，過一下轉過去對著島吼、噴火
+  else if (id === 'kaiju') { KJ.tapT = 3.5; if ((KJ.mode === 'walk' || KJ.mode === 'stand') && KJ.rcd <= 0 && KJ.rq <= 0) KJ.rq = .7; if (!ride.phase) ride.offer = 14; }   // 轉頭盯著你，過一下轉過去對著島吼、噴火；提示列多一個「飛上去騎牠」
 }
 function focusPet(id) {
   if (state.flying || !RESIDENTS.some(r => r.id === id)) return;
@@ -3365,11 +3539,11 @@ function setTime(mode) {
   $('#btn-time-label').textContent = TIME_LABEL[mode];
 }
 function updateTime(dt) {
-  const target = timeMode === 'auto' ? nowMin() : +timeMode;
+  const target = showNight ? 1165 : timeMode === 'auto' ? nowMin() : +timeMode;   // 放煙火：天色很快暗成藍調的夜（不到阿滿去睡覺那麼暗）
   let d = target - curMin;
   if (d > 720) d -= 1440;
   if (d < -720) d += 1440;
-  curMin = (curMin + (Math.abs(d) < .05 ? d : d * Math.min(1, dt * 2.4)) + 1440) % 1440;
+  curMin = (curMin + (Math.abs(d) < .05 ? d : d * Math.min(1, dt * (showNight ? 1.3 : fw.show || ride.phase ? .7 : 2.4))) + 1440) % 1440;   // 煙火秀：天色很快暗下來，放完慢慢亮回去
   applyDay(curMin);
 }
 
@@ -3443,7 +3617,7 @@ function updateCamera(dt) {
     controls.target.add(want);
     camera.position.add(want);
   }
-  if (!flight.phase || ['board', 'touch', 'off'].includes(flight.phase)) controls.update();   // 飛行中由飛船鏡頭接手：旋轉控制會限制仰角和距離，看不到往上衝的船和太空裡的島
+  if ((!flight.phase || ['board', 'touch', 'off'].includes(flight.phase)) && !ride.phase) controls.update();   // 騎巨獸也是：鏡頭由跟著你的彈簧鏡頭接手   // 飛行中由飛船鏡頭接手：旋轉控制會限制仰角和距離，看不到往上衝的船和太空裡的島
 }
 
 /* ---------- 介面狀態 ---------- */
@@ -3769,6 +3943,18 @@ hintEl.addEventListener('click', () => hintAction && hintAction());
 
 /* ---------- 接近偵測 ---------- */
 function updateProximity() {
+  if (ride.phase) {   // 騎巨獸
+    const K = KJ, P = ride.phase;
+    if (P !== 'ride') setHint('r:' + P, P === 'charge' ? '變身！' : P === 'fly' || P === 'hover' ? '飛過去…' : P === 'enter' ? '坐進駕駛艙…' : P === 'boot' ? '開機中…' : P === 'eject' ? '彈射！' : '回島上…', 'prompt');
+    else if (ride.wantOff) setHint('r:off', '等牠這一招做完就跳下來', 'prompt');
+    else if (fw.show) setHint('r:show', '煙火秀！拖曳可以換角度', 'prompt');
+    else if (K.mode === 'swim' || K.mode === 'dive' || K.mode === 'rise' || K.sd > .5) setHint('r:swim', '游泳中：回淺水區才能出招', 'prompt');
+    else if (K.chg >= 1) setHint('r:ready', '蓄滿了！放開就是合體大招', 'prompt');
+    else if (K.chg > 0) setHint('r:chg', '蓄力中…背鰭一段段亮起來', 'prompt');
+    else if (isMobile()) setHint('r:ride', isTouch ? '點畫面往那裡噴火・按住「吼」蓄力・拖曳轉鏡頭' : '點畫面噴火・按住空白鍵蓄力・拖曳轉鏡頭', 'prompt');   // 手機：提示在上面，放得下一整句
+    else { const b = Math.floor(ride.t / 5) % 2; setHint('r:ride' + b, b ? (isTouch ? '搖桿走・按住「吼」蓄力' : '方向鍵走・按住空白鍵蓄力') : '點畫面噴火・拖曳轉鏡頭', 'prompt'); }   // 電腦：提示在按鈕列正上方，兩句短的輪流（其他快捷鍵寫在按鈕上；一開始先秀操作說明卡）
+    return;
+  }
   if (flight.phase) {
     const F = flight;
     if (F.phase === 'pilot') setHint(F.far ? 'far' : 'pilot', F.far ? '飛太遠了，自動轉回島' : isTouch ? '左下搖桿或拖曳畫面轉向・往上推升高・按「降落」回碼頭' : '方向鍵轉向・↑↓ 升降・空白鍵加速・Esc 降落', 'prompt');
@@ -3797,6 +3983,7 @@ function updateProximity() {
   else if (fishing.phase) setHint('f:' + fishing.phase, fishing.phase === 'cast' ? '拋竿中…' : '收線…', 'lore');
   else if (state.nearGame) setHint('g:' + state.nearGame, isTouch ? `點這裡開始玩《${GAME[state.nearGame].name}》` : `按 Enter（或點這裡）開始玩《${GAME[state.nearGame].name}》`, 'prompt', () => enterGame(GAME[state.nearGame]));   // 站在門口一律先給「開始玩」，蜜蜂提示不能蓋掉
   else if (divers.some(d => d.on)) setHint('bees', isTouch ? '蜜蜂俯衝過來了！點這裡揮劍' : '蜜蜂俯衝過來了！按空白鍵（或點這裡）揮劍', 'prompt', swing);
+  else if (ride.offer > 0 && !state.freeze) setHint('r:offer', isTouch ? '點這裡飛上去騎牠' : '按 Enter（或點這裡）飛上去騎牠', 'prompt', startRide);   // 點過巨獸：可以飛上去
   else if (carry.color !== null && catNear) setHint('feed', '點這裡餵花捲', 'prompt', feedCat);
   else if (dist(RAMP_PTS[0][0], RAMP_PTS[0][2]) < 1.6) setHint('board', isTouch ? '點這裡登船，開飛船繞島' : '按 Enter（或點這裡）登船，開飛船繞島', 'prompt', startFlight);
   else if (carry.color === null && dist(FISH_SPOT[0], FISH_SPOT[1]) < 1.3) setHint('fishspot', isTouch ? '點這裡釣魚' : '按 Enter（或點這裡）釣魚', 'prompt', startFishing);
@@ -3916,15 +4103,18 @@ renderer.domElement.addEventListener('pointerdown', e => {
   down = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
   dragging = true;
   if (flight.phase === 'pilot') Object.assign(steer, { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: 0, y: 0 });   // 開飛船：拖曳畫面轉向
+  else if (ride.phase) ridePointer('down', e);   // 開巨獸：拖曳轉鏡頭、點一下噴火
   else if (fly) { fly = null; controls.enabled = true; }
 });
 addEventListener('pointermove', e => {
+  if (ride.phase) ridePointer('move', e);
   if (e.pointerId !== steer.id) return;
   steer.x = clamp((e.clientX - steer.x0) / 90, -1, 1);
   steer.y = clamp((e.clientY - steer.y0) / 90, -1, 1);
 });
 addEventListener('pointerup', e => {
   dragging = false;
+  if (ride.phase || rp.size) ridePointer('up', e);
   if (e.pointerId === steer.id) Object.assign(steer, { id: null, x: 0, y: 0 });
   if (!down || e.pointerId !== down.id) return;
   const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y), dtm = performance.now() - down.t;
@@ -3938,13 +4128,14 @@ addEventListener('pointerup', e => {
   const g = ray.intersectObjects(groundPick, false)[0];
   if (g) walkTo(g.point.x, g.point.z, { follow: true, mark: true });
 });
-addEventListener('pointercancel', e => { dragging = false; down = null; if (e.pointerId === steer.id) Object.assign(steer, { id: null, x: 0, y: 0 }); });
+addEventListener('pointercancel', e => { dragging = false; down = null; if (rp.size) ridePointer('cancel', e); if (e.pointerId === steer.id) Object.assign(steer, { id: null, x: 0, y: 0 }); });
 
 /* 鍵盤 */
 addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (e.key === 'Escape') {
-    if (flight.phase) skipFlight();
+    if (ride.phase) rideExit();
+    else if (flight.phase) skipFlight();
     else if (state.inGame) closeGame();
     else if (state.intro) closeIntro();
     else if (ui.card) closeCard();
@@ -3954,6 +4145,14 @@ addEventListener('keydown', e => {
   }
   if (flight.phase === 'pilot') {   // 開飛船：方向鍵／WASD 轉向升降、空白鍵加速
     if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) { keysDown[k] = true; e.preventDefault(); }
+    return;
+  }
+  if (ride.phase) {   // 開巨獸：方向鍵／WASD 走、空白鍵吼（按住蓄力）、F 跺腳、R 放煙火、C 換鏡頭
+    if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) { keysDown[k] = true; e.preventDefault(); }
+    if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) rideRoarDown(); }
+    else if (k === 'f' && !e.repeat) rideStomp();
+    else if (k === 'r' && !e.repeat) rideWorks();
+    else if (k === 'c' && !e.repeat && ride.phase === 'ride') rideView();
     return;
   }
   if (uiLock() || state.intro) return;
@@ -3967,6 +4166,7 @@ addEventListener('keydown', e => {
   if (e.key === 'Enter' && state.nearGame && onStage) enterGame(GAME[state.nearGame]);
   else if (e.key === 'Enter' && hintKey === 'board' && onStage) startFlight();
   else if (e.key === 'Enter' && hintKey === 'fishspot' && onStage) startFishing();
+  else if (e.key === 'Enter' && hintKey === 'r:offer' && onStage) startRide();
   if (e.code === 'Space' && onStage) { e.preventDefault(); swing(); }
   if (DEBUG) {
     if (e.key === '7') { ls.set('bee_hi_normal', String(BEE_TARGET + 500)); toast('DEBUG：偽造小蜜蜂紀錄'); refresh(); }
@@ -3975,8 +4175,8 @@ addEventListener('keydown', e => {
     if (e.key === '9') { const [x, z] = polar(-2.36, .78); avatar.position.set(x, groundY(x, z), z); startFollow(); toast('DEBUG：傳送到暗處附近'); }
   }
 });
-addEventListener('keyup', e => { keysDown[e.key.toLowerCase()] = false; });
-addEventListener('blur', () => { for (const k in keysDown) keysDown[k] = false; });
+addEventListener('keyup', e => { keysDown[e.key.toLowerCase()] = false; if (e.code === 'Space' && ride.phase) rideRoarUp(); });
+addEventListener('blur', () => { for (const k in keysDown) keysDown[k] = false; rideRoarCancel(); });
 
 /* 觸控搖桿 */
 {
@@ -4057,17 +4257,17 @@ function drawWarp(k) {   // 星光從中心拉長成線，最亮時白光一閃
 const baseFov = () => innerWidth / innerHeight < .85 ? 48 : 38;
 /* 一鏡到底的鏡頭：位置和看的點都記成「相對於船」，換構圖時用彈簧慢慢滑過去（起步和停下都是緩的），船再快也不會甩掉鏡頭 */
 const rig = { off: new THREE.Vector3(), look: new THREE.Vector3(), vo: new THREE.Vector3(), vl: new THREE.Vector3() }, _ro = new THREE.Vector3(), _rl = new THREE.Vector3(), _nose = new THREE.Vector3(), _srt = new THREE.Vector3(), _fh = new THREE.Vector3();
-function rigFrom() {
-  rig.off.copy(camera.position).sub(ship.position);
-  rig.look.copy(controls.target).sub(ship.position);
+function rigFrom(A = ship.position) {   // A：鏡頭跟著誰（開飛船＝船，騎巨獸＝你）
+  rig.off.copy(camera.position).sub(A);
+  rig.look.copy(controls.target).sub(A);
   rig.vo.set(0, 0, 0); rig.vl.set(0, 0, 0);
 }
-function rigTo(off, look, dt, w = 2.4) {
+function rigTo(off, look, dt, w = 2.4, A = ship.position) {
   const step = (x, v, target) => { v.addScaledVector(_c3.copy(target).sub(x), w * w * dt).multiplyScalar(Math.max(0, 1 - 2 * w * dt)); x.addScaledVector(v, dt); };
   step(rig.off, rig.vo, off);
   step(rig.look, rig.vl, look);
-  camera.position.copy(ship.position).add(rig.off);
-  controls.target.copy(ship.position).add(rig.look);
+  camera.position.copy(A).add(rig.off);
+  controls.target.copy(A).add(rig.look);
   camera.lookAt(controls.target);
 }
 const _c3 = new THREE.Vector3();
@@ -4475,6 +4675,1195 @@ function updateFlight(dt) {
   }
 }
 
+/* ---------- 開巨獸 ----------
+   點巨獸之後提示列有「飛上去」：分身蹲低蓄力，爆炸頭變金色、往上豎起來，全身燒起金色火焰，拖著火光飛向牠（牠會停下來轉頭看你，在游泳就先站起來接你）。
+   頭頂的駕駛艙升上來、艙蓋打開，你坐進去、艙蓋關上、巨獸開機；方向鍵／左下搖桿讓牠走，往外海走牠撲進水裡、抬著頭游，游回淺水區站起來。
+   噴火往你瞄的地方（滑鼠指著／點畫面）：海面冒蒸氣、雲燒熱會蒸發、往島噴罩子才升起來；按住「吼」蓄力：背鰭從尾巴尖往頭一段段亮成金色，放開射出金色光束（可以掃）。
+   「跺腳」：一圈浪往島推過去，浪到哪裡、哪裡的島民就有反應。「煙火」：天色暗下來的一場煙火秀，最後拼出你的真實紀錄和島民的臉、嘴巴發射大金柳。
+   「下來」：艙蓋彈開、座椅把你彈出去，你單膝落地，火焰收掉、頭髮變回黑色，駕駛艙收回頭裡。火焰只在飛和開的時候燒。
+   鏡頭：拖曳繞著巨獸轉、滾輪／兩指縮放，「鏡頭」鍵換遠景／背後／正面／駕駛艙。 */
+const _UP = new THREE.Vector3(0, 1, 0);
+const AURA_GOLD = [0xffd23f, 0xf5b82e, 0xffe680].map(h => new THREE.Color(h)), AURA_EM = new THREE.Color(0xff9a00), EYE_DARK = new THREE.Color(0x1d2233), EYE_TEAL = new THREE.Color(0x12b8a8);
+const aura = (() => {   // 金色火焰：一直面向鏡頭的火焰板（身體後面一層、前面一層淡的）＋往上飄的火星＋一盞金色的燈；捲髮變金色往上豎、冒出一撮撮尖尖的金髮
+  const mk = (front, gain) => {
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { uT: { value: 0 }, uK: { value: 0 }, uG: { value: gain }, uOcc: { value: .5 }, uSize: { value: new THREE.Vector2(2.2, 2.9) }, uDir: { value: new THREE.Vector2(0, 1) }, uFront: { value: front } },
+      vertexShader: `uniform vec2 uSize, uDir; uniform float uFront; varying vec2 vQ;
+        void main() {   // 板子永遠面向鏡頭，火往 uDir（畫面上的方向）竄：站著往上、飛的時候往後拖
+          vQ = (uv - vec2(.5, .32)) * 2.0;
+          vec4 mv = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+          vec2 up = normalize(uDir), rt = vec2(up.y, -up.x), c = (uv - vec2(.5, .32)) * uSize;
+          mv.xy += rt * c.x + up * c.y; mv.z += uFront;
+          gl_Position = projectionMatrix * mv; }`,
+      fragmentShader: `uniform float uT, uK, uG, uOcc; varying vec2 vQ;
+        float h1(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float n2(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h1(i), h1(i + vec2(1.0, 0.0)), f.x), mix(h1(i + vec2(0.0, 1.0)), h1(i + vec2(1.0, 1.0)), f.x), f.y); }
+        void main() {
+          vec2 q = vQ;   // x：-1～1；y：-0.64～1.36，身體中心在 0
+          float hi = clamp(q.y, 0.0, 1.4);
+          float n = .6 * n2(vec2(q.x * 3.0, q.y * 2.0 - uT * 3.2)) + .4 * n2(vec2(q.x * 6.5 + 3.0, q.y * 4.0 - uT * 5.5));
+          float w = mix(.6, .2, smoothstep(0.0, 1.3, q.y)) * (q.y < 0.0 ? sqrt(max(0.0, 1.0 - q.y * q.y / .41)) : 1.0);   // 下面圓、往上收成一條條火舌
+          float d = max(abs(q.x) / max(w, .02) - 1.0 - (n - .5) * (.6 + hi * 1.1), (q.y - 1.0 - (n - .5) * .8) * 2.4);
+          float fill = smoothstep(.1, -.45, d), rim = exp(-pow((d + .05) * 6.0, 2.0));
+          vec3 col = mix(vec3(1.0, .55, .05), vec3(1.0, .9, .45), clamp(fill * .5 + rim * .6, 0.0, 1.0));
+          float a = (fill * .3 + rim * .9) * uK * uG;
+          gl_FragColor = vec4(col * a, a * uOcc); }`,   // 白天會蓋住一點後面的天空（不然金色疊在亮的天空上會變白），晚上幾乎純發光
+      transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+    });
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+    m.position.y = .8; m.frustumCulled = false; m.visible = false; m.renderOrder = 3;
+    avatar.add(m);
+    return m;
+  };
+  const back = mk(0, 1), front = mk(.55, .35);
+  const N = 240, g = new THREE.BufferGeometry(), pos = new Float32Array(N * 3).fill(-999), dat = new Float32Array(N);
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('aA', new THREE.BufferAttribute(dat, 1));
+  const sparks = new THREE.Points(g, new THREE.ShaderMaterial({
+    uniforms: { uScale: { value: 600 } },
+    vertexShader: `attribute float aA; uniform float uScale; varying float vA;
+      void main() { vA = aA; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv; gl_PointSize = aA <= 0.0 ? 0.0 : min(40.0, .17 * uScale / -mv.z); }`,
+    fragmentShader: `varying float vA;
+      void main() { float r = length(gl_PointCoord - .5) * 2.0; if (r > 1.0) discard; float a = (1.0 - r) * vA; gl_FragColor = vec4(mix(vec3(1.0, .62, .1), vec3(1.0, .95, .7), exp(-r * r * 6.0)) * a, a * .5); }`,
+    transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+  }));
+  sparks.frustumCulled = false; sparks.visible = false;
+  scene.add(sparks);
+  const light = new THREE.PointLight(0xffc04a, 0, 10, 2);
+  light.position.y = .9;
+  avatar.add(light);
+  // 尖尖的金髮：一撮撮從捲髮上面往外、往上冒（平常收起來）
+  const spikeMat = new THREE.MeshStandardMaterial({ color: 0xffd23f, emissive: 0xff9a00, emissiveIntensity: .5, roughness: .55, flatShading: true });
+  const sg = new THREE.ConeGeometry(.07, 1, 5).translate(0, .5, 0), spikes = [], sr = mulberry32(31);
+  for (let i = 0; i < 16; i++) {
+    const az = i * 2.39996 + .4, el = .2 + i / 15 * 1.1, d = new THREE.Vector3(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az));
+    if (d.z > .45 && d.y < .55) continue;   // 臉前面不長
+    const m = new THREE.Mesh(sg, spikeMat);
+    m.position.set(d.x * .3, .13 + d.y * .26, -.07 + d.z * .3);
+    m.quaternion.setFromUnitVectors(_UP, d.clone().add(new THREE.Vector3(0, .9, 0)).normalize());
+    m.userData = { len: .22 + sr() * .18, ph: sr() * TAU };
+    m.visible = false; m.castShadow = true;
+    AV.hair.add(m); spikes.push(m);
+  }
+  const ring = new THREE.Mesh(new THREE.RingGeometry(.86, 1, 56).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffd060, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+  ring.visible = false;
+  scene.add(ring);
+  return { back, front, sparks, pos, dat, vel: new Float32Array(N * 3), life: new Float32Array(N), max: new Float32Array(N), N, i: 0, emit: 0, light, spikes, spikeMat, ring, ringT: 0, k: 0, gold: 0, boost: 0, sz: 1, dir: new THREE.Vector2(0, 1) };   // sz：火焰大小（坐在駕駛艙裡小一點）
+})();
+const _aw = new THREE.Vector3(), _av = new THREE.Vector3();
+function updateAura(dt, t) {
+  const A = aura;
+  if (!ride.phase) { A.k = Math.max(0, A.k - dt * 1.5); A.gold = Math.max(0, A.gold - dt * 1.2); A.boost = Math.max(0, A.boost - dt * 2); }
+  const k = A.k, gk = A.gold, on = k > .01;
+  A.back.visible = A.front.visible = on;
+  for (const m of [A.back, A.front]) {
+    const U = m.material.uniforms;
+    U.uT.value = t; U.uK.value = k * (.9 + .1 * Math.sin(t * 23)) * (1 + A.boost * .5); U.uOcc.value = .62 - night * .5;
+    U.uSize.value.set(2.2, 2.9).multiplyScalar(A.sz * (1 + A.boost * .4 + .03 * Math.sin(t * 17)));
+    U.uDir.value.copy(A.dir);
+  }
+  A.light.intensity = k * (1.4 + night * 3 + A.boost * 2) * (.9 + .1 * Math.sin(t * 31));
+  for (let i = 0; i < 3; i++) { AV.HM[i].color.copy(AV.HM0[i]).lerp(AURA_GOLD[i], gk); AV.HM[i].emissive.copy(AURA_EM).multiplyScalar(gk * .45); }   // 捲髮變金色、眼睛變青綠色
+  AV.eyeMat.color.copy(EYE_DARK).lerp(EYE_TEAL, gk);
+  for (const c of AV.curls) {   // 捲毛往外、往上豎起來，跟著火焰微微抖
+    c.m.position.copy(c.p);
+    if (gk > 0) c.m.position.addScaledVector(c.n, .05 * gk).y += gk * (.06 + .05 * c.n.y) + Math.sin(t * 19 + c.ph) * .012 * k;
+  }
+  A.spikeMat.emissiveIntensity = .45 + .3 * Math.sin(t * 13) * k;
+  for (const m of A.spikes) { m.visible = gk > .02; m.scale.set(gk, gk * m.userData.len * (1 + .14 * Math.sin(t * 21 + m.userData.ph) * k), gk); }
+  if (on) {   // 火星：從身體四周往上飄（用世界座標：飛的時候自然拖成一條尾巴）
+    A.emit += dt * k * (55 + A.boost * 90 + (ride.phase === 'fly' || ride.phase === 'back' ? 130 : 0));
+    avatar.localToWorld(_aw.set(0, .8, 0));
+    while (A.emit >= 1) {
+      A.emit--;
+      const i = A.i = (A.i + 1) % A.N, a = Math.random() * TAU, rr = .25 + Math.random() * .3;
+      A.pos.set([_aw.x + Math.cos(a) * rr, _aw.y + (Math.random() - .5) * 1.3, _aw.z + Math.sin(a) * rr], i * 3);
+      A.vel.set([(Math.random() - .5) * .6, 1.6 + Math.random() * 1.8, (Math.random() - .5) * .6], i * 3);
+      A.life[i] = A.max[i] = .4 + Math.random() * .45;
+    }
+  }
+  let any = false;
+  for (let i = 0; i < A.N; i++) {
+    if (A.life[i] <= 0) continue;
+    any = true;
+    A.life[i] -= dt;
+    A.pos[i * 3] += A.vel[i * 3] * dt; A.pos[i * 3 + 1] += A.vel[i * 3 + 1] * dt; A.pos[i * 3 + 2] += A.vel[i * 3 + 2] * dt;
+    A.dat[i] = Math.max(0, A.life[i] / A.max[i]);
+    if (A.life[i] <= 0) { A.dat[i] = 0; A.pos[i * 3 + 1] = -999; }
+  }
+  A.sparks.visible = any;
+  if (any) { A.sparks.geometry.attributes.position.needsUpdate = A.sparks.geometry.attributes.aA.needsUpdate = true; A.sparks.material.uniforms.uScale.value = renderer.domElement.height / (2 * Math.tan(camera.fov * Math.PI / 360)); }
+  if (A.ringT > 0) { A.ringT -= dt; const q = 1 - Math.max(0, A.ringT) / .6; A.ring.scale.setScalar(.6 + q * 4.5); A.ring.material.opacity = (1 - q) * .9; A.ring.visible = A.ringT > 0; }
+}
+function auraRing(p) { aura.ring.position.set(p.x, p.y + .06, p.z); aura.ringT = .6; aura.ring.visible = true; }
+function auraTrail(vel) {   // 火焰往速度的反方向拖（換成畫面上的方向）；停下來就慢慢回到往上竄
+  const sp = vel ? vel.length() : 0, f = smooth(sp / 22) * .85;
+  if (f > .01) { _av.copy(vel).transformDirection(camera.matrixWorldInverse); _aw.set(-_av.x * f, -_av.y * f + (1 - f), 0); }
+  else _aw.set(0, 1, 0);
+  if (_aw.x * _aw.x + _aw.y * _aw.y < .04) _aw.set(0, 1, 0);
+  aura.dir.lerp(_aw, .2).normalize();
+}
+
+/* 分身的姿勢：每一節慢慢轉到目標角度（l＝腳、a＝手、L／R＝左右、x＝前後擺、z＝往外張；b＝身體前傾、by＝身體扭、bp＝身體上下、h＝抬頭） */
+function poseTo(P, dt, rate = 10) {
+  const k = Math.min(1, dt * rate), L = (o, key, v) => { o[key] = lerp(o[key], v || 0, k); };
+  L(AV.legL.rotation, 'x', P.lLx); L(AV.legL.rotation, 'z', P.lLz); L(AV.legR.rotation, 'x', P.lRx); L(AV.legR.rotation, 'z', P.lRz);
+  L(AV.armL.rotation, 'x', P.aLx); L(AV.armL.rotation, 'z', P.aLz); L(AV.armR.rotation, 'x', P.aRx); L(AV.armR.rotation, 'z', P.aRz);
+  L(AV.body.rotation, 'x', P.b); L(AV.body.rotation, 'y', P.by); L(AV.body.position, 'y', P.bp); L(AV.head.rotation, 'x', P.h);
+}
+const SIT = { lLx: -1.5, lRx: -1.5, lLz: -.07, lRz: .07 };   // 坐著：兩腿往前伸
+const POSE = {
+  idle: { lLz: -.1, lRz: .1, aLx: .15, aLz: -.6, aRx: .15, aRz: .6 },   // 兩手插腰
+  point: { lLz: -.12, lRz: .12, aLx: .15, aLz: -.6, aRx: -1.55, aRz: .12, by: -.12 },   // 右手往前指
+  surf: { lLz: -.38, lRz: .38, aLz: -1.15, aRz: 1.15, aLx: -.2, aRx: .2, bp: -.14, by: .5 },   // 側身、兩腳張開、兩手張開保持平衡
+  brace: { lLz: -.3, lRz: .3, aLx: -1.6, aLz: .12, aRx: -1.6, aRz: -.12, b: .14, bp: -.1 },   // 兩手往前推（吼的時候）
+  push: { lLz: -.34, lRz: .34, lLx: .2, lRx: -.25, aLx: -1.5, aLz: .06, aRx: -1.5, aRz: -.06, b: .24, bp: -.16 },   // 大招：兩掌往前推得更用力
+  power: { lLz: -.32, lRz: .32, aLx: .25, aLz: -.4, aRx: .25, aRz: .4, bp: -.16, h: -.25 },   // 蓄力：蹲低、握拳、仰頭大喊
+  cheer: { lLz: -.1, lRz: .1, aLx: -2.9, aLz: -.25, aRx: -2.9, aRz: .25 },   // 放煙火：兩手舉高
+  hover: { lLx: .25, lRx: .08, aLx: .2, aLz: -.5, aRx: .2, aRz: .5 },   // 飄在半空中
+  charge: { lLz: -.3, lRz: .3, aLx: .3, aLz: -.5, aRx: .3, aRz: .5, bp: -.22, h: -.2 },   // 地上蓄力
+  burst: { lLz: -.3, lRz: .3, aLx: .1, aLz: -1.0, aRx: .1, aRz: 1.0, bp: -.08, h: -.35 },   // 變身那一下：兩手往外一張
+  fly: { aRx: -3.0, aRz: .1, aLz: -.15 },   // 往前飛：右拳往前伸（整個人往前倒成水平）
+  crouch: { lLz: -.25, lRz: .25, aLx: -.4, aRx: -.4, bp: -.18 },   // 蹲在巨獸手指上
+  land: { lLx: -1.35, lRx: .9, aRx: -.35, aRz: .1, aLx: .3, aLz: -.7, b: .45, bp: -.5, h: .1 },   // 單膝落地、右拳碰地
+  sit: { ...SIT, aLx: -1.0, aRx: -1.0, aLz: .06, aRz: -.06 },   // 坐在駕駛艙：兩手握著操縱桿
+  sitFire: { ...SIT, aLx: -1.5, aRx: -1.5, aLz: .16, aRz: -.16, b: .14, h: -.06 },   // 噴火：兩掌往前推（牠跟著噴）
+  sitBeam: { ...SIT, aLx: -1.56, aRx: -1.56, aLz: .05, aRz: -.05, b: .22, h: -.1 },   // 合體大招：推得更用力
+  sitCharge: { ...SIT, aLx: .15, aRx: .15, aLz: -.42, aRz: .42, b: .26, h: .12 },   // 蓄力：握拳、縮起來發抖
+  sitFistUp: { ...SIT, aLx: -1.0, aLz: .06, aRx: -2.9, aRz: -.1, b: -.05 },   // 跺腳前：右拳舉高
+  sitSlam: { ...SIT, aLx: -1.0, aLz: .06, aRx: -.7, aRz: -.05, b: .2 },   // 跺腳：拳頭往下一敲
+  sitBrace: { ...SIT, aLx: -1.2, aRx: -1.2, aLz: -.3, aRz: .3, b: .05 },   // 撲水、甩水、被彈出去：抓緊
+};
+
+const rideable = () => KJ.mode === 'walk' || KJ.mode === 'stand';   // 站著或走著才坐得進去（牠在游泳的話會先站起來等你）
+const rideFree = () => ['walk', 'stand'].includes(KJ.mode) && KJ.chg <= 0 && !ride.wantOff && !fw.show;   // 可以出招
+const _sq = new THREE.Quaternion(), _sU = new THREE.Vector3();
+function seatWorld(out, stand = 0) {   // 分身的原點（腳底）該在哪：坐著＝屁股貼著坐墊；stand＝1 站在坐墊上（放煙火時站起來歡呼）
+  pit.g.updateMatrixWorld(true);
+  pit.g.getWorldQuaternion(_sq);
+  _sU.set(0, 1, 0).applyQuaternion(_sq);
+  return out.copy(SEAT).applyMatrix4(pit.g.matrixWorld).addScaledVector(_sU, -.42 * (1 - stand));
+}
+function hoverWorld(out) { seatWorld(out, 1); return out.addScaledVector(_sU, 2.4); }   // 駕駛艙正上方：從這裡降落進座椅
+function landingSpot(out) {   // 彈回島上落在哪：從島中間往巨獸那邊，找一塊能走的地
+  const r = Math.hypot(KJ.x, KJ.z) || 1, ux = KJ.x / r, uz = KJ.z / r;
+  for (let d = 10; d >= 0; d--) { const x = ux * d, z = uz * d; if (walkableAt(x, z)) return out.set(x, groundY(x, z), z); }
+  return out.set(PLAZA[0], groundY(PLAZA[0], PLAZA[1]), PLAZA[1]);
+}
+function startRide() {   // 飛上去：先在原地蓄力變身
+  if (ride.phase || flight.phase || uiLock() || state.intro || state.freeze || !kjReady) return;
+  ride.offer = 0;
+  endFishing();
+  closeCard();
+  if (isMobile()) { ui.side = false; ui.log = false; syncLayout(); }
+  if (state.bird) setBird(false, false);
+  if (fetchS.phase === 'carried') dropBall(dog.g.position.x, dog.g.position.z);
+  if (dog.state === 'fetch' || dog.state === 'bring') Object.assign(dog, { state: 'idle', t: 2, path: null });
+  walk.path = null; walk.moving = false; follow = false; fly = null; controls.enabled = false;
+  for (const k in keysDown) keysDown[k] = false;
+  state.flying = true;
+  body.classList.add('flying', 'autopilot', 'riding');
+  const K = KJ;
+  K.rq = 0;
+  if (K.mode === 'roar' && K.rt < 0) { K.mode = 'stand'; K.t = 3; K.hv = 0; }   // 正要轉身去吼：先不吼了，等你
+  Object.assign(ride, { phase: 'charge', t: 0, ct: 0, ctl: false, hold: -1, wantOff: false, burst: false, stompT: 0, pw: false, stand: 0, pitOff: 0, ho: 0 });
+  if (camera.position.distanceTo(avatar.position) > 16) sfx('launch', avatar);
+  ride.p.copy(avatar.position);
+  ride.dir.set(K.cx - avatar.position.x, 0, K.cz - avatar.position.z).normalize();
+  avatar.rotation.order = 'YXZ';
+  AV.halo.visible = false; mePin.obj.visible = false; AV.saberT = 0;
+  Object.assign(aim, { mode: 'none', t: 0 });
+  Object.assign(oc, { auto: null, mode: '' });
+}
+function startFlyUp() {
+  Object.assign(ride, { phase: 'fly', t: 0 });
+  ride.from.copy(avatar.position).y += .8;   // 身體中間
+  hoverWorld(ride.to);
+  ride.dur = clamp(ride.from.distanceTo(ride.to) / 26, 1.8, 3.6);
+  auraRing(avatar.position);
+  sfx('launch', avatar);
+}
+function startEnter() { Object.assign(ride, { phase: 'enter', t: 0 }); }   // 到了駕駛艙上方：往下降、坐進座椅
+function startBoot() {   // 坐好了：艙蓋關上、巨獸開機（按鈕亮起來、眼睛閃一下金光、一道金光從頭沿著背鰭跑到尾巴、吼一聲）
+  const K = KJ;
+  Object.assign(ride, { phase: 'boot', t: 0 });
+  PIT.openT = 0;
+  K.bump = 1; K.boot = 0; K.chg = 0;
+  if (K.mode === 'walk') { K.mode = 'stand'; K.t = 3; }
+  sfx('riderLand', avatar);
+}
+function startPilot() {   // 開機完成：換你開
+  Object.assign(ride, { phase: 'ride', t: 0, ctl: true });
+  PIT.litT = 1;
+  body.classList.remove('autopilot');   // 開的時候才顯示搖桿
+  ride.help = HELP_T;   // 跟按鈕、搖桿一起秀操作說明（開機那兩秒不擋：眼睛閃光、背鰭一路亮到尾巴）
+  const n = num('sanasai_rides') + 1;
+  ls.set('sanasai_rides', String(n));
+  if (n === 1 || n === 10 || n % 50 === 0) addLog('pet', n === 1 ? '第一次坐進機械巨獸的駕駛艙' : `開機械巨獸第 ${n} 次`);
+}
+function rideExit() {   // 下來：坐在駕駛艙裡＝艙蓋彈開、座椅把你彈出去，飛回島上；還在飛、在半空等＝自己飛回去；蓄力變身中＝直接取消
+  const P = ride.phase, K = KJ;
+  if (!P || P === 'eject' || P === 'back' || P === 'land') return;
+  if (P === 'charge') return endRide();
+  if (P === 'fly' || P === 'hover') return startBack();
+  if (P === 'ride' && !['walk', 'stand', 'swim'].includes(K.mode)) { ride.wantOff = true; return; }   // 這一招做完再下來
+  const k = KJ;
+  ride.hold = -1; k.chg = 0;
+  if (fw.show) endShow();
+  Object.assign(ride, { phase: 'eject', t: 0, ctl: false, wantOff: false });
+  body.classList.add('autopilot');
+  PIT.openT = 1; PIT.fast = true;
+  if (k.mode === 'walk') { k.mode = 'stand'; k.t = 3; }
+}
+function startBack(eject = false) {   // 飛回島上（被彈出去或自己飛）；駕駛艙過一下關上、收回頭裡
+  const K = KJ;
+  ride.hold = -1; K.chg = 0;
+  if (fw.show) endShow();
+  Object.assign(ride, { phase: 'back', t: 0, ctl: false, wantOff: false, arc: eject ? 16 : 10, pitOff: 1.3 });
+  body.classList.add('autopilot');
+  ride.from.copy(avatar.position).y += .8;
+  landingSpot(ride.to).y += .8;
+  ride.dur = clamp(ride.from.distanceTo(ride.to) / 22, 1.6, 3.2) + (eject ? .35 : 0);
+  if (K.mode === 'walk') { K.mode = 'stand'; K.t = 2.5; }
+  sfx('launch', avatar);
+}
+function endRide() {   // 回到島上走路
+  Object.assign(ride, { phase: null, ctl: false, hold: -1, wantOff: false, stand: 0 });
+  KJ.chg = 0;
+  if (PIT.upT && ride.pitOff <= 0) ride.pitOff = .7;
+  state.flying = false;
+  body.classList.remove('flying', 'autopilot', 'riding');
+  for (const L of [AV.legL, AV.legR, AV.armL, AV.armR]) L.rotation.set(0, 0, 0);
+  AV.body.rotation.set(0, 0, 0); AV.body.position.set(0, 0, 0); AV.head.rotation.set(0, 0, 0);
+  _e.setFromQuaternion(avatar.quaternion, 'YXZ');
+  avatar.rotation.set(0, _e.y, 0);
+  avatar.position.y = groundY(avatar.position.x, avatar.position.z);
+  AV.halo.visible = true; mePin.obj.visible = true; AV.head.visible = true; for (const h of pit.halves) h.visible = true;
+  aura.dir.set(0, 1); aura.sz = 1; aura.back.material.uniforms.uG.value = 1; aura.front.material.uniforms.uG.value = .35;
+  camera.fov = baseFov(); camera.updateProjectionMatrix();
+  controls.target.set(avatar.position.x, avatar.position.y + .8, avatar.position.z);
+  controls.enabled = true;
+  follow = true;
+}
+
+const rideHelp = $('#ride-help'), rhpBar = $('#rhp-bar'), HELP_T = 6.5;
+function rideHelpSync(dt) {   // 開機完先秀幾秒操作說明；開始蓄力、下海、放煙火、要下來就提早收掉（那時提示列有更要緊的話）
+  const K = KJ;
+  if (ride.help > 0 && (ride.phase !== 'ride' || K.chg > 0 || fw.show || ride.wantOff || K.mode === 'dive' || K.mode === 'swim')) ride.help = 0;
+  ride.help = Math.max(0, ride.help - dt);
+  const on = ride.help > 0;
+  if (rideHelp.classList.contains('on') !== on) { rideHelp.classList.toggle('on', on); body.classList.toggle('help-on', on); }
+  if (on) rhpBar.style.transform = `scaleX(${(ride.help / HELP_T).toFixed(3)})`;
+}
+
+/* 吼：點一下噴藍色火焰；按住 0.25 秒以上開始蓄力（約 1.5 秒蓄滿），放開：蓄滿＝合體大招金色光束，沒蓄滿＝照樣噴藍色火焰。都往你瞄的地方噴 */
+function rideRoarDown() { if (ride.phase === 'ride' && ride.hold < 0 && rideFree()) { ride.hold = 0; ride.ready = false; } }
+function rideRoarUp() {
+  if (ride.hold < 0) return;
+  ride.hold = -1;
+  const K = KJ, full = K.chg >= 1;
+  if (ride.phase !== 'ride' || !['walk', 'stand'].includes(K.mode)) { K.chg = 0; return; }
+  if (!full) K.chg = 0;
+  kjRoar(false, true, full);
+}
+function rideRoarCancel() { if (ride.hold >= 0) { ride.hold = -1; KJ.chg = 0; } }
+function rideFireAt(nx, ny) {   // 點畫面：往點的地方噴火（正在噴就改瞄那裡）
+  if (ride.phase !== 'ride') return;
+  if (!aimPick(nx, ny, aim.T, true)) aim.mode = 'none';   // 點到巨獸自己＝往前噴
+  else { aim.mode = 'world'; aim.t = 4; }
+  if (KJ.mode === 'roar' && KJ.rFree) return;
+  if (rideFree() && ride.hold < 0) kjRoar(false, true, false);
+}
+function rideStomp() {
+  if (ride.phase !== 'ride' || !rideFree()) return;
+  Object.assign(KJ, { mode: 'stomp', u: 0, imp: false, v: 0 });
+  ride.stompT = 0;
+}
+function rideStompHit(x, z) {   // 跺腳踩到水的那一刻（巨獸那邊呼叫）
+  startWave(x, z);
+  ride.shake = 1; ride.stompT = 4.4;   // 鏡頭拉高看島，等浪推過島
+  const n = num('sanasai_stomps') + 1;
+  ls.set('sanasai_stomps', String(n));
+}
+function rideWorks() {
+  if (ride.phase !== 'ride' || !rideFree()) return;
+  Object.assign(KJ, { mode: 'works', u: 0, v: 0 });
+  KJ.rc[0] = KJ.rc[1] = 0;
+  startShow();
+}
+
+/* 瞄準：電腦＝滑鼠指到哪、頭就跟著看哪，點下去往那裡噴；手機＝點哪裡噴哪裡，噴的時候手指拖到哪火就跟到哪 */
+function aimPick(nx, ny, out, body = false) {   // 畫面上的點 → 世界上的目標：雲、島（防護罩的範圍）、海面，都沒有就是天空；body：點到巨獸自己回傳 false
+  ray.setFromCamera(ndc.set(nx, ny), camera);
+  if (body && ray.intersectObject(kj.g, true).some(h => h.object.visible && h.object.isMesh && !h.object.material.transparent)) return false;
+  const o = ray.ray.origin, d = ray.ray.direction;
+  let best = 320; aim.kind = 'sky';   // 遠到看不清楚的雲、海面也算
+  const c = cloudRay(o, d);
+  if (c.t < best) { best = c.t; aim.kind = 'cloud'; }
+  const ts = shieldHitT(o, d);
+  if (ts > 0 && ts < best) { best = ts; aim.kind = 'isle'; }
+  if (d.y < -1e-4 && -o.y / d.y < best) { best = -o.y / d.y; aim.kind = 'sea'; }
+  out.copy(o).addScaledVector(d, aim.kind === 'sky' ? 150 : best);
+  return true;
+}
+function aimTarget(out) {   // 巨獸要噴的地方（沒瞄＝前面 40 外的海面）
+  if (aim.mode === 'none') { const K = KJ; return out.set(K.cx + Math.sin(K.h) * 40, 1, K.cz + Math.cos(K.h) * 40); }
+  return out.copy(aim.T);
+}
+const aimLook = () => aim.mode === 'screen' || aim.t > 0;   // 頭要不要轉過去看瞄的地方
+function aimScreen(e) { aim.nx = e.clientX / innerWidth * 2 - 1; aim.ny = -(e.clientY / innerHeight) * 2 + 1; aim.mode = 'screen'; }
+
+/* 雲：噴火打到會慢慢變熱、發紅，打夠了就蒸發成一團團蒸氣，過半分鐘再慢慢長回來（光束一打就散） */
+const CLOUD = clouds.children.map((m, i) => {
+  m.geometry.computeBoundingBox();
+  const b = m.geometry.boundingBox;
+  m.material = m.material.clone();
+  return { m, i, c: b.getCenter(new THREE.Vector3()), r: b.getSize(new THREE.Vector3()).multiplyScalar(.55), heat: 0, burn: 0, gone: 0, s: 1, quiet: false };
+});
+const cloudLocal = (x, z, out) => { const th = clouds.rotation.y, cs = Math.cos(th), sn = Math.sin(th); return out.set(x * cs - z * sn, 0, x * sn + z * cs); };   // 世界 → 雲那一組的局部（雲會慢慢轉）
+const cloudWorld = (v, out) => { const th = clouds.rotation.y, cs = Math.cos(th), sn = Math.sin(th); return out.set(v.x * cs + v.z * sn, v.y, -v.x * sn + v.z * cs); };
+const _cl1 = new THREE.Vector3(), _cl2 = new THREE.Vector3(), _crs = { t: Infinity, i: -1 };
+function cloudRay(o, d) {   // 從 o 往 d 最先打到哪一朵雲（橢球）
+  _crs.t = Infinity; _crs.i = -1;
+  const lo = cloudLocal(o.x, o.z, _cl1), ld = cloudLocal(d.x, d.z, _cl2);
+  lo.y = o.y; ld.y = d.y;
+  for (const C of CLOUD) {
+    if (C.s < .35) continue;
+    const rx = C.r.x * C.s, ry = C.r.y * C.s, rz = C.r.z * C.s;
+    const px = (lo.x - C.c.x) / rx, py = (lo.y - C.c.y) / ry, pz = (lo.z - C.c.z) / rz, qx = ld.x / rx, qy = ld.y / ry, qz = ld.z / rz;
+    const a = qx * qx + qy * qy + qz * qz, b = 2 * (px * qx + py * qy + pz * qz), c = px * px + py * py + pz * pz - 1, q = b * b - 4 * a * c;
+    if (q < 0) continue;
+    const t = (-b - Math.sqrt(q)) / (2 * a);
+    if (t > 0 && t < _crs.t) { _crs.t = t; _crs.i = C.i; }
+  }
+  return _crs;
+}
+let cloudCS = 1, cloudSN = 0;
+function cloudHit(x, y, z) {   // 一顆火在雲裡面嗎（打到就加熱那朵雲）
+  const lx = x * cloudCS - z * cloudSN, lz = x * cloudSN + z * cloudCS;
+  for (const C of CLOUD) {
+    if (C.s < .35) continue;
+    const dx = (lx - C.c.x) / (C.r.x * C.s), dy = (y - C.c.y) / (C.r.y * C.s), dz = (lz - C.c.z) / (C.r.z * C.s);
+    if (dx * dx + dy * dy + dz * dz < 1) {
+      if ((C.heat += 1) > 46) cloudBurn(C.i);
+      if (Math.random() < .08) steamPuff(x, y, z, 3.5, 1.4, 1, 0, 1.5, 0);
+      return true;
+    }
+  }
+  return false;
+}
+function cloudBurn(i, quiet = false) {
+  const C = CLOUD[i];
+  if (C.burn > 0 || C.s < .5) return;
+  C.burn = .001; C.quiet = quiet;
+  if (!quiet) { sfx('poof', cloudWorld(C.c, _cl1)); const n = num('sanasai_clouds') + 1; ls.set('sanasai_clouds', String(n)); if (n === 1) addLog('pet', '機械巨獸噴火把一朵雲燒掉了'); }
+}
+function updateClouds(dt) {
+  cloudCS = Math.cos(clouds.rotation.y); cloudSN = Math.sin(clouds.rotation.y);
+  for (const C of CLOUD) {
+    C.heat = Math.max(0, C.heat - dt * 9);
+    if (C.burn > 0) {   // 蒸發：縮小、冒出一團團蒸氣（被火照成橘色）
+      C.burn += dt;
+      C.s = 1 - smooth(C.burn / 1.4);
+      if (Math.random() < dt * (C.quiet ? 14 : 34)) {
+        _cl2.set(C.c.x + (Math.random() - .5) * 2 * C.r.x * C.s, C.c.y + (Math.random() - .5) * C.r.y * C.s, C.c.z + (Math.random() - .5) * 2 * C.r.z * C.s);
+        cloudWorld(_cl2, _cl1);
+        steamPuff(_cl1.x, _cl1.y, _cl1.z, 6 + Math.random() * 4, 2.2, C.quiet ? 0 : .8, (Math.random() - .5) * 3, 1 + Math.random() * 2, (Math.random() - .5) * 3);
+      }
+      if (C.burn >= 1.4) { C.burn = 0; C.gone = 28 + Math.random() * 14; C.s = 0; }
+    } else if (C.gone > 0) C.gone -= dt;
+    else if (C.s < 1) C.s = Math.min(1, C.s + dt / 5);   // 慢慢長回來
+    const on = C.s > .01;
+    C.m.visible = on;
+    if (on) { C.m.scale.setScalar(C.s); C.m.position.copy(C.c).multiplyScalar(1 - C.s); }
+    const hk = C.burn > 0 ? 1 - C.burn / 1.4 : Math.min(1, C.heat / 46) * .6;
+    C.m.material.emissive.setRGB(1, .42, .12).multiplyScalar(hk * (C.quiet ? 0 : .7));
+  }
+}
+
+/* 蒸氣：火打到海面、雲蒸發、煙火發射的煙（一般的半透明白煙，被火照到的帶點橘色） */
+const STM_N = 520;
+const steam = (() => {
+  const g = new THREE.BufferGeometry(), pos = new Float32Array(STM_N * 3).fill(-999), dat = new Float32Array(STM_N * 3).fill(1);   // dat：[飛了多久（0～1，1＝沒在用）, 大小, 帶橘色的程度]
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('aDat', new THREE.BufferAttribute(dat, 3));
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uScale: { value: 600 }, uLit: { value: 1 } },
+    vertexShader: `attribute vec3 aDat; uniform float uScale; varying vec3 vD;
+      void main() { vD = aDat; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv;
+        gl_PointSize = aDat.x >= 1.0 ? 0.0 : min(320.0, aDat.y * (.45 + 1.5 * sqrt(aDat.x)) * uScale / -mv.z); }`,
+    fragmentShader: `uniform float uLit; varying vec3 vD;
+      void main() { float r = length(gl_PointCoord - .5) * 2.0; if (r > 1.0) discard;
+        float k = vD.x, a = (1.0 - r * r) * pow(1.0 - k, 1.5) * smoothstep(0.0, .07, k) * .5;
+        gl_FragColor = vec4(mix(vec3(uLit), vec3(1.0, .6, .28), vD.z * (1.0 - k * .7)), a); }`,
+    transparent: true, depthWrite: false,
+  });
+  const m = new THREE.Points(g, mat);
+  m.frustumCulled = false; m.visible = false; m.renderOrder = 2;
+  scene.add(m);
+  return { m, mat, pos, dat, vel: new Float32Array(STM_N * 3), age: new Float32Array(STM_N), life: new Float32Array(STM_N).fill(1), i: 0 };
+})();
+function steamPuff(x, y, z, size = 2.4, life = 1.8, warm = 0, vx = 0, vy = 2, vz = 0) {
+  const S = steam, i = S.i = (S.i + 1) % STM_N;
+  S.pos[i * 3] = x; S.pos[i * 3 + 1] = y; S.pos[i * 3 + 2] = z;
+  S.vel[i * 3] = vx; S.vel[i * 3 + 1] = vy; S.vel[i * 3 + 2] = vz;
+  S.age[i] = 0; S.life[i] = life; S.dat[i * 3] = 0; S.dat[i * 3 + 1] = size; S.dat[i * 3 + 2] = warm;
+}
+function updateSteam(dt) {
+  const S = steam;
+  let any = false;
+  for (let i = 0; i < STM_N; i++) {
+    if (S.dat[i * 3] >= 1) continue;
+    any = true;
+    const o = i * 3, k = Math.min(1, (S.age[i] += dt) / S.life[i]), dr = Math.max(0, 1 - 1.4 * dt);
+    S.vel[o] *= dr; S.vel[o + 1] = S.vel[o + 1] * dr + .6 * dt; S.vel[o + 2] *= dr;
+    S.pos[o] += S.vel[o] * dt; S.pos[o + 1] += S.vel[o + 1] * dt; S.pos[o + 2] += S.vel[o + 2] * dt;
+    S.dat[o] = k;
+    if (k >= 1) S.pos[o + 1] = -999;
+  }
+  S.m.visible = any;
+  if (any) {
+    S.m.geometry.attributes.position.needsUpdate = S.m.geometry.attributes.aDat.needsUpdate = true;
+    S.mat.uniforms.uScale.value = renderer.domElement.height / (2 * Math.tan(camera.fov * Math.PI / 360));
+    S.mat.uniforms.uLit.value = 1 - night * .6;
+  }
+}
+let sizzleT = 0;
+function seaHit(x, z, n, dt) {   // 這一幀有 n 顆火打到海面（平均落在 x, z）：水面一圈圈、偶爾濺水花、嘶嘶聲
+  sizzleT -= dt;
+  if (sizzleT <= 0) { sizzleT = .5; sfx('sizzle', _cl1.set(x, 0, z)); kjRipple(x, z, 1.5, 9, 1.6, .55); }
+  if (Math.random() < n * .02) kjBurst(x + (Math.random() - .5) * 4, .3, z + (Math.random() - .5) * 4, 4, 2, 4);
+}
+
+/* 駕駛艙：升上來、艙蓋開關、按鈕亮暗（每一幀都跑：你下來之後艙蓋還要關、駕駛艙還要收回去） */
+function updatePit(dt, t) {
+  const P = PIT;
+  if (ride.pitOff > 0) {   // 你下來了：艙蓋關上、駕駛艙收回頭裡、按鈕暗掉
+    ride.pitOff -= dt;
+    if (ride.pitOff < .7) P.openT = 0;
+    if (ride.pitOff <= 0) { P.upT = 0; P.litT = 0; }
+  }
+  const up0 = P.up, op0 = P.open;
+  P.up = approach(P.up, P.upT, dt / .75);
+  P.open = approach(P.open, P.openT, dt / (P.fast ? .2 : .55));
+  if (P.open === P.openT) P.fast = false;
+  P.lit = approach(P.lit, P.litT, dt / .45);
+  if (kjReady) {
+    if (P.up !== up0 && (up0 === 0 || up0 === 1)) sfx('pitRise', kj.head, P.upT ? 0 : 1);
+    if (P.open !== op0 && (op0 === 0 || op0 === 1)) sfx('canopy', kj.head, P.openT);
+  }
+  const g = pit.g;
+  g.visible = P.up > .001;
+  if (!g.visible) return;
+  const x = P.up - 1, e = P.upT ? 1 + 2.7 * x * x * x + 1.7 * x * x : smooth(P.up);   // 升上來時衝過頭一點再停住
+  g.position.y = PIT_DOWN * (1 - e);
+  const o = smooth(P.open) * 1.95;
+  pit.halves[0].rotation.z = o; pit.halves[1].rotation.z = -o;
+  pit.litMat.color.setScalar(.12 + P.lit * (.9 + night * .9) * (.93 + .07 * Math.sin(t * 9)));
+  pit.glass.uniforms.uDim.value = night;
+  pit.glass.uniforms.uGold.value = ride.phase && ride.phase !== 'back' && ride.phase !== 'land' ? aura.k : 0;
+}
+
+const _rA = new THREE.Vector3(), _rB = new THREE.Vector3(), _rF = new THREE.Vector3(), _rS = new THREE.Vector3(), _rC = new THREE.Vector3(), _rC2 = new THREE.Vector3(), _rM = new THREE.Vector3(), _rT = new THREE.Vector3(), _rP = new THREE.Vector3(), _rV = new THREE.Vector3();
+function updateRide(dt, t) {
+  if (ride.offer > 0) ride.offer -= dt;
+  updatePit(dt, t);
+  updateAura(dt, t);
+  updateWave(dt);
+  updateShow(dt);
+  updateFireworks(dt);
+  updateSteam(dt);
+  updateClouds(dt);
+  updateBeamFx(dt, t);
+  rideHelpSync(dt);
+  const P = ride.phase, K = KJ, A = aura;
+  if (!P) return rideHudSync();
+  ride.t += dt;
+  if (aim.mode === 'screen') aimPick(aim.nx, aim.ny, aim.T) || (aim.mode = 'none');   // 滑鼠停著不動、鏡頭在動：指到的地方跟著變
+  aim.t = Math.max(0, aim.t - dt);
+  let pose = 'idle', vel = null, seated = false;
+  if (P === 'charge') {   // 原地蓄力變身：蹲低、握拳，金色從腳底往上燒起來，最後兩手一張（鏡頭先飛到你身邊才開始，不然看不到）
+    if (camera.position.distanceTo(avatar.position) < 18 || ride.t > 2.6) ride.ct += dt;
+    const k = ride.ct / 1.15;
+    ride.dir.set(K.cx - avatar.position.x, 0, K.cz - avatar.position.z).normalize();
+    faceTo(ride.dir.x, ride.dir.z, dt);
+    A.k = smooth(k / .75); A.gold = smooth((k - .15) / .5); A.boost = k < .78 ? smooth(k / .78) : 1 - smooth((k - .78) / .22) * .6;
+    pose = k < .78 ? 'charge' : 'burst';
+    if (ride.ct > 0 && !ride.pw) { ride.pw = true; sfx('powerUp', avatar); }
+    if (k >= .78 && !ride.burst) { ride.burst = true; auraRing(avatar.position); ride.shake = .5; }
+    ride.p.copy(avatar.position);
+    if (k >= 1) startFlyUp();
+  } else if (P === 'fly' || P === 'back') {   // 拖著火光飛過去（或飛回島上）：一條彎彎的弧線，快到的時候身體翻正
+    const k = Math.min(1, ride.t / ride.dur), u = P === 'fly' ? easeIO(k) : 1 - Math.pow(1 - k, 1.6);   // 飛過去：慢慢起飛、慢慢降落；被彈出去：一出去最快
+    if (P === 'fly') {
+      ride.ho = lerp(ride.ho, rideable() ? 0 : 2.6, Math.min(1, dt * 3));   // 牠還在吼／甩水：先飛到頭頂上方等
+      hoverWorld(ride.to); ride.to.y += .8 + ride.ho;
+      if (k > .3) PIT.upT = 1;   // 駕駛艙升上來、艙蓋打開等你
+      if (PIT.up >= 1) PIT.openT = 1;
+    }
+    const d = _rT.copy(ride.to).sub(ride.from).setY(0), dl = d.length() || 1;
+    d.divideScalar(dl);
+    _rA.copy(ride.from).addScaledVector(d, Math.min(8, dl * .2)).add(_rC.set(0, P === 'fly' ? 11 : ride.arc, 0));
+    _rB.copy(ride.to).addScaledVector(d, -Math.min(6, dl * .15)).add(_rC.set(0, P === 'fly' ? 8 : ride.arc, 0));
+    bez(_rP, ride.from, _rA, _rB, ride.to, u);
+    bez(_rV, ride.from, _rA, _rB, ride.to, Math.min(1, u + .01)).sub(_rP).multiplyScalar(100 / ride.dur);   // 大約的速度（給火焰拖尾巴、鏡頭用）
+    vel = _rV;
+    const hv = Math.hypot(vel.x, vel.z);
+    if (hv > .5) { ride.dir.set(vel.x / hv, 0, vel.z / hv); faceTo(ride.dir.x, ride.dir.z, dt * 2); }
+    const lean = smooth(k / .12) * (1 - smooth((k - .78) / .2));
+    avatar.rotation.x = lean * 1.3; avatar.rotation.z = 0;
+    _aw.set(0, .8, 0).applyEuler(avatar.rotation);
+    avatar.position.copy(_rP).sub(_aw);
+    ride.p.copy(avatar.position);
+    pose = lean > .5 ? 'fly' : k > .8 ? (P === 'fly' ? 'hover' : 'crouch') : 'burst';
+    A.k = 1; A.gold = 1; A.boost = .3 * lean;
+    if (k >= 1) {
+      avatar.rotation.x = 0;
+      if (P === 'back') { Object.assign(ride, { phase: 'land', t: 0 }); auraRing(ride.p); ride.shake = .7; sfx('heroLand', avatar); dogGreets(); }
+      else if (rideable() && PIT.open >= 1) startEnter();
+      else Object.assign(ride, { phase: 'hover', t: 0 });
+    }
+  } else if (P === 'hover') {   // 在駕駛艙上方飄著，等牠吼完／甩完水、艙蓋打開
+    hoverWorld(_rT).y += .5 + Math.sin(t * 2.2) * .2;
+    ride.p.lerp(_rT, Math.min(1, dt * 4));
+    avatar.position.copy(ride.p);
+    faceTo(Math.sin(K.h), Math.cos(K.h), dt);
+    pose = 'hover'; A.k = 1; A.gold = 1;
+    PIT.upT = 1;
+    if (PIT.up >= 1) PIT.openT = 1;
+    if (rideable() && PIT.open >= 1 && ride.t > .3) startEnter();
+  } else if (P === 'enter') {   // 往下降、轉成跟牠同一個方向、坐進去
+    const k = smooth(ride.t / .6);
+    hoverWorld(_rA); seatWorld(_rB);
+    avatar.position.lerpVectors(_rA, _rB, k);
+    avatar.quaternion.slerp(_sq, Math.min(1, dt * 12));
+    ride.p.copy(avatar.position);
+    pose = k < .5 ? 'hover' : 'sit'; seated = k > .4;
+    A.k = 1; A.gold = 1;
+    if (ride.t >= .6) startBoot();
+  } else if (P === 'boot' || P === 'ride' || P === 'eject') {   // 坐在駕駛艙裡：跟著頭一起動
+    seatWorld(avatar.position, ride.stand);
+    avatar.quaternion.copy(_sq);
+    ride.p.copy(avatar.position);
+    seated = ride.stand < .5;
+    A.k = 1; A.gold = 1;
+    if (P === 'boot') {
+      pose = 'sit';
+      if (ride.t > .35) PIT.litT = 1;
+      const I = pilotInput();
+      if (ride.t >= 2.1 || (ride.t > .9 && Math.abs(I.x) + Math.abs(I.y) > .2)) startPilot();
+    } else if (P === 'eject') {   // 艙蓋彈開，座椅一彈：你往上飛出去
+      pose = 'sitBrace';
+      if (ride.t >= .3) {
+        auraRing(ride.p); ride.shake = .6; sfx('eject', kj.head);
+        for (let k = 0; k < 14; k++) steamPuff(ride.p.x + (Math.random() - .5), ride.p.y + .3, ride.p.z + (Math.random() - .5), 1.6, 1.2, .9, (Math.random() - .5) * 5, Math.random() * 2, (Math.random() - .5) * 5);
+        avatar.rotation.set(0, K.h, 0);
+        startBack(true);
+      }
+    } else {
+      ride.ctl = true;
+      if (ride.hold >= 0) {   // 按住「吼」：0.25 秒後開始蓄力
+        ride.hold += dt;
+        if (ride.hold > .25 && ['walk', 'stand'].includes(K.mode) && !ride.wantOff) {
+          if (K.chg <= 0) sfx('charge', kj.head);
+          K.chg = Math.min(1, K.chg + dt / 1.5);
+          if (K.chg >= 1 && !ride.ready) { ride.ready = true; sfx('ready', kj.head); }
+        }
+        if (ride.hold > 6.5) rideRoarUp();   // 按太久就自動放
+      }
+      A.boost = Math.max(K.chg, K.mode === 'roar' && K.rGold ? smooth((K.rt - 1.1) / .3) * (1 - smooth((K.rt - 4.4) / .6)) : 0);
+      if (ride.wantOff && ['walk', 'stand', 'swim'].includes(K.mode)) rideExit();
+      if (ride.stompT > 0) { ride.stompT -= dt; const I = pilotInput(); if (Math.abs(I.x) + Math.abs(I.y) > .2) ride.stompT = 0; }
+      const S = fw.show, up = S && S.t < S.end - 1.6 ? 1 : 0;   // 放煙火：打開艙蓋站起來
+      PIT.openT = up || ride.stand > .02 ? 1 : 0;
+      ride.stand = approach(ride.stand, up && PIT.open > .85 ? 1 : 0, dt * 2.2);
+      pose = ride.stand > .5 ? 'cheer' : K.mode === 'roar' ? (K.rGold ? 'sitBeam' : 'sitFire') : K.chg > 0 ? 'sitCharge' : K.mode === 'stomp' ? (K.u * KJ_ACT.stomp < .88 ? 'sitFistUp' : 'sitSlam') : K.mode === 'dive' || K.mode === 'rise' || K.mode === 'shake' ? 'sitBrace' : 'sit';
+    }
+  } else if (P === 'land') {   // 單膝落地 → 站起來，火焰慢慢收掉、頭髮變回黑色
+    const k = ride.t;
+    pose = k < .95 ? 'land' : 'idle';
+    A.k = 1 - smooth((k - .55) / 1.1); A.gold = 1 - smooth((k - .75) / 1.0); A.boost = 0;
+    avatar.position.y = groundY(avatar.position.x, avatar.position.z);
+    ride.p.copy(avatar.position);
+    if (k >= 1.85) { endRide(); return rideHudSync(); }
+  }
+  A.sz = lerp(A.sz, seated ? .7 : 1, Math.min(1, dt * 6));   // 坐在駕駛艙裡：火焰小一點，大部分包在玻璃裡
+  let PO = POSE[pose];
+  if (pose === 'sit') { const push = Math.abs(K.v) > .3 ? .22 : 0; PO = { ...PO, aLx: PO.aLx + K.hv * .5 - push, aRx: PO.aRx - K.hv * .5 - push, b: push * .4 }; }   // 兩根操縱桿：轉彎時一前一後、往前走時一起往前推
+  if (P === 'ride' && pose === 'cheer') AV.body.position.y = Math.abs(Math.sin(t * 7)) * .1;
+  if (pose === 'sitCharge' || pose === 'sitBeam' || pose === 'charge') AV.body.position.x = Math.sin(t * 61) * .015; else AV.body.position.x = 0;   // 發抖
+  poseTo(PO, dt, P === 'land' && ride.t < .2 ? 30 : 10);
+  if (pose === 'sit') AV.body.position.y += Math.sin(t * 2.4) * .01;   // 呼吸
+  auraTrail(vel);
+  camera.fov = lerp(camera.fov, baseFov() + (K.mode === 'roar' && K.rGold && P === 'ride' ? 5 : 0), Math.min(1, dt * 3));
+  camera.updateProjectionMatrix();
+  rideCam(dt);
+  rideHudSync();
+}
+function dogGreets() {   // 你單膝落地：阿滿跑過來
+  const D = dog, p = D.g.position;
+  if (night > .85 || D.state === 'sleep' || D.state === 'bed') return;
+  if (Math.hypot(p.x - avatar.position.x, p.z - avatar.position.z) > 16) return;
+  bubble(D.g, '汪！', 1.25);
+  if (goTo(D, avatar.position.x + 1.1, avatar.position.z + .6)) { D.state = 'walk'; D.petT = 2; }
+}
+
+/* 開巨獸的鏡頭：一台彈簧鏡頭（位置用「繞著某一點的角度＋距離」），換構圖都慢慢滑過去、轉速有上限；不升進雲裡、不沉到水下
+   坐進駕駛艙之後繞著巨獸轉：拖曳畫面轉角度、滾輪／兩指縮放，「鏡頭」鍵換遠景／側面／正面／駕駛艙；跺腳、放煙火時自己找角度（一拖就交回給你） */
+const CLOUDS = clouds.children.map(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { x: (b.min.x + b.max.x) / 2, z: (b.min.z + b.max.z) / 2, r: Math.max(b.max.x - b.min.x, b.max.z - b.min.z) / 2, y: b.min.y }; });
+function cloudCeil(x, z) {   // 這裡往上多高會撞進雲裡（離每一朵雲都遠＝60；燒掉的雲不算）
+  const th = clouds.rotation.y, cs = Math.cos(th), sn = Math.sin(th);
+  let c = 60;
+  CLOUDS.forEach((C, i) => {
+    if (CLOUD[i].s < .3) return;
+    const cx = C.x * cs + C.z * sn, cz = -C.x * sn + C.z * cs, d = Math.hypot(x - cx, z - cz);
+    c = Math.min(c, lerp(C.y - 1.2, 60, smooth((d - C.r) / 6)));
+  });
+  return c;
+}
+const rcam = { az: 0, el: 0, d: 10, vaz: 0, vel: 0, vd: 0, yaw: 0, pit: 0, vyaw: 0, vpit: 0, ld: 15, dir: new THREE.Vector3(0, 0, -1) };
+const wrapA = a => Math.atan2(Math.sin(a), Math.cos(a));
+function rcamFrom(A) {   // 換繞的中心點：從鏡頭現在的位置重新算角度和距離（畫面不跳）
+  const o = _rT.copy(camera.position).sub(A), d = o.length() || 1;
+  Object.assign(rcam, { d, az: Math.atan2(o.x, o.z), el: Math.asin(clamp(o.y / d, -1, 1)), vaz: 0, vel: 0, vd: 0, vyaw: 0, vpit: 0, ld: camera.position.distanceTo(controls.target) || 15 });
+  camera.getWorldDirection(_rT);
+  rcam.yaw = Math.atan2(_rT.x, _rT.z); rcam.pit = Math.asin(clamp(_rT.y, -1, 1));
+}
+function rcamTo(off, look, dt, w, A, snap = false, lock = 0, cap = 9) {   // snap：你正在拖曳——直接跟手；lock：看的方向直接跟著（繞著巨獸轉時一直看著牠，不會轉丟），每秒最多轉 cap
+  const ang = (x, v, err, k = snap ? 16 : 0) => {   // 角度彈簧：w＝5 跟得緊（牠轉彎時鏡頭只落後十幾度）；加速度、轉速有上限
+    if (k) { rcam[v] = 0; rcam[x] += clamp(err * (1 - Math.exp(-k * dt)), -cap * dt, cap * dt); return; }
+    rcam[v] = clamp(rcam[v] + clamp(25 * err - 10 * rcam[v], -4.5, 4.5) * dt, -1.55, 1.55);
+    rcam[x] += rcam[v] * dt;
+  };
+  const d = off.length() || 1;
+  ang('az', 'vaz', wrapA(Math.atan2(off.x, off.z) - rcam.az));
+  ang('el', 'vel', Math.asin(clamp(off.y / d, -1, 1)) - rcam.el);
+  if (snap) { rcam.vd = 0; rcam.d += (d - rcam.d) * (1 - Math.exp(-10 * dt)); }
+  else { rcam.vd = (rcam.vd + (d - rcam.d) * w * w * dt) * Math.max(0, 1 - 2 * w * dt); rcam.d += rcam.vd * dt; }
+  const c = Math.cos(rcam.el);
+  camera.position.set(A.x + rcam.d * c * Math.sin(rcam.az), A.y + rcam.d * Math.sin(rcam.el), A.z + rcam.d * c * Math.cos(rcam.az));
+  const L = _rC.copy(A).add(look).sub(camera.position), ll = L.length() || 1;   // 看的方向
+  ang('yaw', 'vyaw', wrapA(Math.atan2(L.x, L.z) - rcam.yaw), lock || (snap ? 16 : 0));
+  ang('pit', 'vpit', Math.asin(clamp(L.y / ll, -1, 1)) - rcam.pit, lock || (snap ? 16 : 0));
+  rcam.ld = lerp(rcam.ld, ll, 1 - Math.exp(-3 * dt));
+  rcam.dir.set(Math.cos(rcam.pit) * Math.sin(rcam.yaw), Math.sin(rcam.pit), Math.cos(rcam.pit) * Math.cos(rcam.yaw));
+}
+const VIEWS = [   // rel：從牠的正前方轉多少（π＝正後方、負的＝牠的右手邊）；el：仰角；d／dM：電腦／手機直立畫面的距離（拍得到整隻）
+  { name: '遠景', rel: -1.1, el: .2, d: 50, dM: 64 },   // 右前方斜斜看：臉、駕駛艙裡的你、整隻身體到尾巴
+  { name: '背後', rel: -2.75, el: .34, d: 40, dM: 52 },   // 跟在後上方：看得到牠往哪走、前面有什麼
+  { name: '正面', rel: .45, el: .1, d: 30, dM: 40, ly: 5 },   // 近一點從正前方看：臉和駕駛艙裡的你
+  { name: '駕駛艙', fp: true },   // 坐在你的位子上往前看
+];
+const oc = { v: 0, rel: -1.1, el: .2, d: 50, ly: 0, A: new THREE.Vector3(), L: new THREE.Vector3(), Lv: 0, mode: '', auto: null, snap: 0, fy: 0, fp: 0, pinch: 0, pd: 40 };   // 鏡頭現在用哪個構圖、你拖過的角度和距離；auto：自己找的構圖（stomp／show）
+function rideView(i = (oc.v + 1) % VIEWS.length, quiet = false) {   // 換鏡頭
+  const V = VIEWS[i];
+  oc.v = i; oc.fy = oc.fp = 0; oc.auto = null; ride.stompT = 0;
+  if (fw.show) fw.show.cam = false;   // 煙火秀時換鏡頭：交回給你，不再跳回煙火秀的角度
+  if (!V.fp) Object.assign(oc, { rel: V.rel, el: V.el, d: camera.aspect < .85 ? V.dM : V.d, ly: V.ly || 0 });
+  if (!quiet) { rhViewText.textContent = V.name; clearTimeout(rideView.tm); rideView.tm = setTimeout(() => { rhViewText.textContent = '鏡頭'; }, 1600); }   // 按鈕上先顯示換到哪個鏡頭
+}
+function camTakeOver() {   // 你一拖：從現在的畫面接手（不跳回原本的構圖）
+  if (!oc.auto) return;
+  oc.auto = null; ride.stompT = 0;
+  if (fw.show) fw.show.cam = false;
+  if (oc.mode === 'kaiju') Object.assign(oc, { rel: wrapA(rcam.az - KJ.h), el: clamp(rcam.el, -.04, 1.25), d: clamp(rcam.d, 12, 110) });
+  if (VIEWS[oc.v].fp) oc.v = 0;
+}
+function camDrag(dx, dy) {
+  const k = 3.8 / innerHeight;
+  camTakeOver();
+  if (oc.mode === 'pit') { oc.fy = clamp(oc.fy + dx * k, -1.4, 1.4); oc.fp = clamp(oc.fp + dy * k, -.6, .8); }
+  else if (oc.mode === 'kaiju') { oc.rel = wrapA(oc.rel - dx * k); oc.el = clamp(oc.el + dy * k, -.04, 1.25); }
+  oc.snap = .25;
+}
+function camZoom(f) {
+  if (oc.mode === 'pit') { if (f > 1.01) rideView(0); return; }
+  if (oc.mode !== 'kaiju') return;
+  camTakeOver();
+  oc.d = clamp(oc.d * f, 12, 110);
+  oc.snap = .25;
+}
+function rideCam(dt) {
+  const K = KJ, M = camera.aspect < .85, P = ride.phase, off = _rA, look = _rB;
+  const f = _rF.set(Math.sin(K.h), 0, Math.cos(K.h)), s = _rS.set(-Math.cos(K.h), 0, Math.sin(K.h));   // 巨獸的前方、右手邊
+  const set = (fo, so, uo, fl, ul, base = f, side = s) => { off.copy(base).multiplyScalar(fo).addScaledVector(side, so).add(_rC.set(0, uo, 0)); look.copy(base).multiplyScalar(fl).add(_rC.set(0, ul, 0)); };
+  oc.snap = Math.max(0, oc.snap - dt);
+  let mode, A, w = 2.4;
+  if (P === 'charge' || P === 'fly' || P === 'back' || P === 'land' || P === 'hover') {   // 跟著你：蓄力時朝著巨獸、飛的時候朝著飛的方向
+    mode = 'rider'; A = _rM.copy(ride.p);
+    const d = ride.dir, sd = _rC2.set(-d.z, 0, d.x);
+    if (P === 'charge') set(M ? -10 : -7.5, M ? 1.2 : 2.6, M ? 3.6 : 2.4, 6, 1.6, d, sd);
+    else if (P === 'land') set(M ? -11 : -8.5, M ? 2 : 3, M ? 5.5 : 4.2, 0, .9, d, sd);
+    else if (P === 'hover') { mode = 'kaiju'; }
+    else { const k = P === 'fly' ? smooth((ride.t / ride.dur - .2) / .5) : 0; set((M ? -12 : -9) - 8 * k, (M ? .8 : 1.6) + 7 * k, (M ? 4 : 3) + 4 * k, 9, -.4 - 2 * k, d, sd); }   // 飛過去：越接近巨獸，鏡頭越往後上方拉，看得到你降落在牠頭上
+    if (P === 'fly' && ride.t / ride.dur > .8) mode = 'kaiju';   // 快到了：鏡頭換成繞著巨獸，看得到你降進駕駛艙
+  } else mode = VIEWS[oc.v].fp && P === 'ride' && !oc.auto ? 'pit' : 'kaiju';
+  if (mode === 'kaiju') {   // 繞著巨獸：中心點跟著牠（濾掉走路一沉一沉），高度在身體中間（游泳時壓低）
+    A = oc.A.lerp(_rC.set(K.x, lerp(9.5, 3.5, K.sd), K.z), oc.mode === 'kaiju' ? 1 - Math.exp(-4 * dt) : 1);
+    const S = fw.show;
+    if (P === 'ride' && ride.stompT > 0 && !oc.user) oc.auto = 'stomp';
+    else if (P === 'ride' && S && S.cam) oc.auto = 'show';
+    else if (oc.auto === 'stomp' || oc.auto === 'show') oc.auto = null;
+    const r = Math.hypot(K.x, K.z) || 1, c = _rC2.set(-K.x / r, 0, -K.z / r);   // 往島的方向
+    if (oc.auto === 'show') { off.copy(S.C).sub(A); look.copy(S.L).sub(A); w = 1.8; }   // 從島那側斜斜地看牠和牠頭上的天空
+    else if (oc.auto === 'stomp') { set(M ? -26 : -22, M ? 4 : 6, M ? 26 : 22, 22, -12, c, _rT.set(-c.z, 0, c.x)); }   // 拉高轉過去看島：一圈浪從牠腳邊往島推過去
+    else if (P === 'fly' || P === 'hover' || P === 'enter' || P === 'boot') {   // 坐進去、開機：從斜前方看駕駛艙，開機時慢慢繞到你選的角度
+      const k = P === 'boot' ? smooth((ride.t - .5) / 1.4) : 0, V = VIEWS[oc.v].fp ? VIEWS[0] : { rel: oc.rel, el: oc.el, d: oc.d };
+      const rel = lerp(.85, V.rel, k), el = lerp(.45, V.el, k), dd = lerp(M ? 36 : 28, V.fp ? 48 : V.d, k);
+      off.set(Math.sin(K.h + rel) * Math.cos(el), Math.sin(el), Math.cos(K.h + rel) * Math.cos(el)).multiplyScalar(dd);
+      look.copy(f).multiplyScalar(1.5).add(_rC.set(0, lerp(8, 0, k), 0));   // 看駕駛艙（頭頂）
+    } else {   // 你選的角度
+      const d = oc.d, el = oc.el, az = K.h + oc.rel;
+      off.set(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)).multiplyScalar(d);
+      look.copy(f).multiplyScalar(2).y += oc.ly * (1 - K.sd);
+    }
+  } else if (mode === 'pit') {   // 駕駛艙：從你的肩膀後面往前看（拖曳可以轉頭看旁邊）
+    avatar.updateMatrixWorld(true);
+    A = avatar.localToWorld(_rM.set(0, 1.72, .26));   // 比頭再高一點、往前一點：越過儀表板往外看
+    pit.g.getWorldQuaternion(_sq);
+    off.set(0, .02, -.05).applyQuaternion(_sq);
+    const pt = oc.fp - (M ? .17 : .3);   // 手機直立畫面上下比較寬：少往下看一點，儀表板才不會太大
+    look.set(Math.sin(oc.fy) * Math.cos(pt), Math.sin(pt), Math.cos(oc.fy) * Math.cos(pt)).applyQuaternion(_sq).multiplyScalar(14);
+    w = 4;
+  }
+  if (mode !== oc.mode) {
+    const cut = mode === 'pit' || oc.mode === 'pit';   // 進出駕駛艙視角：直接切過去（飛過去的話會穿過你的頭、出來時有一下子看著海）
+    rcamFrom(A); oc.mode = mode; oc.L.copy(camera.position).addScaledVector(rcam.dir, rcam.ld); oc.Lv = 0;
+    if (cut) {
+      const d = off.length() || 1, L = _rT.copy(A).add(look);
+      Object.assign(rcam, { d, az: Math.atan2(off.x, off.z), el: Math.asin(clamp(off.y / d, -1, 1)), vaz: 0, vel: 0, vd: 0, vyaw: 0, vpit: 0 });
+      camera.position.copy(A).add(off);
+      oc.L.copy(L); L.sub(camera.position);
+      rcam.ld = L.length() || 1; rcam.yaw = Math.atan2(L.x, L.z); rcam.pit = Math.asin(clamp(L.y / rcam.ld, -1, 1));
+    }
+  }
+  if (mode === 'kaiju') {   // 看的那一點在世界裡平滑地移過去（換構圖、煙火秀開始時不會一下子甩過去），方向一直對準它（繞著牠轉時不會轉丟）
+    const D = _rT.copy(A).add(look).sub(oc.L), dl = D.length();
+    oc.Lv = Math.min(oc.Lv + 90 * dt, 70, dl * 5);   // 速度：慢慢加速、最快每秒 70、快到了慢下來
+    if (dl > 1e-4) oc.L.addScaledVector(D, Math.min(1, oc.Lv * dt / dl));
+    look.copy(oc.L).sub(A);
+  }
+  const fp = mode === 'pit' && rcam.d < 1.5;   // 鏡頭進到駕駛艙：藏起你的頭和火焰板（不然整個畫面都是金色）
+  AV.head.visible = !fp; aura.back.material.uniforms.uG.value = fp ? 0 : 1; aura.front.material.uniforms.uG.value = fp ? 0 : .35;
+  for (const h of pit.halves) h.visible = !fp;   // 玻璃從裡面看邊緣會反白：駕駛艙視角時不畫
+  rcamTo(off, look, dt, w, A, oc.snap > 0 && mode !== 'rider', mode === 'kaiju' ? 40 : mode === 'pit' ? 10 : 0, oc.snap > 0 ? 9 : mode === 'pit' ? 1.8 : 2.6);   // 看的方向每秒最多轉 150 度（駕駛艙 100 度：牠吼、跺腳時頭甩得快，畫面不跟著甩）
+  if (mode !== 'pit') {
+    const sb = !M && ui.side ? $('#sidebar').getBoundingClientRect() : null, cov = sb && sb.width > 0 ? clamp((innerWidth - sb.left) / innerWidth, 0, .5) : 0;   // 電腦右邊的清單蓋住多少：鏡頭往右平移，主角落在清單左邊那塊的中間
+    if (cov) { const sh = cov * rcam.ld * camera.aspect * Math.tan(camera.fov * Math.PI / 360); camera.position.x += rcam.dir.z * sh * -1; camera.position.z += rcam.dir.x * sh; }
+    camera.position.y = clamp(camera.position.y, groundY(camera.position.x, camera.position.z) + 1.4, cloudCeil(camera.position.x, camera.position.z) - 1);
+  }
+  if (ride.shake > 0) {   // 震一下：幾個不同頻率的晃動疊起來，慢慢停
+    ride.shake = Math.max(0, ride.shake - dt * 1.8);
+    const a = ride.shake * ride.shake * (mode === 'pit' ? .12 : .35), q = performance.now() / 1000;
+    camera.position.x += Math.sin(q * 27) * a; camera.position.y += Math.sin(q * 33 + 1) * a; camera.position.z += Math.sin(q * 29 + 2) * a;
+  }
+  controls.target.copy(camera.position).addScaledVector(rcam.dir, rcam.ld);   // 聲音以這一點當耳朵
+  camera.lookAt(controls.target);
+}
+
+/* 騎著時拖曳畫面＝轉鏡頭、兩指／滾輪縮放、點一下＝往那裡噴火；噴火的時候手指拖到哪火就跟到哪；電腦滑鼠指著就是瞄準 */
+const rp = new Map();
+function ridePointer(type, e) {
+  const Q = rp.get(e.pointerId), firing = KJ.mode === 'roar' && KJ.rFree;
+  if (type === 'down') {
+    if (e.target !== renderer.domElement) return;
+    rp.set(e.pointerId, { x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, t0: performance.now(), moved: false, aim: firing && e.pointerType !== 'mouse' });
+    if (firing && e.pointerType !== 'mouse') aimScreen(e);
+    if (rp.size === 2) { const [a, b] = [...rp.values()]; oc.pinch = Math.hypot(a.x - b.x, a.y - b.y) || 1; oc.pd = oc.d; }
+    return;
+  }
+  if (type === 'move') {
+    if (!Q) { if (e.pointerType === 'mouse' && e.target === renderer.domElement && ride.phase === 'ride') aimScreen(e); return; }   // 滑鼠移動：瞄準（頭跟著看）
+    const dx = e.clientX - Q.x, dy = e.clientY - Q.y;
+    Q.x = e.clientX; Q.y = e.clientY;
+    if (Math.hypot(Q.x - Q.x0, Q.y - Q.y0) > 8) Q.moved = true;
+    if (rp.size >= 2) { if (oc.pinch) { const [a, b] = [...rp.values()]; camTakeOver(); oc.d = clamp(oc.pd * oc.pinch / (Math.hypot(a.x - b.x, a.y - b.y) || 1), 12, 110); oc.snap = .25; } return; }
+    if (Q.aim || (firing && e.pointerType !== 'mouse')) { Q.aim = true; aimScreen(e); return; }   // 正在噴火：手指拖到哪火就往哪
+    if (Q.moved) camDrag(dx, dy);
+    if (e.pointerType === 'mouse') aimScreen(e);
+    return;
+  }
+  if (!Q) return;
+  rp.delete(e.pointerId);
+  if (rp.size < 2) oc.pinch = 0;
+  if (Q.aim) { aim.mode = 'world'; aim.t = 2.5; }   // 放開：停在最後瞄的地方
+  else if (type === 'up' && !Q.moved && performance.now() - Q.t0 < 500) rideFireAt(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+}
+renderer.domElement.addEventListener('wheel', e => { if (!ride.phase) return; e.preventDefault(); camZoom(Math.exp(clamp(e.deltaY, -120, 120) * .0016)); }, { passive: false });
+
+/* 介面：開的時候下面一排按鈕（吼／跺腳／煙火／鏡頭／下來）；「吼」按住會亮起蓄力條 */
+const rideHud = $('#ride-hud'), rhRoar = $('#rh-roar'), rhStomp = $('#rh-stomp'), rhWorks = $('#rh-works'), rhView = $('#rh-view'), rhOff = $('#rh-off'), rhRoarText = rhRoar.querySelector('span'), rhViewText = rhView.querySelector('span');
+rhRoar.addEventListener('pointerdown', e => { e.preventDefault(); try { rhRoar.setPointerCapture(e.pointerId); } catch (er) {} rideRoarDown(); });
+for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) rhRoar.addEventListener(type, rideRoarUp);
+rhStomp.addEventListener('click', rideStomp);
+rhWorks.addEventListener('click', rideWorks);
+rhView.addEventListener('click', () => rideView());
+rhOff.addEventListener('click', rideExit);
+const hudState = { roar: '', chg: '' };
+function rideHudSync() {
+  const on = ride.phase === 'ride';
+  if (rideHud.hidden === on) rideHud.hidden = !on;
+  if (!on) return;
+  const K = KJ, free = rideFree(), lbl = K.chg >= 1 ? '放開！' : K.chg > 0 ? '蓄力中' : '吼', c = K.chg.toFixed(2);
+  rhRoar.disabled = !free && ride.hold < 0;
+  rhStomp.disabled = rhWorks.disabled = !free;
+  if (hudState.roar !== lbl) { hudState.roar = lbl; rhRoarText.textContent = lbl; rhRoar.classList.toggle('ready', K.chg >= 1); }
+  if (hudState.chg !== c) { hudState.chg = c; rhRoar.style.setProperty('--chg', c); }
+}
+
+/* 跺腳的浪：一圈白浪從腳邊往外推，浪推到哪裡、哪裡就有反應（海豚順著浪連跳、魚嚇得跳出水面、碼頭的飛船晃、寄居蟹縮殼、海鳥飛起來、阿滿叫、花捲嚇一跳、柑仔丁跳起來） */
+let shipRock = 0, foamSurge = 0;
+const wave = (() => {
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uR: { value: 0 }, uA: { value: 0 }, uO: { value: new THREE.Vector2() } },
+    vertexShader: `uniform vec2 uO; varying vec2 vP; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vP = w.xz - uO; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `uniform float uR, uA; varying vec2 vP;
+      void main() { float d = length(vP), x = d - uR;
+        float crest = exp(-x * x * .45), back = smoothstep(-12.0, -1.5, x) * (1.0 - smoothstep(-1.5, .8, x)) * .4;   // 一道白浪頭，後面拖一片淡淡的白沫
+        float n = .75 + .25 * sin(atan(vP.y, vP.x) * 46.0 + d * 1.7);
+        gl_FragColor = vec4(1.0, 1.0, 1.0, min(1.0, crest * n * 1.1 + back) * uA); }`,
+    transparent: true, depthWrite: false,
+  });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2), mat);
+  m.visible = false; m.frustumCulled = false; m.renderOrder = 1;
+  scene.add(m);
+  return { m, mat, on: false, x: 0, z: 0, R: 0, max: 0, hits: [] };
+})();
+const _wv = new THREE.Vector3();
+function startWave(x, z) {
+  const W = wave, a = Math.atan2(z, x), shore = polar(a, 1.06);
+  Object.assign(W, { on: true, x, z, R: 1.5, max: Math.hypot(x, z) + 30 });
+  W.m.position.set(x, .3, z); W.m.scale.setScalar(W.max); W.mat.uniforms.uO.value.set(x, z);
+  W.hits = [
+    { at: () => _wv.set(pod.x, 0, pod.z), fire: dolphinsRide },
+    { at: () => _wv.set(shore[0], 0, shore[1]), fire: () => { foamSurge = 1; fishLeap(a); for (const b of birds) b.userData.sc = 1; sfx('gull', birds[0]); } },
+    { at: () => _wv.set(SHIP.x, 0, SHIP.z), fire: () => { shipRock = 1; sfx('land', ship); } },
+    ...crabs.map(c => ({ at: () => c.g.position, fire: () => { c.hide = 4.5; } })),
+    { at: () => dog.g.position, fire: dogStartle },
+    { at: () => cat.g.position, fire: catStartle },
+    { at: () => blob.g.position, fire: () => { blob.jolt = .6; bubble(blob.g, '！', 1.0); } },
+  ];
+}
+function updateWave(dt) {
+  const W = wave;
+  if (!W.on) return;
+  W.R += 17 * dt;
+  W.m.visible = true;
+  W.mat.uniforms.uR.value = W.R;
+  W.mat.uniforms.uA.value = smooth(W.R / 4) * (1 - smooth((W.R - W.max + 14) / 14)) * .85;
+  for (const h of W.hits) if (!h.done && Math.hypot(h.at().x - W.x, h.at().z - W.z) <= W.R) { h.done = true; h.fire(); }
+  if (W.R >= W.max) { W.on = false; W.m.visible = false; }
+}
+function dolphinsRide() {   // 海豚順著浪一隻接一隻連跳
+  if (!pod.show && !dolphins.some(d => d.tr)) { pod.show = { k: 'wave', t: 3.2, v0: pod.vT }; pod.form = 1; pod.vT = 3.6; dolphins.forEach((d, i) => d.nh = .15 + i * .25); }
+  else dolphins.forEach(d => dolTrick(d, 'jump'));
+  sfx('whistle', dolphins[0].g);
+}
+function fishLeap(a) { fishes.forEach((f, i) => { if (f.u < 0) { f.t = .1 + i * .22; f.fa = a + (i - 1) * .3; } }); }   // 三條魚在浪打上岸的地方嚇得跳出水面
+function dogStartle() {
+  const D = dog;
+  if (night > .85 || D.state === 'sleep' || D.state === 'bed') return bubble(D.g, 'Zzz…？', 1.1);
+  if (D.state !== 'fetch' && D.state !== 'bring') Object.assign(D, { path: null, state: 'idle', t: 4 });
+  D.petT = 2;
+  D.g.rotation.y = Math.atan2(KJ.x - D.g.position.x, KJ.z - D.g.position.z);
+  bubble(D.g, '汪汪！', 1.25);
+}
+function catStartle() {
+  const c = cat;
+  if (c.jump) return;
+  bubble(c.g, '喵！', .75);
+  c.awakeT = Math.max(c.awakeT, 4);
+  if (c.state === 'nap' || c.state === 'idle') c.jump = { from: c.g.position.clone(), to: c.g.position.clone(), t: 0, up: c.perch, next: 'idle' };   // 嚇得原地跳起來
+}
+
+/* 煙火秀（約 20 秒）：天色暗下來、你打開艙蓋站起來歡呼；牠舉起雙手——
+   八根槍管手指輪流發射大朵的牡丹和菊花 → 背鰭從尾巴到頭一節節射出金色分裂彈，排成一道拱門 →
+   拼出形狀：像素蜜蜂、小蜜蜂最高分、拿到的鑰匙、島民的臉（還沒有紀錄或鑰匙就換成星星和愛心） → 最後抬頭張嘴發射一顆大的金色垂柳收尾 */
+const FW_N = 9000;
+const fw = (() => {
+  const g = new THREE.BufferGeometry(), pos = new Float32Array(FW_N * 3).fill(-999), col = new Float32Array(FW_N * 3), dat = new Float32Array(FW_N * 2);
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('aCol', new THREE.BufferAttribute(col, 3));
+  g.setAttribute('aDat', new THREE.BufferAttribute(dat, 2));
+  const mat = new THREE.ShaderMaterial({   // 晚上像光一樣疊加；白天會蓋住一點後面的天空，顏色才看得出來
+    uniforms: { uScale: { value: 600 }, uDay: { value: 0 } },
+    vertexShader: `attribute vec3 aCol; attribute vec2 aDat; uniform float uScale; varying vec3 vCol; varying float vA;
+      void main() { vCol = aCol; vA = aDat.x; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv; gl_PointSize = aDat.x <= 0.0 ? 0.0 : min(220.0, aDat.y * uScale / -mv.z); }`,
+    fragmentShader: `uniform float uDay; varying vec3 vCol; varying float vA;
+      void main() { float r = length(gl_PointCoord - .5) * 2.0; if (r > 1.0) discard;
+        float core = exp(-r * r * 9.0), halo = (1.0 - r) * (1.0 - r), a = vA * (core + halo * .5);
+        gl_FragColor = vec4(mix(vCol, vec3(1.0), core * .6) * a, min(1.0, a * uDay)); }`,
+    transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+  });
+  const m = new THREE.Points(g, mat);
+  m.frustumCulled = false; m.visible = false;
+  scene.add(m);
+  const light = new THREE.PointLight(0xffffff, 0, 0, 1.4);   // 炸開那一下把巨獸、島和海照亮
+  scene.add(light);
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: KJ_HALO.map, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));   // 海面上的倒影：一大片跟著煙火顏色閃的光
+  sea.position.y = .25; sea.scale.setScalar(150); sea.visible = false; sea.renderOrder = 1;
+  scene.add(sea);
+  const N = FW_N;
+  return { m, mat, pos, col, dat, vel: new Float32Array(N * 3), tgt: new Float32Array(N * 3), age: new Float32Array(N), life: new Float32Array(N), hold: new Float32Array(N), drag: new Float32Array(N), grav: new Float32Array(N), trl: new Float32Array(N), trT: new Float32Array(N), spl: new Float32Array(N), kind: new Uint8Array(N), i: 0, rockets: [], show: null, light, lk: 0, sea };
+})();
+let showNight = 0;   // 放煙火時天色暗下來（日夜那邊讀）
+const FW_GLYPH = {   // 5×7 點陣數字
+  0: [' ### ', '#   #', '#  ##', '# # #', '##  #', '#   #', ' ### '], 1: ['  #  ', ' ##  ', '  #  ', '  #  ', '  #  ', '  #  ', ' ### '],
+  2: [' ### ', '#   #', '    #', '   # ', '  #  ', ' #   ', '#####'], 3: ['#####', '   # ', '  #  ', '   # ', '    #', '#   #', ' ### '],
+  4: ['   # ', '  ## ', ' # # ', '#  # ', '#####', '   # ', '   # '], 5: ['#####', '#    ', '#### ', '    #', '    #', '#   #', ' ### '],
+  6: ['  ## ', ' #   ', '#    ', '#### ', '#   #', '#   #', ' ### '], 7: ['#####', '    #', '   # ', '  #  ', ' #   ', ' #   ', ' #   '],
+  8: [' ### ', '#   #', '#   #', ' ### ', '#   #', '#   #', ' ### '], 9: [' ### ', '#   #', '#   #', ' ####', '    #', '   # ', ' ##  '],
+};
+const FW_SHAPE = {   // 自己畫的點陣圖：字母＝顏色；黑色放不出來，眼睛、鼻子留空
+  bee: { rows: ['..a...a..', '...a.a...', 'ww.YYY.ww', 'wwwRYRwww', '.wwYYYww.', '...OOO...', '...YYY...', '...OOO...', '....Y....'], col: { a: 0xffd84a, Y: 0xffd23a, w: 0xdff0ff, R: 0xff4646, O: 0xff7a1a } },
+  heart: { rows: ['.XX.XX.', 'XXXXXXX', 'XXXXXXX', '.XXXXX.', '..XXX..', '...X...'], col: { X: 0xff5a8a } },
+  star: { rows: ['...X...', '..XXX..', 'XXXXXXX', '.XXXXX.', '..XXX..', '.XX.XX.', 'XX...XX'], col: { X: 0xffd23a } },
+  key: { rows: ['.XXX......', 'X...X.....', 'X...XXXXXX', 'X...X..X.X', '.XXX......'], col: {} },
+  dog: { rows: ['O.......O', 'OO.....OO', 'OOOOOOOOO', 'OO.OOO.OO', 'OWWWOWWWO', '.WWW.WWW.', '..WWWWW..'], col: { O: 0xff9a3c, W: 0xfff2dc } },   // 阿滿：柴犬的臉，白色兩頰
+  cat: { rows: ['P.......O', 'PP.....OO', 'PPWWWWOOO', 'PW.WWW.WO', 'WWWWWWWWW', 'WWWWRWWWW', '.WWWWWWW.'], col: { P: 0xb98cff, O: 0xff9a3c, W: 0xfff2dc, R: 0xff7aa8 } },   // 花捲：三花（黑色那塊用紫色）
+  kaiju: { rows: ['....S....', '...SS....', 'GGGGGGGGG', 'GRRRGRRRG', 'GGGGGGGGG', 'GGGGGGGGG', '.TGTGTGT.'], col: { S: 0xe6eef7, G: 0x9fb8d0, R: 0xff3a2a, T: 0xffffff } },   // 機械巨獸：積木頭、橫的紅眼睛、頭頂的冠
+  hermit: { rows: ['..YYYYY..', '.YYYYYYY.', 'YYYYYYYYY', 'YYSSSSSYY', 'YS.SSS.SY', 'YSSSSSSSY', '.YSS.SSY.', '..SSSSS..'], col: { Y: 0xffc53a, S: 0xffd9b0 } },   // 你：金色爆炸頭
+};
+const rgb = h => [(h >> 16 & 255) / 255, (h >> 8 & 255) / 255, (h & 255) / 255];
+function fwDots(rows, col, sp, dx = 0, fixed = null) {   // 點陣 → [左右, 上下, 顏色]（以圖的中間為原點）
+  const out = [], H = rows.length, W = rows[0].length;
+  rows.forEach((row, y) => [...row].forEach((ch, x) => { if (ch !== '.' && ch !== ' ') out.push([dx + (x - (W - 1) / 2) * sp, ((H - 1) / 2 - y) * sp, fixed ?? col[ch] ?? 0xffffff]); }));
+  return out;
+}
+const FIN_TIP = kj.fins.map(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return new THREE.Vector3((b.min.x + b.max.x) / 2, b.max.y - .2, (b.min.z + b.max.z) / 2); });   // 每一節背鰭的尖端（發射口）
+const fingerWorld = (i, out) => out.set([-.66, .66, -.22, .22][i >> 1] * (i % 2 ? -1 : 1), -3.5, .2).applyMatrix4(kj.arms[i % 2].el.matrixWorld);   // 第 i 根手指的槍口：外側的先，左右手交替
+const mouthWorld = out => out.set(0, 1.0, 5.3).applyMatrix4(kj.head.matrixWorld);
+function startShow() {   // 排好每一發要從哪裡射、炸在哪裡（鏡頭從島那側斜斜地往上看：牠在下面，煙火炸滿牠頭上的天空）
+  const K = KJ, M = camera.aspect < .85, toI = new THREE.Vector3(-K.x, 0, -K.z).normalize();
+  const cv = new THREE.Vector3(camera.position.x - K.x, 0, camera.position.z - K.z).normalize(), dA = toI.clone().applyAxisAngle(_UP, .88), dB = toI.clone().applyAxisAngle(_UP, -.88), dir = dA.dot(cv) > dB.dot(cv) ? dA : dB;   // 偏向你原本在看的那一側
+  const D = M ? 100 : 84, C = new THREE.Vector3(K.x + dir.x * D, M ? 5 : 4, K.z + dir.z * D), L = new THREE.Vector3(K.x - dir.x * 6, M ? 34 : 28, K.z - dir.z * 6);   // 拍得到整隻（腳在水裡）和上面一大片天空
+  const f = L.clone().sub(C).normalize(), rt = new THREE.Vector3().crossVectors(f, _UP).normalize(), up = new THREE.Vector3().crossVectors(rt, f);
+  const sb = !M && ui.side ? $('#sidebar').getBoundingClientRect() : null, cov = sb && sb.width > 0 ? clamp((innerWidth - sb.left) / innerWidth, 0, .5) : 0;   // 電腦右邊的清單蓋住多少
+  const hh = C.distanceTo(L) * Math.tan(baseFov() * Math.PI / 360), hw = hh * camera.aspect * (1 - cov);   // 只排在清單左邊看得到的那一塊（鏡頭會往右平移，那一塊的中間就是 L）
+  const at = (x, y) => L.clone().addScaledVector(rt, x * hw).addScaledVector(up, y * hh);
+  const fit = (cols, base, frac = .62) => Math.min(base, frac * 2 * hw / cols);   // 點的間距：圖太寬就縮小
+  const best = Math.floor(records.bee.best), keys = KEYS.filter(k => keyState[k.id]), digits = best > 0 ? String(best) : '';
+  const shape = (name, sp) => fwDots(FW_SHAPE[name].rows, FW_SHAPE[name].col, sp);
+  const dsp = fit(digits.length * 6, 1.9, M ? .8 : .5), ksp = fit(keys.length * 12, 1.5, M ? .8 : .55), ssp = M ? fit(9, 1.6, .38) : 1.9;
+  const numDots = digits ? [...digits].flatMap((ch, j) => fwDots(FW_GLYPH[ch], null, dsp, (j - (digits.length - 1) / 2) * 6 * dsp, 0xffcf3a)) : shape('star', ssp * 1.1);
+  const keyDots = keys.length ? keys.flatMap((k, j) => fwDots(FW_SHAPE.key.rows, null, ksp, (j - (keys.length - 1) / 2) * 12 * ksp, k.hex)) : shape('heart', ssp * 1.1);
+  const ev = [], fh = Math.atan2(dir.x * .55 + toI.x * .45, dir.z * .55 + toI.z * .45), S = { C, L, rt, up, f, t: 0, end: 19.6, ev, ei: 0, h: fh, cam: true, big: M ? .78 : 1 };
+  const finger = (t, i, x, y, spec, T = 1.25) => ev.push({ t, go: () => { const P = fingerWorld(i, new THREE.Vector3()); KJ.rc[i % 2] = 1; fwRocket(P, at(x, y), T, spec); } });
+  // 1. 手指輪流發射：大朵的牡丹、菊花
+  const F1 = M ? [[-.4, .5], [.42, .4], [-.3, .2], [.36, .66], [-.45, .02], [.45, .12], [0, .32], [0, .72]] : [[-.62, .4], [.62, .44], [-.32, .62], [.3, .6], [-.74, .06], [.76, .1], [-.06, .34], [.12, .7]];
+  const C1 = [0xffc53a, 0x4ad8ff, 0xff6fb0, 0x7dff6a, 0xb27bff, 0xff8a2a, 0xfff4e0, 0xff4a3a];
+  for (let i = 0; i < 8; i++) finger(2.0 + i * .26, i, ...F1[i], { kind: i % 2 ? 'chrys' : 'peony', col: C1[i] });
+  // 2. 背鰭從尾巴到頭一節節射出金色分裂彈：排成一道拱門
+  for (let i = 0; i < 9; i++) {
+    const a = Math.PI * (.93 - i / 8 * .86), x = Math.cos(a) * (M ? .62 : .58), y = (M ? .04 : -.02) + Math.sin(a) * (M ? .5 : .56);
+    ev.push({ t: 4.7 + i * .17, go: () => { const P = FIN_TIP[i].clone().applyMatrix4(kj.fins[i].matrixWorld); KJ.ff[i] = 1; fwRocket(P, at(x, y), 1.05, { kind: 'cross', col: i % 2 ? 0xfff0c0 : 0xffc53a }, .8, true); } });
+  }
+  // 3. 拼形狀：蜜蜂＋小蜜蜂最高分 → 鑰匙＋阿滿＋花捲 → 巨獸＋你＋愛心
+  const R = M ? { bee: [0, .62], num: [0, .22], keys: [0, .64], dog: [-.42, .26], cat: [.42, .26], kj: [-.42, .56], me: [.42, .56], heart: [0, .18] }
+    : { bee: [-.56, .38], num: [.18, .5], keys: [0, .6], dog: [-.58, .26], cat: [.58, .26], kj: [-.52, .42], me: [.52, .42], heart: [0, .62] };
+  finger(7.2, 0, ...R.bee, { kind: 'shape', dots: shape('bee', ssp), col: 0xffd23a }, 1.4);
+  finger(7.45, 1, ...R.num, { kind: 'shape', dots: numDots, col: 0xffcf3a }, 1.5);
+  finger(9.7, 3, ...R.keys, { kind: 'shape', dots: keyDots, col: keys.length ? keys[0].hex : 0xff5a8a }, 1.45);
+  finger(9.85, 2, ...R.dog, { kind: 'shape', dots: shape('dog', ssp), col: 0xff9a3c }, 1.3);
+  finger(10.0, 5, ...R.cat, { kind: 'shape', dots: shape('cat', ssp), col: 0xfff2dc }, 1.3);
+  finger(12.1, 4, ...R.kj, { kind: 'shape', dots: shape('kaiju', ssp), col: 0x9fb8d0 }, 1.3);
+  finger(12.25, 7, ...R.me, { kind: 'shape', dots: shape('hermit', ssp), col: 0xffc53a }, 1.3);
+  finger(12.5, 6, ...R.heart, { kind: 'shape', dots: shape('heart', ssp * 1.15), col: 0xff5a8a }, 1.45);
+  // 4. 收尾：抬頭張嘴發射一顆大的金色垂柳，兩邊手指補兩圈環
+  ev.push({ t: 14.3, go: () => { const P = mouthWorld(new THREE.Vector3()); KJ.mk = 1; fwRocket(P, at(0, M ? .5 : .52), 1.7, { kind: 'willow', col: 0xffc85a }, 1.6); sfx('mortar', P); } });
+  finger(15.15, 0, M ? -.3 : -.6, M ? .12 : .3, { kind: 'ring', col: 0x4ad8ff });
+  finger(15.3, 1, M ? .3 : .6, M ? .12 : .3, { kind: 'ring', col: 0xff6fb0 });
+  ev.push({ t: 16.1, go: () => { dogStartle(); bubble(cat.g, '喵～', .75); dolphins.forEach(d => dolTrick(d, 'jump')); } });   // 島上的大家抬頭看
+  ev.sort((a, b) => a.t - b.t);
+  fw.show = S;
+  showNight = 1;
+  const v = new THREE.Vector3();
+  CLOUD.forEach(Cl => { cloudWorld(Cl.c, v).sub(C); if (v.dot(f) > 0 && v.normalize().dot(f) > .78) cloudBurn(Cl.i, true); });   // 擋在煙火前面的雲先散掉
+  const n = num('sanasai_fireworks') + 1;
+  ls.set('sanasai_fireworks', String(n));
+  if (n === 1) addLog('pet', '機械巨獸第一次放煙火');
+}
+function endShow() {   // 放完（或你中途下來）：天色亮回來、艙蓋關上、你坐回去
+  fw.show = null; showNight = 0;
+  if (KJ.mode === 'works') { KJ.mode = 'stand'; KJ.t = 3; }
+}
+function updateShow(dt) {
+  const S = fw.show;
+  if (!S) return;
+  S.t += dt;
+  while (S.ei < S.ev.length && S.t >= S.ev[S.ei].t) S.ev[S.ei++].go();
+  if (S.t > S.end - .7) showNight = 0;   // 金柳快落完：天色開始亮回來
+  if (S.t >= S.end) endShow();
+}
+function fwSpawn(kind, x, y, z, vx, vy, vz, c, size, life, hold = 0, drag = 1.3, grav = 3.2, trail = 0, split = 0) {
+  const F = fw, i = F.i = (F.i + 1) % FW_N, [r, g, b] = typeof c === 'number' ? rgb(c) : c;
+  F.kind[i] = kind; F.age[i] = 0; F.life[i] = life; F.hold[i] = hold; F.drag[i] = drag; F.grav[i] = grav; F.trl[i] = trail; F.trT[i] = 0; F.spl[i] = split;
+  F.pos.set([x, y, z], i * 3); F.vel.set([vx, vy, vz], i * 3); F.col.set([r, g, b], i * 3);
+  F.dat[i * 2] = 1; F.dat[i * 2 + 1] = size;
+  return i;
+}
+function fwRocket(P, at, T, sp, big = 1, spin = false) {   // 從 P 射出去，照拋物線飛 T 秒到 at 炸開：槍口一團火光和煙、一路拖著粗粗的火光尾巴
+  const g = 9, v = at.clone().sub(P).divideScalar(T);
+  v.y += .5 * g * T;
+  fw.rockets.push({ p: P.clone(), q: P.clone(), v, g, t: 0, T, sp, big, spin: spin ? Math.random() * TAU : -1 });
+  const B = (fw.show ? fw.show.big : 1) * big;
+  fwSpawn(4, P.x, P.y, P.z, 0, 0, 0, 0xfff0c0, 8 * B, .26);
+  for (let k = 0; k < 14; k++) { _fwv.randomDirection().multiplyScalar(4 + Math.random() * 4); fwSpawn(2, P.x, P.y, P.z, _fwv.x + v.x * .15, _fwv.y + v.y * .15, _fwv.z + v.z * .15, 0xffd890, 1.1, .45 + Math.random() * .3); }
+  steamPuff(P.x, P.y, P.z, 3.2 * big, 1.7, .9, 0, 1.4, 0);
+  sfx('fwLaunch', P, big);
+}
+const _fwv = new THREE.Vector3(), _fwa = new THREE.Vector3(), _fwb = new THREE.Vector3();
+function fwBurst(sp, p, big) {
+  const S = fw.show, [r, g, b] = rgb(sp.col), B = (S ? S.big : 1) * (sp.kind === 'willow' ? 1.25 : 1);
+  fwSpawn(4, p.x, p.y, p.z, 0, 0, 0, 0xffffff, 18 * B * big, .32);
+  fw.light.position.copy(p); fw.light.color.setRGB(r, g, b); fw.lk = Math.min(1.5, fw.lk + (sp.kind === 'willow' ? 1.4 : .75));
+  fw.sea.position.set(p.x, .25, p.z); fw.sea.material.color.setRGB(r, g, b);
+  sfx(sp.kind === 'willow' ? 'fwBig' : 'fwBurst', p, sp.kind === 'shape' ? 1 : .85);
+  const tint = k => [lerp(r, 1, k), lerp(g, 1, k), lerp(b, 1, k)];
+  const ball = (n, v0, life, size, trail = 0, drag = 1.3, grav = 3.2) => {
+    for (let k = 0; k < n; k++) { _fwv.randomDirection().multiplyScalar(v0 * B * (.88 + Math.random() * .24)); fwSpawn(1, p.x, p.y, p.z, _fwv.x, _fwv.y, _fwv.z, tint(Math.random() * .25), size, life * (.85 + Math.random() * .3), 0, drag, grav, trail); }
+  };
+  if (sp.kind === 'peony') ball(210, 25, 2.0, 1.55);
+  else if (sp.kind === 'chrys') ball(150, 23, 2.2, 1.3, .05);   // 菊花：每一顆拖著尾巴
+  else if (sp.kind === 'willow') { ball(380, 31, 5.2, 1.7, .05, 1.15, 2.8); for (let k = 0; k < 90; k++) { _fwv.randomDirection().multiplyScalar(20 * B); fwSpawn(5, p.x, p.y, p.z, _fwv.x, _fwv.y, _fwv.z, 0xfff6e0, 1.15, 3.6 + Math.random() * 1.2, 0, 1.2, 2.6); } }   // 金色垂柳：最大的一朵，拖著金色的尾巴慢慢垂下來、一路閃
+  else if (sp.kind === 'cross') { ball(70, 13, 1.3, 1.2); for (let k = 0; k < 10; k++) { _fwv.randomDirection().multiplyScalar(17 * B); fwSpawn(1, p.x, p.y, p.z, _fwv.x, _fwv.y, _fwv.z, tint(.1), 1.7, 1.9, 0, 1.15, 2.6, .04, .5); } }   // 分裂彈：一朵小金花，再有十顆星飛出去、過一下各自炸成四顆
+  else if (sp.kind === 'ring') {   // 一圈：在面向鏡頭的平面上
+    const ra = S ? S.rt : _fwa.set(1, 0, 0), ua = S ? S.up : _fwb.set(0, 1, 0);
+    for (let k = 0; k < 120; k++) { const a = k / 120 * TAU; _fwv.copy(ra).multiplyScalar(Math.cos(a) * 21 * B).addScaledVector(ua, Math.sin(a) * 21 * B); fwSpawn(1, p.x, p.y, p.z, _fwv.x, _fwv.y, _fwv.z, tint(.15), 1.45, 1.9 + Math.random() * .3); }
+  } else {   // 拼成形狀：每一點從中間飛到自己的位置，停一下、閃一閃，再慢慢落下、淡掉
+    for (const [dx, dy, c] of sp.dots) {
+      const i = fwSpawn(3, p.x, p.y, p.z, p.x, p.y, p.z, c, 1.75, 3.6, 2.3);
+      _fwv.copy(p).addScaledVector(S.rt, dx).addScaledVector(S.up, dy);
+      fw.tgt.set([_fwv.x, _fwv.y, _fwv.z], i * 3);
+    }
+    for (let k = 0; k < 40; k++) { _fwv.randomDirection().multiplyScalar(7 * B); fwSpawn(1, p.x, p.y, p.z, _fwv.x, _fwv.y, _fwv.z, tint(.3), .9, 1.1 + Math.random() * .4); }
+  }
+}
+function updateFireworks(dt) {
+  const F = fw;
+  for (const R of F.rockets) {   // 飛行中的火箭：粗粗的火光尾巴（背鰭射的會螺旋）
+    R.t += dt; R.v.y -= R.g * dt; R.q.copy(R.p); R.p.addScaledVector(R.v, dt);
+    const B = (F.show ? F.show.big : 1) * R.big;
+    let x = R.p.x, y = R.p.y, z = R.p.z;
+    if (R.spin >= 0) { R.spin += dt * 16; _fwa.set(R.v.z, 0, -R.v.x).normalize(); x += _fwa.x * Math.cos(R.spin) * .9; z += _fwa.z * Math.cos(R.spin) * .9; y += Math.sin(R.spin) * .9; }
+    for (let k = 0; k < 4; k++) { const u = k / 4; fwSpawn(2, lerp(R.q.x, x, u), lerp(R.q.y, y, u), lerp(R.q.z, z, u), (Math.random() - .5) * 1.2, -.8 - Math.random() * .9, (Math.random() - .5) * 1.2, R.spin >= 0 ? 0xfff0b0 : 0xffd890, 1.15 * B, .5 + Math.random() * .25); }
+    fwSpawn(4, x, y, z, 0, 0, 0, 0xfff6d8, 2.8 * B, .05);   // 火箭頭
+    if (R.t >= R.T) { R.done = true; fwBurst(R.sp, _fwa.set(x, y, z), R.big); }
+  }
+  if (F.rockets.some(R => R.done)) F.rockets = F.rockets.filter(R => !R.done);
+  F.lk = Math.max(0, F.lk - dt * 2.6);
+  F.light.intensity = F.lk * F.lk * (60 + night * 1100);
+  F.sea.visible = F.lk > .01;
+  F.sea.material.opacity = Math.min(1, F.lk) * (.12 + night * .45);
+  F.mat.uniforms.uDay.value = 1 - night * .92;
+  let any = F.rockets.length > 0, budget = 900;   // budget：這一幀最多再生幾顆尾巴（顆粒不夠時舊的會被蓋掉）
+  for (let i = 0; i < FW_N; i++) {
+    const kd = F.kind[i];
+    if (!kd) continue;
+    any = true;
+    const o = i * 3, a = (F.age[i] += dt), k = a / F.life[i];
+    if (k >= 1) { F.kind[i] = 0; F.dat[i * 2] = 0; F.pos[o + 1] = -999; continue; }
+    if (kd === 1 || kd === 5) {   // 星：散開、空氣阻力、慢慢往下掉；最後閃一閃（5＝一路閃的亮片）
+      const dr = Math.max(0, 1 - F.drag[i] * dt);
+      F.vel[o] *= dr; F.vel[o + 1] = F.vel[o + 1] * dr - F.grav[i] * dt; F.vel[o + 2] *= dr;
+      F.pos[o] += F.vel[o] * dt; F.pos[o + 1] += F.vel[o + 1] * dt; F.pos[o + 2] += F.vel[o + 2] * dt;
+      F.dat[i * 2] = kd === 5 ? (Math.sin(a * 47 + i * 2.3) > .2 ? 1 : .12) * (1 - k) : Math.pow(1 - k, 1.1) * (k > .6 ? .6 + .4 * Math.sin(a * 38 + i) : 1);
+      if (F.trl[i] > 0 && budget > 0 && (F.trT[i] += dt) >= F.trl[i]) {   // 拖尾巴
+        F.trT[i] = 0; budget--;
+        const c = F.col.subarray(o, o + 3);
+        fwSpawn(2, F.pos[o], F.pos[o + 1], F.pos[o + 2], 0, -.4, 0, [c[0] * .85, c[1] * .7, c[2] * .5], F.dat[i * 2 + 1] * .7, .7);
+      }
+      if (F.spl[i] > 0 && a >= F.spl[i]) {   // 分裂：這一顆炸成四顆
+        F.spl[i] = 0;
+        const c = [F.col[o], F.col[o + 1], F.col[o + 2]], px = F.pos[o], py = F.pos[o + 1], pz = F.pos[o + 2];
+        for (let q = 0; q < 4; q++) { _fwv.randomDirection().multiplyScalar(10); fwSpawn(1, px, py, pz, _fwv.x + F.vel[o] * .3, _fwv.y + F.vel[o + 1] * .3, _fwv.z + F.vel[o + 2] * .3, c, 1.35, 1.2, 0, 1.3, 3, .05); }
+        F.kind[i] = 0; F.dat[i * 2] = 0; F.pos[o + 1] = -999;
+      }
+    } else if (kd === 2) {   // 火星、尾巴
+      F.pos[o] += F.vel[o] * dt; F.pos[o + 1] += F.vel[o + 1] * dt; F.pos[o + 2] += F.vel[o + 2] * dt;
+      F.dat[i * 2] = (1 - k) * .75;
+    } else if (kd === 3) {   // 拼形狀的點：vel 記的是炸開的中心
+      const H = F.hold[i], e = 1 - Math.pow(1 - Math.min(1, a / .35), 3), fall = Math.max(0, a - H);
+      F.pos[o] = lerp(F.vel[o], F.tgt[o], e); F.pos[o + 1] = lerp(F.vel[o + 1], F.tgt[o + 1], e) - 1.6 * fall * fall; F.pos[o + 2] = lerp(F.vel[o + 2], F.tgt[o + 2], e);
+      F.dat[i * 2] = (a < H ? .85 + .15 * Math.sin(a * 25 + i * 1.7) : 1 - (a - H) / (F.life[i] - H));
+    } else F.dat[i * 2] = Math.pow(1 - k, 2);   // 閃光
+  }
+  F.m.visible = any;
+  if (any) {
+    const G = F.m.geometry.attributes;
+    G.position.needsUpdate = G.aCol.needsUpdate = G.aDat.needsUpdate = true;
+    F.mat.uniforms.uScale.value = renderer.domElement.height / (2 * Math.tan(camera.fov * Math.PI / 360));
+  }
+}
+
+/* 合體大招的金色光束：一根很粗的光柱（中間白、外面金）從嘴巴射出去；前面有罩子就打在罩子上（發白、漣漪），不然打在外海的海面上炸起一根水柱 */
+const beamFx = (() => {
+  const mk = core => {
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { uT: { value: 0 }, uA: { value: 0 }, uCore: { value: core }, uC: { value: new THREE.Color(1, .6, .06) } },
+      vertexShader: `varying vec3 vN, vV; varying float vY;
+        void main() { vec4 w = modelMatrix * vec4(position, 1.0); vN = normalize(mat3(modelMatrix) * normal); vV = normalize(cameraPosition - w.xyz); vY = uv.y; gl_Position = projectionMatrix * viewMatrix * w; }`,
+      fragmentShader: `uniform float uT, uA, uCore; uniform vec3 uC; varying vec3 vN, vV; varying float vY;
+        void main() { float f = abs(dot(normalize(vN), normalize(vV))), c = pow(f, 1.6), flow = .8 + .2 * sin(vY * 70.0 - uT * 45.0);
+          gl_FragColor = vec4(mix(uC, vec3(1.0, .98, .9), c * uCore), c * uA * flow); }`,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    });
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 24, 1, true), mat);
+    m.visible = false; m.frustumCulled = false; m.renderOrder = 2;
+    scene.add(m);
+    return m;
+  };
+  const tip = glowSprite('rgba(255,250,225,1)', 'rgba(255,190,60,.55)', 6), hit = glowSprite('rgba(255,252,235,1)', 'rgba(255,170,40,.5)', 11);
+  tip.visible = hit.visible = false;
+  return { core: mk(1), glow: mk(0), tip, hit, a: 0, live: 0, spl: 0, sky: false, E: new THREE.Vector3() };
+})();
+const _bm = new THREE.Vector3();
+function kjBeam(P, D, dt) {   // 巨獸噴大招的那幾秒每一幀呼叫：先打到罩子、海面還是雲就停在那裡，都沒有就一路射上天
+  const B = beamFx, tH = shieldHitT(P, D), tS = D.y < -.02 ? (P.y - .2) / -D.y : Infinity, c = cloudRay(P, D);
+  let L = 190, hit = 'sky';
+  if (tH > 0 && tH < L) { L = tH; hit = 'isle'; }
+  if (tS < L) { L = tS; hit = 'sea'; }
+  if (c.t < L) { L = c.t; hit = 'cloud'; }
+  B.sky = hit === 'sky';
+  B.E.copy(P).addScaledVector(D, L);
+  B.live = .12;
+  _bm.copy(P).add(B.E).multiplyScalar(.5);
+  const t = performance.now() / 1000, w = 1 + .1 * Math.sin(t * 37);
+  for (const [m, rr] of [[B.core, .75], [B.glow, 1.9]]) { m.position.copy(_bm); m.quaternion.setFromUnitVectors(_UP, D); m.scale.set(rr * w, L, rr * w); }
+  B.tip.position.copy(P); B.hit.position.copy(B.E);
+  if (hit === 'cloud') cloudBurn(c.i);   // 雲一打就散
+  else if (hit === 'isle') {   // 打在罩子上
+    SH.hit = 1;
+    _shD.set(B.E.x / SHIELD_R, B.E.y / SHIELD_H, B.E.z / SHIELD_R).normalize();
+    shield.mat.uniforms.uDir.value.lerp(_shD, .3).normalize();
+  } else if (hit === 'sea' && (B.spl -= dt) <= 0) {   // 打在海面上：一直炸起水柱、冒蒸氣（掃過去就是一排）
+    B.spl = .07;
+    kjBurst(B.E.x, .3, B.E.z, 26, 3.5, 17);
+    steamPuff(B.E.x, 1, B.E.z, 6, 2, .5, (Math.random() - .5) * 3, 3 + Math.random() * 2, (Math.random() - .5) * 3);
+    if (Math.random() < .35) kjRipple(B.E.x, B.E.z, 2, 14, 1.8, .6);
+  }
+  kjEmit(Math.floor(260 * dt + Math.random()), P, D, 58, .1);   // 光束裡流動的金色顆粒（打到罩子會濺開）
+  ride.shake = Math.max(ride.shake, .35);
+}
+{   // 先把開巨獸會用到的材質編譯好（駕駛艙、噴火、防護罩、蒸氣、煙火）：不然第一次跺腳、放煙火、噴光束時畫面會卡一下
+  const hid = [aura.back, aura.front, aura.sparks, aura.ring, ...aura.spikes, wave.m, fw.m, fw.sea, steam.m, pit.g, beamFx.core, beamFx.glow, beamFx.tip, beamFx.hit, kjFlame.m, shield.m, shield.foot].filter(o => !o.visible);
+  hid.forEach(o => { o.visible = true; });
+  renderer.compile(scene, camera);
+  hid.forEach(o => { o.visible = false; });
+}
+function updateBeamFx(dt, t) {
+  const B = beamFx;
+  B.live -= dt;
+  B.a = clamp(B.a + (B.live > 0 ? dt / .12 : -dt / .3), 0, 1);
+  const on = B.a > .01;
+  B.core.visible = B.glow.visible = B.tip.visible = B.hit.visible = on;
+  if (!on) return;
+  B.core.material.uniforms.uA.value = B.a * .95; B.glow.material.uniforms.uA.value = B.a * .45;
+  B.core.material.uniforms.uT.value = B.glow.material.uniforms.uT.value = t;
+  B.tip.material.opacity = B.hit.material.opacity = B.a;
+  B.hit.scale.setScalar(B.sky ? 0 : 9 + 3 * Math.sin(t * 29));   // 射上天空：沒有打中的那一團光
+}
+
 /* ---------- 聲音：全部用 Web Audio 即時合成，不載入音檔 ----------
    瀏覽器規定要等第一次點畫面或按鍵才能出聲；右上角的開關記在 sanasai_sound（預設開）。
    iPhone 預設會跟著側邊的靜音開關一起靜音，所以把網頁的聲音模式設成「播放」（iOS 17 起有 navigator.audioSession），
@@ -4529,6 +5918,15 @@ function buildAudio() {
   noiseLoop().connect(biq('bandpass', 420, .6)).connect(og).connect(snd.sfx);
   eo.start();
   snd.eng = { eo, elp, eg, rlp, rg, og };
+  // 金色火焰：一直燒著的低低的轟轟聲（變身時才開）
+  const ag = c.createGain(), abp = biq('bandpass', 260, .8), ao = c.createOscillator(), aog = c.createGain();
+  ag.gain.value = 0; aog.gain.value = .5; ao.frequency.value = 62;
+  noiseLoop().connect(abp).connect(ag);
+  ao.connect(aog).connect(ag);
+  lfo(5.5, 70, abp.frequency);
+  ag.connect(snd.sfx);
+  ao.start();
+  snd.aura = ag;
 }
 function audioUnlock() {
   if (!snd.on) return;
@@ -4677,9 +6075,59 @@ const SFX = {
   kjStep(o) { osc(o, { f: 78, f2: 36, dur: .34, v: .24 }); hiss(o, { dur: .25, v: .08, type: 'lowpass', f: 600, q: .6 }); },   // 腳踩進水裡的悶響
   kjSplash(o, size = 2) { SFX.splash(o, size); osc(o, { f: 85, f2: 32, dur: .3 + size * .15, v: .1 * size }); },
   kjShake(o) { for (let i = 0; i < 10; i++) hiss(o, { t: i * .1, dur: .09, v: .07, type: 'highpass', f: 1800, q: .5 }); },   // 甩水：一陣嘩嘩嘩
+  // 騎巨獸
+  powerUp(o) {   // 變身：越來越高的嗡嗡聲＋風聲，最後「轟」一聲
+    osc(o, { type: 'sawtooth', curve: [70, 85, 130, 260], dur: 1.0, v: .12, a: .2, filter: ['lowpass', 1400, 1.5], vib: [9, 6] });
+    hiss(o, { dur: 1.0, v: .1, a: .5, f: 300, f2: 2600, q: 1.2 });
+    osc(o, { t: .9, f: 110, f2: 38, dur: .7, v: .26 });
+    hiss(o, { t: .9, dur: .6, v: .16, type: 'lowpass', f: 1600, f2: 200, q: .7 });
+  },
+  launch(o) { hiss(o, { dur: .55, v: .2, f: 350, f2: 2800, q: 1.3 }); osc(o, { type: 'sawtooth', f: 140, f2: 55, dur: .45, v: .1, filter: ['lowpass', 900, 1] }); },   // 咻一聲飛出去
+  riderLand(o) { osc(o, { f: 140, f2: 55, dur: .28, v: .2 }); hiss(o, { dur: .35, v: .08, type: 'highpass', f: 3000, q: .6 }); },   // 落在巨獸頭上
+  heroLand(o) { osc(o, { f: 90, f2: 30, dur: .7, v: .32 }); hiss(o, { dur: .7, v: .2, type: 'lowpass', f: 1400, f2: 120, q: .7 }); hiss(o, { t: .05, dur: .5, v: .06, type: 'highpass', f: 3500, q: .5 }); },   // 單膝落地
+  stomp(o) { osc(o, { f: 60, f2: 24, dur: 1.4, v: .22 }); hiss(o, { dur: 1.2, v: .14, type: 'lowpass', f: 800, f2: 90, q: .7 }); SFX.splash(o, 1.6); },   // 跺腳：很低的一聲咚＋嘩啦（峰值壓在其他巨獸聲音那一級）
+  charge(o) {   // 合體大招蓄力：越來越高的嗡嗡聲＋劈哩啪啦的電
+    osc(o, { type: 'sawtooth', curve: [80, 110, 170, 260], dur: 1.6, v: .1, a: .3, filter: ['lowpass', 1600, 2], vib: [14, 8] });
+    hiss(o, { dur: 1.6, v: .07, a: .8, f: 600, f2: 3200, q: 2 });
+    for (let i = 0; i < 14; i++) hiss(o, { t: .3 + Math.random() * 1.2, dur: .04, v: .06, type: 'highpass', f: 4000, q: .7 });
+  },
+  ready(o) { [784, 1175, 1568].forEach((f, i) => osc(o, { type: 'triangle', f, t: i * .05, dur: .5, v: .08 })); },   // 蓄滿了
+  beam(o, dur = 3.2) {   // 金色光束：比噴火更低、更滿的轟——加一層高高的嘶鳴
+    const c = snd.ctx, t0 = c.currentTime, s = c.createBufferSource(), f = biq('bandpass', 500, .6), g = c.createGain();
+    s.buffer = snd.noise; s.loop = true;
+    g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(.3, t0 + .15); g.gain.setValueAtTime(.3, t0 + dur - .5); g.gain.linearRampToValueAtTime(0, t0 + dur);
+    s.connect(f).connect(g).connect(o);
+    s.start(t0, Math.random()); s.stop(t0 + dur + .05);
+    osc(o, { type: 'sawtooth', curve: [70, 62, 58, 52], dur, v: .2, a: .1, filter: ['lowpass', 700, 1.2], vib: [6, 3] });
+    osc(o, { type: 'square', curve: [880, 990, 940, 900], dur, v: .035, a: .2, filter: ['bandpass', 1800, 4], vib: [23, 30] });
+  },
+  fwLaunch(o, big = 1) { osc(o, { curve: [420, 1300, 1900, 1700], dur: 1.1, v: .045, a: .05, vib: [20, 25] }); hiss(o, { dur: .35, v: .07, type: 'highpass', f: 2500, q: .5 }); osc(o, { f: 170, f2: 55, dur: .18, v: .1 * big }); },   // 煙火升空：碰一聲＋咻——
+  fwBurst(o, big = 1) {   // 煙火炸開：碰！＋劈哩啪啦
+    osc(o, { f: 75, f2: 30, dur: .9, v: .22 * big });
+    hiss(o, { dur: .6, v: .16 * big, type: 'lowpass', f: 2200, f2: 180, q: .7 });
+    for (let i = 0; i < 16; i++) hiss(o, { t: .25 + Math.random() * 1.1, dur: .03, v: .05, type: 'highpass', f: 3000 + Math.random() * 3000, q: .7 });
+  },
+  fwBig(o) {   // 大金柳：更低的碰＋一大片慢慢落下的劈哩啪啦
+    osc(o, { f: 58, f2: 24, dur: 1.6, v: .26 });
+    hiss(o, { dur: 1.1, v: .17, type: 'lowpass', f: 1800, f2: 120, q: .7 });
+    for (let i = 0; i < 44; i++) hiss(o, { t: .4 + Math.random() * 3.2, dur: .03, v: .04, type: 'highpass', f: 3000 + Math.random() * 3500, q: .7 });
+  },
+  mortar(o) { osc(o, { f: 95, f2: 30, dur: .55, v: .24 }); hiss(o, { dur: .4, v: .12, type: 'lowpass', f: 1500, f2: 200, q: .7 }); osc(o, { t: .12, curve: [300, 900, 1500, 1300], dur: 1.6, v: .04, vib: [14, 20] }); },   // 嘴巴發射：咚＋長長的咻——
+  pitRise(o, down = 0) { osc(o, { type: 'sawtooth', f: down ? 120 : 55, f2: down ? 50 : 125, dur: .7, v: .08, a: .08, filter: ['lowpass', 650, 1.5] }); hiss(o, { dur: .6, v: .035, f: 900, f2: 400, q: 2 }); osc(o, { t: .68, f: 150, f2: 70, dur: .12, v: .12 }); },   // 駕駛艙升上來／收回去：馬達聲＋喀一聲
+  canopy(o, open = 1) {   // 艙蓋：打開＝噗一聲氣壓＋馬達；關上＝馬達＋喀一聲
+    if (open) { hiss(o, { dur: .4, v: .1, type: 'highpass', f: 2200, f2: 1200, q: .6 }); osc(o, { type: 'square', f: 260, f2: 420, dur: .45, v: .035, filter: ['lowpass', 1200, 1] }); }
+    else { osc(o, { type: 'square', f: 420, f2: 240, dur: .4, v: .035, filter: ['lowpass', 1200, 1] }); osc(o, { t: .4, f: 150, f2: 70, dur: .12, v: .14 }); hiss(o, { t: .4, dur: .05, v: .05, f: 2400, q: 1 }); }
+  },
+  boot(o) { osc(o, { type: 'sawtooth', f: 50, f2: 150, dur: 1.2, v: .06, a: .2, filter: ['lowpass', 900, 1.2] }); [392, 523, 659, 784, 1047].forEach((f, i) => osc(o, { type: 'triangle', f, t: .15 + i * .09, dur: .35, v: .06 })); },   // 開機：越來越高的嗡＋一串往上的嗶
+  eject(o) { osc(o, { f: 170, f2: 40, dur: .35, v: .22 }); hiss(o, { dur: .3, v: .17, type: 'lowpass', f: 2600, f2: 300, q: .7 }); hiss(o, { t: .05, dur: .7, v: .12, f: 400, f2: 3200, q: 1.2 }); },   // 彈射：碰一聲＋咻
+  sizzle(o) { hiss(o, { dur: .5, v: .08, type: 'highpass', f: 3200, f2: 2000, q: .5 }); hiss(o, { dur: .3, v: .045, f: 900, q: .8 }); },   // 火打到海面：嘶——
+  poof(o) { hiss(o, { dur: 1.0, v: .14, f: 700, f2: 180, q: .6 }); osc(o, { f: 85, f2: 40, dur: .5, v: .09 }); },   // 雲被燒掉：噗——
 };
 Object.assign(SFX.kjRoar, { ref: 70 }); Object.assign(SFX.kjFlame, { ref: 55 }); Object.assign(SFX.kjSplash, { ref: 40 }); Object.assign(SFX.kjStep, { ref: 26 }); Object.assign(SFX.kjShake, { ref: 30 });   // 巨獸的聲音傳得遠
 for (const k of ['shieldUp', 'shieldHit', 'shieldDown']) SFX[k].ref = 45;
+Object.assign(SFX.stomp, { ref: 70 }); Object.assign(SFX.beam, { ref: 70 }); Object.assign(SFX.charge, { ref: 40 }); Object.assign(SFX.fwLaunch, { ref: 50 }); Object.assign(SFX.fwBurst, { ref: 120 });
+Object.assign(SFX.fwBig, { ref: 140 }); Object.assign(SFX.mortar, { ref: 70 }); Object.assign(SFX.eject, { ref: 40 }); Object.assign(SFX.sizzle, { ref: 50 }); Object.assign(SFX.poof, { ref: 120 });
+for (const k of ['pitRise', 'canopy', 'boot']) SFX[k].ref = 30;
 function lfoAt(hz, depth, param, t0, dur) { const o = snd.ctx.createOscillator(), g = snd.ctx.createGain(); o.type = 'square'; o.frequency.value = hz; g.gain.value = depth; o.connect(g).connect(param); o.start(t0); o.stop(t0 + dur); }
 function sfx(name, at, ...args) {   // at：聲音從哪裡來（3D 物件或位置；不給＝介面音效，不分遠近）
   if (!snd.on || !snd.ctx || snd.ctx.state !== 'running') return;
@@ -4741,6 +6189,7 @@ function updateSound(dt) {
   E.rlp.frequency.setTargetAtTime(160 + sp * 16, now, .25);
   E.rg.gain.setTargetAtTime(lvl * (.03 + sp * .0018), now, .15);
   E.og.gain.setTargetAtTime(F.phase === 'descent' ? (F.heat || 0) * .2 : 0, now, .1);
+  snd.aura.gain.setTargetAtTime(aura.k * (.06 + aura.boost * .06) * place(avatar, 18)[0], now, .12);   // 金色火焰燒著的聲音
 }
 
 /* ---------- 主迴圈 ---------- */
@@ -4755,19 +6204,22 @@ function updateAmbient(dt, t) {
     wp.setY(i, a * (Math.sin(x * .32 + t * 1.2) + .8 * Math.sin(z * .41 - t * .9) + .5 * Math.sin((x - z) * .23 + t * .7)));
   }
   wp.needsUpdate = true;
-  foam.material.opacity = .32 + .2 * Math.sin(t * 1.3);
-  foam.scale.setScalar(1 + .006 * Math.sin(t * 1.3));
+  foamSurge = Math.max(0, foamSurge - dt * .6); shipRock = Math.max(0, shipRock - dt * .45);   // 跺腳的浪打上岸、打到飛船
+  foam.material.opacity = .32 + .2 * Math.sin(t * 1.3) + foamSurge * .45;
+  foam.scale.setScalar(1 + .006 * Math.sin(t * 1.3) + foamSurge * .025);
   if (!flight.phase) {
-    ship.position.y = SHIP.y + Math.sin(t * 1.1) * .045;
-    ship.rotation.z = Math.sin(t * .8) * .006;
+    ship.position.y = SHIP.y + Math.sin(t * 1.1) * .045 + shipRock * Math.sin(t * 5.5) * .28;
+    ship.rotation.z = Math.sin(t * .8) * .006 + shipRock * Math.sin(t * 4.2) * .07;
+    ship.rotation.x = shipRock * Math.sin(t * 3.6 + 1) * .04;
   }
   shipGlow.color.setScalar(lerp(.9, 2.1, night) * (flight.phase ? 1.6 : 1));
   clouds.rotation.y = t * .004;
   for (const b of birds) {
     const u = b.userData, a = t * u.sp + u.ph;
-    b.position.set(Math.cos(a) * u.R, u.h + Math.sin(t * .8 + u.ph) * .6, Math.sin(a) * u.R);
+    u.sc = Math.max(0, (u.sc || 0) - dt * .22); u.sy = lerp(u.sy || 0, u.sc * 6, Math.min(1, dt * 2.5));   // 被跺腳的浪嚇到：飛高、拍翅膀拍得快
+    b.position.set(Math.cos(a) * u.R, u.h + Math.sin(t * .8 + u.ph) * .6 + u.sy, Math.sin(a) * u.R);
     b.rotation.y = -a;
-    const f = Math.sin(t * 9 + u.ph) * .5;
+    const f = Math.sin(t * (9 + u.sc * 14) + u.ph) * .5;
     u.w1.rotation.z = f; u.w2.rotation.z = -f;
   }
   if (gate.visible && gateShimmer) gateShimmer.material.opacity = .18 + .12 * Math.sin(t * 2.2);
@@ -4787,7 +6239,7 @@ function tick() {
   updateCamera(dt);
   updateFlight(dt);
   updateSound(dt);
-  if (!state.freeze) { updateAmbient(dt, elapsed); updatePets(dt, elapsed); }
+  if (!state.freeze) { updateAmbient(dt, elapsed); updatePets(dt, elapsed); updateRide(dt, elapsed); }
   updateProximity();
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
@@ -4839,4 +6291,4 @@ tick();
 body.classList.remove('booting');
 
 /* 除錯／測試用的唯讀入口 */
-window.sanasai = { PLACE, GAMES, KEYS, CAB, keyState, state, ui, avatar, camera, controls, records: () => records, overflow: () => ({ bees: swarm && swarm.n, heap: heap && heap.layers, maze: mazeArea && mazeArea.n }), pets: () => ({ dog: dog.state, dogPos: dog.g.position.toArray().map(v => +v.toFixed(2)), cat: cat.awakeT > 0 || night > .6, crabs: crabs.map(c => +c.hide.toFixed(1)), blob: blob.state }), petTap, view: (pos, target) => { follow = false; fly = null; controls.enabled = true; camera.position.set(...pos); controls.target.set(...target); controls.update(); }, select: selectPlace, walkTo, overview, setTime, land, findPath, dolphins, pod, dolTrick, updateDolphins, updateSplashes, ship, AV, FAR_ISLES, snd, SFX, setSound, flight, startFlight, skipFlight, throwBall, fetchS, fishing, startFishing, reel, feedCat, carry, catGo, catJump, rings, landNow, swing, divers, spawnDiver, cat, dog, KJ, kj, updateKaiju, kjDepth, kjFloor, kjRipples, kjSpray, kjRoar, kjFlame, SH, shield };
+window.sanasai = { PLACE, GAMES, KEYS, CAB, keyState, state, ui, avatar, camera, controls, records: () => records, overflow: () => ({ bees: swarm && swarm.n, heap: heap && heap.layers, maze: mazeArea && mazeArea.n }), pets: () => ({ dog: dog.state, dogPos: dog.g.position.toArray().map(v => +v.toFixed(2)), cat: cat.awakeT > 0 || night > .6, crabs: crabs.map(c => +c.hide.toFixed(1)), blob: blob.state }), petTap, view: (pos, target) => { follow = false; fly = null; controls.enabled = true; camera.position.set(...pos); controls.target.set(...target); controls.update(); }, select: selectPlace, walkTo, overview, setTime, land, findPath, dolphins, pod, dolTrick, updateDolphins, updateSplashes, ship, AV, FAR_ISLES, snd, SFX, setSound, flight, startFlight, skipFlight, throwBall, fetchS, fishing, startFishing, reel, feedCat, carry, catGo, catJump, rings, landNow, swing, divers, spawnDiver, cat, dog, KJ, kj, updateKaiju, kjDepth, kjFloor, kjRipples, kjSpray, kjRoar, kjFlame, SH, shield, ride, aura, startRide, rideExit, rideRoarDown, rideRoarUp, rideStomp, rideWorks, rideFireAt, rideView, wave, fw, beamFx, seatWorld, cloudCeil, shieldHitT, updateRide, PIT, pit, oc, rcam, aim, aimPick, VIEWS, steam, CLOUD, cloudBurn, startShow, endShow, ridePointer, fishes, birds, crabs, blob, POSE, joy, keysDown, updatePets, updateAmbient };
