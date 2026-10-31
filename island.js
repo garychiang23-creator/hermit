@@ -4085,6 +4085,7 @@ $$('[data-logtab]').forEach(b => b.addEventListener('click', () => { ui.logTab =
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-place], [data-getkey], [data-act], [data-pet]');
   if (!el) return;
+  if (e.detail) el.blur();   // 滑鼠／手指點的就把焦點還給畫面：焦點留在清單按鈕上，提示列寫的「按 Enter」會接不到（用 Tab 鍵選、按 Enter 的 detail 是 0，焦點照舊留著）
   if (el.dataset.pet) return focusPet(el.dataset.pet);
   if (el.dataset.getkey) return goToKey(el.dataset.getkey);
   if (el.dataset.place) return selectPlace(el.dataset.place);
