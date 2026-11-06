@@ -66,6 +66,7 @@ const INFO = {
   maze: { eyebrow: 'TILT', lead: '傾斜手機讓球滾進終點；電腦用方向鍵。6 章 30 關，零失誤過關拿三顆星。', chips: ['陀螺儀', '6 章 30 關'] },
   pier: { eyebrow: 'LANDING', lead: '一艘老飛船停在碼頭邊，登船就能自己開著繞島。碼頭盡頭可以釣魚；上岸第一眼看到的，是一塊刻了字的石碑。' },
   gate: { eyebrow: 'FINALE', lead: '三把鑰匙到齊時，門才會出現。走進去。' },
+  beach: { eyebrow: 'SHORE', lead: '島的西南邊有一張面向海的長椅，坐下來時間會過得比較快，看得到太陽落進海裡。沙灘上可以撿貝殼；走到水邊可以打水漂。' },
 };
 
 /* 迷宮球的章節（對齊 maze/index.html 的 CHAPTERS；from＝起始關卡索引，共 30 關） */
@@ -129,7 +130,8 @@ let steleRead = ls.get('sanasai_stele') === '1';
 const PLACE = {};
 GAMES.forEach((g, i) => { PLACE[g.id] = { id: g.id, no: pad2(i + 1), kind: 'game', name: g.name, en: g.en, color: g.color, at: g.at, door: g.door }; });
 PLACE.pier = { id: 'pier', no: pad2(GAMES.length + 1), kind: 'pier', name: '入口碼頭', en: 'PIER', color: '#1d7d8b', at: [0, 19.2], door: [0, 15.9] };
-PLACE.gate = { id: 'gate', no: pad2(GAMES.length + 2), kind: 'gate', name: '隱嶼之門', en: 'GATE', color: '#b8841f', at: [0, -11.4], door: [0, -9.8] };
+PLACE.beach = { id: 'beach', no: pad2(GAMES.length + 2), kind: 'beach', name: '看海的長椅', en: 'BEACH', color: '#c98a3e', at: [0, 0], door: [0, 0] };   // 位置在地形算好後才知道
+PLACE.gate = { id: 'gate', no: pad2(GAMES.length + 3), kind: 'gate', name: '隱嶼之門', en: 'GATE', color: '#b8841f', at: [0, -11.4], door: [0, -9.8] };
 const CAB_VIEW = {   // 機台座標系：look＝看的點，dir＝鏡頭在哪一側，el＝仰角
   bee: { look: [0, 5.0, .6], dir: [.3, 1], dist: 19, el: .42 },
   blocks: { look: [1.3, 2.9, 0], dir: [.25, 1], dist: 17, el: .55 },
@@ -138,6 +140,7 @@ const CAB_VIEW = {   // 機台座標系：look＝看的點，dir＝鏡頭在哪�
 const VIEW = {
   pier: { dir: [.95, .75], dist: 15, look: .7 },
   gate: { dir: [.18, 1], dist: 21, look: 2.6 },
+  beach: { dir: [.92, -.36], dist: 15, look: .8 },
 };
 
 const ICON = {
@@ -146,6 +149,9 @@ const ICON = {
   maze: '<rect x="3.5" y="3.5" width="17" height="17" rx="2.5"/><path d="M3.5 9.2H11M14.5 3.5v5.7M8 14.3h12.5M8 14.3v6.2M14.5 14.3v-2.2"/><circle cx="17.2" cy="17.6" r="1.4"/>',
   pier: '<circle cx="11" cy="11" r="5.2"/><circle cx="11" cy="11" r="1.5"/><path d="M9.6 6.2V2.6M12.4 6.2V2.6M15.9 8.6l.5-3.2"/><circle cx="16.6" cy="4.3" r="1.1"/><path d="M3 20c1.5-1 3-1 4.5 0s3 1 4.5 0 3-1 4.5 0 3 1 4.5 0"/>',
   gate: '<path d="M6 21V7.5M18 21V7.5M3.5 4.5h17M4.5 7.5h15M5 11h14"/>',
+  beach: '<path d="M4 18h16"/><path d="M6 14.5h12M7.5 14.5V18M16.5 14.5V18"/><path d="M6.6 14.5V9.8h10.8v4.7"/><circle cx="17.6" cy="5.4" r="1.9"/>',
+  photo: '<path d="M4 8.5h3.4l1.5-2.4h6.2l1.5 2.4H20a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.4" r="3.4"/>',
+  rain: '<path d="M7 15.5a3.8 3.8 0 0 1 .4-7.6 5 5 0 0 1 9.6 1 3.3 3.3 0 0 1-.4 6.6z"/><path d="M9 18l-.8 2M13 18l-.8 2M17 18l-.8 2"/>',
   key: '<circle cx="8" cy="8.5" r="4"/><path d="M11 11.5 20 20.5M15.5 16l2.2-2.2M18 18.5l2.2-2.2"/>',
   arrow: '<path d="M7 17 17 7M9 7h8v8"/>',
   play: '<path d="M8 5.5v13l10.5-6.5z"/>',
@@ -194,30 +200,63 @@ scene.add(sun, sun.target);
 /* 天空：漸層球＋星星＋日月 */
 const skyMat = new THREE.ShaderMaterial({
   side: THREE.BackSide, depthWrite: false, fog: false, toneMapped: false,
-  uniforms: { top: { value: new THREE.Color() }, horizon: { value: new THREE.Color() } },
+  uniforms: { top: { value: new THREE.Color() }, horizon: { value: new THREE.Color() }, hDir: { value: new THREE.Vector3(0, 0, -1) }, hCol: { value: new THREE.Color() }, hole: { value: 0 } },
   vertexShader: `
     varying vec3 vDir;
     void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: `
-    uniform vec3 top; uniform vec3 horizon; varying vec3 vDir;
+    uniform vec3 top; uniform vec3 horizon; uniform vec3 hDir; uniform vec3 hCol; uniform float hole; varying vec3 vDir;
     void main() {
       float h = clamp(vDir.y * 1.2, 0.0, 1.0);
-      gl_FragColor = vec4(mix(horizon, top, pow(h, 0.6)), 1.0);
+      vec3 c = mix(horizon, top, pow(h, 0.6));
+      if (hole > 0.0) c = mix(c, hCol, 1.0 - smoothstep(hole - .8, hole, acos(clamp(dot(normalize(vDir), hDir), -1.0, 1.0))));   // 光速隧道：抵達時的天色從消失點亮開來
+      gl_FragColor = vec4(c, 1.0);
       #include <colorspace_fragment>
     }`,
 });
 const skyDome = new THREE.Mesh(new THREE.SphereGeometry(500, 32, 16), skyMat);
 scene.add(skyDome);
 
+/* 星空：一顆顆圓圓的、各閃各的；大小、冷暖不一樣，斜斜一條銀河（多一千多顆很小的星） */
+const STAR_U = { uT: { value: 0 }, uO: { value: 0 }, uPx: { value: Math.min(devicePixelRatio, 2) } };
 const stars = (() => {
-  const n = 700, p = new Float32Array(n * 3), r = mulberry32(5);
+  const n = 760, nm = 1300, N = n + nm, p = new Float32Array(N * 3), a2 = new Float32Array(N * 3), r = mulberry32(5);
   for (let i = 0; i < n; i++) {
-    const a = r() * TAU, y = .08 + r() * .92, s = Math.sqrt(1 - y * y);
+    const a = r() * TAU, y = .06 + r() * .94, s = Math.sqrt(1 - y * y);
     p.set([Math.cos(a) * s * 420, y * 420, Math.sin(a) * s * 420], i * 3);
+    a2.set([Math.pow(r(), 3), r(), r()], i * 3);   // 亮度（大多數暗、少數亮）、閃的節奏、冷暖
+  }
+  const tilt = new THREE.Euler(1.02, .4, .25), v = new THREE.Vector3();
+  for (let i = n; i < N; i++) {
+    const a = r() * TAU, w = (r() + r() + r() - 1.5) * .17;   // 離銀河中線多遠（中間密、兩邊疏）
+    v.set(Math.cos(a), w, Math.sin(a)).normalize().applyEuler(tilt);
+    if (v.y < .02) v.y = -v.y + .02;
+    v.normalize().multiplyScalar(420);
+    p.set([v.x, v.y, v.z], i * 3);
+    a2.set([r() * .3, r(), .35 + r() * .3], i * 3);
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(p, 3));
-  const m = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xdfe8ff, size: 1.8, sizeAttenuation: false, transparent: true, opacity: 0, fog: false, depthWrite: false }));
+  g.setAttribute('aS', new THREE.BufferAttribute(a2, 3));
+  const mat = new THREE.ShaderMaterial({
+    uniforms: STAR_U, transparent: true, depthWrite: false, fog: false, toneMapped: false,
+    vertexShader: `
+      attribute vec3 aS; uniform float uT, uO, uPx; varying float vA; varying vec3 vC;
+      void main() {
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        float tw = .72 + .28 * sin(uT * (.7 + aS.y * 2.2) + aS.y * 50.0);
+        vA = uO * tw * (.62 + aS.x * .38);
+        vC = mix(vec3(.72, .82, 1.0), vec3(1.0, .9, .76), aS.z);
+        gl_PointSize = (1.9 + aS.x * 2.8) * uPx;
+      }`,
+    fragmentShader: `
+      varying float vA; varying vec3 vC;
+      void main() { float d = length(gl_PointCoord - .5); gl_FragColor = vec4(vC, vA * smoothstep(.5, .12, d)); }`,
+  });
+  const m = new THREE.Points(g, mat);
+  m.frustumCulled = false;
+  m.onBeforeRender = () => { STAR_U.uO.value = mat.opacity; };   // 別處照舊改 material.opacity（白天淡掉、太空變亮）
+  mat.opacity = 0;
   scene.add(m);
   return m;
 })();
@@ -236,6 +275,39 @@ function glowSprite(inner, outer, size) {
 }
 const sunDisc = glowSprite('rgba(255,248,220,1)', 'rgba(255,214,150,.35)', 70);
 const moonDisc = glowSprite('rgba(244,241,226,1)', 'rgba(220,226,255,.22)', 46);
+/* 真實的月相（朔望月 29.53 天，從 2000-01-06 18:14 UTC 的新月算起）：0＝新月、.5＝滿月 */
+const moonPhase = (d = Date.now()) => { const k = (d - Date.UTC(2000, 0, 6, 18, 14)) / 86400000 / 29.530588853; return k - Math.floor(k); };
+const moonLit = (ph = moonPhase()) => (1 - Math.cos(ph * TAU)) / 2;   // 亮面占幾成
+function drawMoon(ph) {   // 畫出今天的月亮：圓盤＋月海的暗斑＋照月相把暗的那一側挖掉（看得到後面的天），外面一圈淡淡的光暈
+  const S = 256, c = document.createElement('canvas');
+  c.width = c.height = S;
+  const x = c.getContext('2d'), cx = S / 2, R = S * .17;
+  const halo = x.createRadialGradient(cx, cx, R * .8, cx, cx, S / 2);
+  const hk = .1 + moonLit(ph) * .24;
+  halo.addColorStop(0, `rgba(205,216,255,${hk})`); halo.addColorStop(1, 'rgba(205,216,255,0)');
+  x.fillStyle = halo; x.fillRect(0, 0, S, S);
+  const m = document.createElement('canvas');
+  m.width = m.height = S;
+  const y = m.getContext('2d'), r = mulberry32(44);
+  y.fillStyle = '#f3efe0'; y.beginPath(); y.arc(cx, cx, R, 0, TAU); y.fill();
+  y.save(); y.clip();
+  for (const [a, b, q] of [[-.3, -.25, .36], [.25, -.05, .28], [-.05, .34, .3], [.38, .4, .17], [-.45, .18, .15]]) { y.fillStyle = 'rgba(176,176,172,.5)'; y.beginPath(); y.ellipse(cx + a * R, cx + b * R, q * R, q * R * (.7 + r() * .3), r() * 3, 0, TAU); y.fill(); }
+  y.restore();
+  y.globalCompositeOperation = 'destination-out';   // 暗的那一邊：上弦前右邊亮（北半球看到的樣子）
+  y.fillStyle = 'rgba(0,0,0,.93)';
+  y.beginPath();
+  const wax = ph < .5, k = Math.cos(ph * TAU);   // k：明暗交界線的橢圓寬度（1＝新月、-1＝滿月）
+  y.arc(cx, cx, R + 1, -Math.PI / 2, Math.PI / 2, wax);
+  y.ellipse(cx, cx, Math.abs(k) * (R + 1), R + 1, 0, Math.PI / 2, -Math.PI / 2, (wax ? k > 0 : k < 0));
+  y.closePath(); y.fill();
+  x.drawImage(m, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+sunDisc.material.blending = THREE.AdditiveBlending;   // 用加的：外圈的光暈才不會在亮的天空上變成一圈髒邊
+moonDisc.material.map = drawMoon(moonPhase());
+moonDisc.scale.setScalar(120);
 
 /* ---------- 共用零件：全部合併成少數幾個網格 ---------- */
 const BASE = {
@@ -273,10 +345,31 @@ function part(kind, [x, y, z], [sx, sy, sz], color, o = {}) {
     for (let v = i; v < i + 3; v++) { arr[v * 3] = _c.r * k; arr[v * 3 + 1] = _c.g * k; arr[v * 3 + 2] = _c.b * k; }
   }
   g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+  if (o.into === LEAF) {   // sw：[根部 x, 根部 y, 根部 z, 樹高, 橫向幅度, 相位, 葉尖抖動（棕櫚葉用，越外面越大）]
+    const [bx, by, bz, hh, amp, ph, tip = 0] = o.sw, P = g.attributes.position, sw = new Float32Array(n * 3);
+    for (let v = 0; v < n; v++) {
+      const h = clamp((P.getY(v) - by) / hh, 0, 1.3), far = tip ? Math.hypot(P.getX(v) - bx, P.getZ(v) - bz) : 0;
+      sw.set([amp * h * h, ph, tip * far * far], v * 3);
+    }
+    g.setAttribute('sway', new THREE.BufferAttribute(sw, 3));
+  }
   (o.into || SOLID).push(g);
 }
+/* 風：樹和棕櫚跟著風擺（在顯示卡上算，影子一起動）。uWind 平常約 1，飛船、巨獸經過時變大 */
+const LEAF = [], WIND_U = { uWT: { value: 0 }, uWind: { value: 1 } };
+const WIND_GLSL = `
+  float wPh = sway.y + uWT, wGust = .5 + .5 * sin(uWT * .27 + sway.y * .23);
+  float wB = (sin(wPh) + .45 * sin(wPh * 2.2 + 1.3)) * (.45 + wGust * .75);
+  transformed.x += (wB + .55 * wGust) * sway.x * uWind;
+  transformed.z += (cos(wPh * .8) * .6 + .35 * wGust) * sway.x * uWind;
+  transformed.y += sin(wPh * 2.7 + position.x * 1.3) * sway.z * uWind * (.5 + wGust * .7);`;
+const windy = m => { m.onBeforeCompile = sh => {
+  Object.assign(sh.uniforms, WIND_U);
+  sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 sway;\nuniform float uWT, uWind;').replace('#include <begin_vertex>', '#include <begin_vertex>\n' + WIND_GLSL);
+}; return m; };
 const MAT = {
   solid: new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .88 }),
+  leaf: windy(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .88 })),
   glow: new THREE.MeshBasicMaterial({ vertexColors: true }),
 };
 function merged(list, mat, shadow = true) {
@@ -339,10 +432,41 @@ const PIER = { x0: -1.0, x1: 1.0, z0: 15.4, z1: 23.0 };
 const onPier = (x, z) => x > PIER.x0 && x < PIER.x1 && z > PIER.z0 && z < PIER.z1;
 const groundY = (x, z) => onPier(x, z) ? DECK_Y : Math.max(baseHeight(x, z), 0);
 const PLAZA = [0, 6.4];
+const LAMPS = [];   // 夜裡會亮的燈：[x, 燈的高度, z, 大小, 顏色]
 const STELE = [-2.5, 15.0];
 const COIN = [2.5, 15.0];
 const GROTTO = polar(-2.36, .925);
+const SIGN = [3.3, 13.1];   // 碼頭進來右手邊的告示牌
+const BEACH_A = 2.6, BENCH = polar(BEACH_A, .8), OUT = [Math.cos(BEACH_A), Math.sin(BEACH_A)], RIGHT = [-OUT[1], OUT[0]];   // 看海的長椅：島的西南邊，正對太陽落下的方向；OUT＝面向大海、RIGHT＝坐著時的右手邊
+PLACE.beach.at = BENCH;
+PLACE.beach.door = [BENCH[0] + OUT[0] * .78, BENCH[1] + OUT[1] * .78];
 
+/* 海浪一波波上岸：泡沫線爬上沙灘再退回去，留下一段濕沙；地形和海面用同一個公式，所以線接得起來。
+   沙上的痕跡（腳印）畫在一張環狀的貼圖上（橫向＝繞島的角度、直向＝離岸多遠），不用另外貼片，再怎麼起伏都貼得住地 */
+const SAND_D0 = .76, SAND_D1 = 1.02;
+const SHORE_U = { uShoreT: { value: 0 }, uWave: { value: new THREE.Vector4(.985, .985, .985, 0) }, uBio: { value: 0 }, uSand: { value: null } };
+const SEA_U = { uTop: skyMat.uniforms.top, uHor: skyMat.uniforms.horizon, uLight: { value: new THREE.Vector3(0, 1, 0) }, uLightCol: { value: new THREE.Color(0, 0, 0) }, uRain: { value: 0 }, uSpark: { value: 1 }, uDesat: { value: 0 } };
+const SHORE_GLSL = `
+  uniform float uShoreT, uBio;
+  uniform vec4 uWave;   // x、y：兩道浪的前緣  z：濕沙的邊  w：跺腳的大浪
+  float isleR(float a) { return 17.5 + 1.4 * sin(2.0 * a + .6) + 1.0 * sin(3.0 * a + 2.1) + .55 * sin(5.0 * a + .3); }
+  float n1(float x) { float i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(fract(sin(i * 12.9898) * 43758.5453), fract(sin((i + 1.0) * 12.9898) * 43758.5453), f); }
+  vec4 shoreAt(float a, float d) {
+    if (d < .86 || d > 1.09) return vec4(0.0);
+    float aa = a + 3.1415927;
+    float wob = (n1(aa * 11.0 + uShoreT * .05) - .5) * .018 + (n1(aa * 31.0 - uShoreT * .08) - .5) * .009;
+    float lace = n1(aa * 70.0 + d * 90.0) * .6 + n1(aa * 170.0 - d * 240.0 + uShoreT * .2) * .4;
+    float e1 = uWave.x + wob, e2 = uWave.y + wob * .8;
+    float l1 = smoothstep(.0052, .0012, abs(d - e1)), l2 = smoothstep(.0048, .0012, abs(d - e2));
+    float behind = smoothstep(.0, .012, d - e1) * smoothstep(.04, .006, d - e1);    // 浪頭後面拖著的細碎泡泡
+    float b2 = smoothstep(.0, .012, d - e2) * smoothstep(.034, .006, d - e2);
+    float bubbles = max(behind, b2) * smoothstep(.56, .78, lace);
+    float rim = smoothstep(.0035, .001, abs(d - (1.012 + wob * .5 + .004 * sin(uShoreT * .6 + aa * 5.0)))) * .28 * (1.0 - uBio * .8);    // 外面一圈淡淡的白邊
+    float foam = clamp(max(l1, l2) * (.62 + lace * .6) + bubbles * .72 + rim, 0.0, 1.0);
+    float sheet = max(smoothstep(-.001, .012, d - e1), smoothstep(-.001, .012, d - e2)) * smoothstep(1.0, .975, d);
+    float wet = smoothstep(uWave.z - .006, uWave.z + .01, d + wob * .6);
+    return vec4(foam, sheet, wet, 0.0);
+  }`;
 const terrain = (() => {
   const S = .8, N = 60, half = N * S / 2, tr = mulberry32(42);
   const W = N + 1, vx = new Float32Array(W * W), vz = new Float32Array(W * W), vh = new Float32Array(W * W);
@@ -377,6 +501,30 @@ const terrain = (() => {
   g.computeVertexNormals();
   const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .95 }));
   m.receiveShadow = true;
+  m.material.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, SHORE_U);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWp;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvWp = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>\nvarying vec3 vWp;\nuniform sampler2D uSand;\n${SHORE_GLSL}`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        float sA = atan(vWp.z, vWp.x), sD = length(vWp.xz) / isleR(sA);
+        vec4 shore = shoreAt(sA, sD);                     // x：泡沫 y：薄薄一層上岸的水 z：濕沙
+        vec2 sUv = vec2(fract(sA / 6.2831853), (sD - ${SAND_D0.toFixed(2)}) / ${(SAND_D1 - SAND_D0).toFixed(2)});
+        float dent = 0.0, rim = 0.0;
+        if (sUv.y > 0.0 && sUv.y < 1.0) {                 // 沙上的痕跡：壓下去的地方暗、背光那一側亮一點
+          dent = smoothstep(.1, .62, texture2D(uSand, sUv).r);
+          rim = smoothstep(.1, .62, texture2D(uSand, sUv + vec2(.00034, .012)).r) - dent;
+        }
+        float sandK = smoothstep(.76, .84, sD);
+        diffuseColor.rgb *= 1.0 - (dent * .46 - rim * .16) * sandK;
+        diffuseColor.rgb *= mix(vec3(1.0), vec3(.66, .62, .58), shore.z);          // 濕掉的沙比較暗
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.58, .77, .78), shore.y * .55);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), shore.x * (1.0 - uBio * .6));`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        roughnessFactor = mix(roughnessFactor, .38, max(shore.z * .8, shore.y));`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        totalEmissiveRadiance += vec3(.05, .42, .55) * shore.x * uBio;`);
+  };
   scene.add(m);
   return m;
 })();
@@ -415,23 +563,114 @@ const water = (() => {
   const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .32, metalness: .08, color: 0x45a0c2 }));
   m.receiveShadow = true;
   m.userData.amp = Float32Array.from(amp);
+  m.material.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, SHORE_U, SEA_U);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWp;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvWp = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vWp;
+        uniform vec3 uTop, uHor, uLight, uLightCol;
+        uniform float uRain, uSpark, uDesat;
+        ${SHORE_GLSL}
+        float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }`)
+      .replace('#include <opaque_fragment>', `
+        {
+          vec2 q = vWp.xz;
+          vec3 toEye = cameraPosition - vWp;
+          float dist = length(toEye);
+          vec3 Vw = toEye / dist;
+          float calm = 1.0 / (1.0 + dist * .016);          // 遠的地方波紋糊成一片，別閃成雜訊
+          vec3 Nw = vec3((sin(q.x * 1.7 + uShoreT * 1.3) + sin(q.x * .63 - q.y * 1.1 + uShoreT * .9) + .6 * sin((q.x + q.y) * 2.9 - uShoreT * 1.7)) * .03 * calm, 1.0,
+                         (sin(q.y * 1.9 - uShoreT * 1.1) + sin(q.y * .71 + q.x * .9 - uShoreT * .8) + .6 * sin((q.x - q.y) * 2.6 + uShoreT * 1.5)) * .03 * calm);
+          vec3 Fw = inverseTransformDirection(normal, viewMatrix);
+          Nw = normalize(Nw + vec3(Fw.x, 0.0, Fw.z) * 1.15);   // 一面一面的海：低面數的感覺留著
+          vec3 R = reflect(-Vw, Nw);
+          float fres = pow(1.0 - clamp(dot(Vw, Nw), 0.0, 1.0), 3.2);
+          vec3 sky = mix(uHor, uTop, pow(clamp(R.y * 1.2, 0.0, 1.0), .6));
+          outgoingLight = mix(outgoingLight, sky * 1.12, clamp(.035 + fres * 1.2, 0.0, .8));
+          float sp = max(dot(R, uLight), 0.0);
+          float path = pow(sp, 26.0), core = pow(sp, 220.0);
+          float cs = 3.2 / exp2(floor(log2(1.0 + dist * .045)));   // 閃光的格子：遠一點就放大一倍，不會細到變雜訊
+          vec2 gq = q * cs + vec2(uShoreT * .06, -uShoreT * .04), cell = floor(gq), fr = fract(gq) - .5;
+          float hh = h21(cell), h2 = h21(cell + 17.0);
+          float dotS = smoothstep(.17, .03, length(fr - (vec2(hh, h2) - .5) * .62));   // 一顆圓圓的小亮點，不在格子正中間
+          float tw = smoothstep(.55, 1.0, sin(uShoreT * (1.4 + hh * 2.6) + hh * 60.0));
+          float spark = dotS * tw * step(.9 - path * .62, h21(cell + 5.0));
+          outgoingLight += uLightCol * (core * 1.3 + path * .15 + spark * (.3 * uSpark + path * 2.0));
+          if (uRain > .01) {                                // 雨滴打在海面的小圈圈
+            vec2 g = q * 2.6, id = floor(g), f = fract(g) - .5;
+            float rh = h21(id), ph = fract(uShoreT * 1.1 + rh);
+            float dd = length(f + (vec2(h21(id + 3.0), h21(id + 7.0)) - .5) * .5);
+            outgoingLight += smoothstep(.045, .0, abs(dd - ph * .4)) * (1.0 - ph) * (1.0 - ph) * uRain * .26 * smoothstep(.12, .5, calm) * step(.45, rh);
+          }
+          float sA = atan(q.y, q.x), sD = length(q) / isleR(sA);
+          vec4 shore = shoreAt(sA, sD);
+          vec3 foamC = mix(vec3(1.0), vec3(.16, .72, .86), uBio);
+          outgoingLight = mix(outgoingLight, vec3(dot(outgoingLight, vec3(.3, .55, .15))), uDesat);   // 夜裡的海別太藍
+          outgoingLight = mix(outgoingLight, foamC, shore.x * mix(.92, .62, uBio));
+          outgoingLight = mix(outgoingLight, outgoingLight * 1.15 + .05, shore.y * .5);
+        }
+        #include <opaque_fragment>`);
+  };
   scene.add(m);
   return m;
 })();
-const foam = (() => {
-  const SEG = 160, pos = [], idx = [];
-  for (let j = 0; j <= SEG; j++) {
-    const a = j / SEG * TAU, R = islandR(a);
-    pos.push(Math.cos(a) * R * .966, .035, Math.sin(a) * R * .966, Math.cos(a) * R * 1.02, .035, Math.sin(a) * R * 1.02);
+
+/* 沙上的痕跡：一張環狀貼圖（4096×96：橫向繞島一圈、直向從草地邊到水裡）。腳印、爪印畫上去，慢慢被風吹淡，海浪打到就沖掉 */
+const sandMap = (() => {
+  const W = 4096, H = 96, c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const x = c.getContext('2d', { willReadFrequently: false });
+  x.fillStyle = '#000'; x.fillRect(0, 0, W, H);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.RepeatWrapping; t.generateMipmaps = false; t.minFilter = t.magFilter = THREE.LinearFilter;
+  SHORE_U.uSand.value = t;
+  return { W, H, c, x, t, dirty: false, fadeT: 0, washT: 0, live: 0 };
+})();
+/* 世界座標的一個橢圓（中心 x,z；長軸方向 dx,dz；半長、半短）畫進環狀貼圖 */
+function sandStamp(x, z, dx, dz, a, b, v = .8) {
+  const S = sandMap, ang = Math.atan2(z, x), R = islandR(ang), r = Math.hypot(x, z), d = r / R;
+  if (d < SAND_D0 + .01 || d > SAND_D1 - .01) return;
+  const u = ((ang + TAU) % TAU) / TAU * S.W, w = (d - SAND_D0) / (SAND_D1 - SAND_D0) * S.H;
+  const ku = S.W / (TAU * r), kv = S.H / ((SAND_D1 - SAND_D0) * R), er = [x / r, z / r], et = [-z / r, x / r];
+  const L = Math.hypot(dx, dz) || 1, fx = dx / L, fz = dz / L, sx = -fz, sz = fx;
+  const tex = (vx, vz) => [(vx * et[0] + vz * et[1]) * ku, (vx * er[0] + vz * er[1]) * kv];
+  const [ax, ay] = tex(fx * a, fz * a), [bx, by] = tex(sx * b, sz * b);
+  const g = S.x;
+  for (const off of u < 40 ? [0, S.W] : u > S.W - 40 ? [0, -S.W] : [0]) {   // 接縫處畫兩次
+    g.save();
+    g.transform(ax, ay, bx, by, u + off, w);
+    g.fillStyle = `rgba(255,255,255,${v})`;
+    g.beginPath(); g.arc(0, 0, 1, 0, TAU); g.fill();
+    g.restore();
   }
-  for (let j = 0; j < SEG; j++) { const k = j * 2; idx.push(k, k + 2, k + 1, k + 1, k + 2, k + 3); }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setIndex(idx);
-  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: .5, depthWrite: false, side: THREE.DoubleSide }));
-  scene.add(m);
-  return m;
-})();
+  S.dirty = true; S.live = 110;
+}
+function updateSandMap(dt) {
+  const S = sandMap;
+  if (S.live <= 0) return;   // 沙上沒有痕跡就什麼都不用做（貼圖每更新一次都要重傳）
+  S.live -= dt;
+  if ((S.fadeT -= dt) <= 0) { S.fadeT = 1.5; S.x.fillStyle = 'rgba(0,0,0,.022)'; S.x.fillRect(0, 0, S.W, S.H); S.dirty = true; }   // 風慢慢把痕跡吹淡（約一分半）
+  if ((S.washT -= dt) <= 0) {   // 浪打到的地方沖掉
+    S.washT = .5;
+    const v = (Math.min(tide.e[0], tide.e[1]) + .004 - SAND_D0) / (SAND_D1 - SAND_D0) * S.H;
+    if (v < S.H) { S.x.fillStyle = 'rgba(0,0,0,.45)'; S.x.fillRect(0, v, S.W, S.H - v); S.dirty = true; }
+  }
+  if (S.dirty && (S.upT = (S.upT || 0) - dt) <= 0) { S.upT = .2; S.t.needsUpdate = true; S.dirty = false; }
+}
+/* 海浪：兩道浪輪流上岸，每道大小不一樣；濕沙的邊跟著浪爬上去，退潮後慢慢乾 */
+const tide = { e: [.992, .992], wet: .985, amp: [.03, .04], k: [-1, -1], period: 12 };
+function updateTide(dt, t) {
+  for (let i = 0; i < 2; i++) {
+    const c = t / tide.period + i * .5, n = Math.floor(c), ph = c - n;
+    if (n !== tide.k[i]) { tide.k[i] = n; tide.amp[i] = .021 + hash2(n * 1.7, i * 3.1) * .03; }
+    const s = ph < .36 ? smooth(ph / .36) : 1 - smooth((ph - .36) / .64);
+    tide.e[i] = .992 - (tide.amp[i] + foamSurge * .03) * s;
+  }
+  tide.wet = Math.min(tide.wet + dt * .0011, .986, Math.min(tide.e[0], tide.e[1]) - .001);
+  SHORE_U.uShoreT.value = t;
+  SHORE_U.uWave.value.set(tide.e[0], tide.e[1], tide.wet, foamSurge);
+}
 
 /* ---------- 障礙與保留區（給種樹與走路用） ---------- */
 const OBST = [], KEEP = [];
@@ -472,12 +711,21 @@ function lampPost(x, z) {
   part('box', [x, y + 2.42, z], [.3, .36, .3], 0xffdc9a, { into: GLOW });
   part('pyr', [x, y + 2.7, z], [.42, .22, .42], 0x39415a);
   circleOb(x, z, .2);
+  LAMPS.push([x, y + 2.42, z, 9, 0xffc27a]);
+}
+function lantern(x, z) {   // 步道邊的小石燈
+  const y = groundY(x, z);
+  part('cyl6', [x, y + .16, z], [.17, .32, .17], 0xa39b8b);
+  part('box', [x, y + .4, z], [.17, .17, .17], 0xffd49a, { into: GLOW });
+  part('pyr', [x, y + .55, z], [.3, .13, .3], 0x8d8678);
+  circleOb(x, z, .12);
+  LAMPS.push([x, y + .4, z, 3.6, 0xffbf73]);
 }
 function buildPlaza() {
   const [px, pz] = PLAZA, y = TOP;
   part('disc', [px, y + .03, pz], [6.9, .06, 6.9], 0xe7ddc9);
   part('disc', [px, y + .05, pz], [4.6, .05, 4.6], 0xd9ccb2);
-  part('disc', [px, y + .07, pz], [1.9, .05, 1.9], 0x96c0c9);
+  part('disc', [px, y + .075, pz], [2.9, .03, 2.9], 0x6f9fa6);   // 池底
   for (let i = 0; i < 28; i++) {
     const a = i / 28 * TAU;
     part('box', [px + Math.cos(a) * 3.25, y + .065, pz + Math.sin(a) * 3.25], [.5, .05, .3], i % 2 ? 0xcfc1a6 : 0xeee5d3, { ry: -a + Math.PI / 2 });
@@ -487,7 +735,13 @@ function buildPlaza() {
     const a = Math.atan2(g.at[1] - pz, g.at[0] - px);
     part('box', [px + Math.cos(a) * .5, y + 1.95 - i * .34, pz + Math.sin(a) * .5], [.95, .24, .06], hexNum(g.color), { ry: -a });
   });
-  circleOb(px, pz, .4);
+  for (let i = 0; i < 20; i++) {   // 池邊：一圈石頭
+    const a = i / 20 * TAU, x = px + Math.cos(a) * 1.5, z = pz + Math.sin(a) * 1.5;
+    part('rbox', [x, y + .2, z], [.5, .26, .3], i % 2 ? 0xd8cdb6 : 0xcabda3, { ry: -a + Math.PI / 2 });
+  }
+  part('cyl', [px, y + .3, pz], [.5, .44, .5], 0xcabda3);   // 中間的石墩，路標立在上面
+  part('cyl', [px, y + .55, pz], [.72, .1, .72], 0xd8cdb6);
+  circleOb(px, pz, 1.72);
   for (const a of [.55, 2.6, 3.75, 5.65]) bench(px + Math.cos(a) * 4.05, pz + Math.sin(a) * 4.05, Math.atan2(-Math.cos(a), -Math.sin(a)));
   for (const a of [2.05, 1.09, -1.0, -2.14]) lampPost(px + Math.cos(a) * 3.65, pz + Math.sin(a) * 3.65);
   keep(px, pz, 4.9);
@@ -513,6 +767,10 @@ function buildPaths() {
         part('rbox', [x, groundY(x, z) + .03, z], [.44, .07, .36], stones[(pr() * 3) | 0], { ry: a + (pr() - .5) * .4 });
       }
       keep(p.x, p.z, 1.0);
+      if (i % 8 === 4) {
+        const side = (i >> 3) % 2 ? 1 : -1, lx = p.x + Math.cos(a) * .78 * side, lz = p.z - Math.sin(a) * .78 * side;
+        if (Math.hypot(lx - PLAZA[0], lz - PLAZA[1]) > 4.1 && Math.hypot(lx, lz + 11.4) > 3.4) lantern(lx, lz);   // 別放在廣場石板上、別擋到門
+      }
     }
   }
 }
@@ -531,6 +789,7 @@ function buildPier() {
     part('cyl6', [x, DECK_Y + .65, z], [.09, 1.3, .09], 0x4b3a2c);
     part('box', [x, DECK_Y + 1.38, z], [.26, .3, .26], 0xffd38f, { into: GLOW });
     part('pyr', [x, DECK_Y + 1.62, z], [.36, .2, .36], 0x3a2e24);
+    LAMPS.push([x, DECK_Y + 1.38, z, 6, 0xffc27a]);
   }
   groundPick.push(hitBox({ walk: true }, [0, DECK_Y - .1, (z0 + z1) / 2], [w, .2, z1 - z0]));
   keep(0, 15.2, 2.6);
@@ -995,14 +1254,7 @@ function buildMazeArea(cab) {
       circleOb(x, z, sz * .5);
     }
   }
-  const nf = 40, fp = new Float32Array(nf * 3);
-  for (let i = 0; i < nf; i++) fp.set([mcx + (rnd() - .5) * W, .7 + rnd() * 1.6, mcz + (rnd() - .5) * W], i * 3);
-  const fg = new THREE.BufferGeometry();
-  fg.setAttribute('position', new THREE.BufferAttribute(fp, 3));
-  const flies = new THREE.Points(fg, new THREE.PointsMaterial({ color: 0xe8ff9a, size: 4, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-  flies.frustumCulled = false;
-  cab.G.add(flies);
-  mazeArea = { cab, group, ball, flies, flyBase: Float32Array.from(fp), hb, ob, n: 0, pts: [], seg: 0, f: 0, sink: 0 };
+  mazeArea = { cab, group, ball, hb, ob, n: 0, pts: [], seg: 0, f: 0, sink: 0 };
 }
 function setMaze(n) {
   const M = mazeArea;
@@ -1062,9 +1314,6 @@ function updateMazeBall(dt, t) {
     else M.ball.position.lerpVectors(P[M.seg], P[M.seg + 1], M.f);
     M.ball.scale.setScalar(M.seg === 0 ? Math.max(.2, M.f) : 1);
   }
-  const a = M.flies.geometry.attributes.position, b = M.flyBase;
-  for (let i = 0; i < a.count; i++) a.setXYZ(i, b[i * 3] + Math.sin(t * .7 + i) * .4, b[i * 3 + 1] + Math.sin(t * 1.3 + i * 2) * .25, b[i * 3 + 2] + Math.cos(t * .6 + i) * .4);
-  a.needsUpdate = true;
 }
 
 /* 溢出量跟著紀錄走；螢幕每 0.1 秒重畫 */
@@ -1200,30 +1449,30 @@ function removePedestal(id) {
 /* ---------- 樹、石頭、花 ---------- */
 const GREENS = [0x8fbf6f, 0x9cc77d, 0x86b566, 0xa6cd86];
 function broadleaf(x, z, s) {
-  const y = groundY(x, z), g = GREENS[(rnd() * 4) | 0], c = new THREE.Color(g);
-  part('cyl6', [x, y + .4 * s, z], [.18 * s, .8 * s, .18 * s], 0x8a6a4e);
-  part('ico', [x, y + 1.15 * s, z], [1.1 * s, .95 * s, 1.1 * s], g, { ry: rnd() * TAU, jit: .12 });
-  part('ico', [x + .3 * s, y + 1.4 * s, z - .1 * s], [.66 * s, .6 * s, .66 * s], c.clone().offsetHSL(0, .02, .06).getHex(), { ry: rnd() * TAU, jit: .1 });
-  part('ico', [x - .28 * s, y + .98 * s, z + .2 * s], [.6 * s, .52 * s, .6 * s], c.clone().offsetHSL(.01, -.03, -.06).getHex(), { ry: rnd() * TAU, jit: .1 });
+  const y = groundY(x, z), g = GREENS[(rnd() * 4) | 0], c = new THREE.Color(g), sw = [x, y, z, 1.7 * s, .085 * s, x * .9 + z * .7], L = { into: LEAF, sw };
+  part('cyl6', [x, y + .4 * s, z], [.18 * s, .8 * s, .18 * s], 0x8a6a4e, L);
+  part('ico', [x, y + 1.15 * s, z], [1.1 * s, .95 * s, 1.1 * s], g, { ...L, ry: rnd() * TAU, jit: .12 });
+  part('ico', [x + .3 * s, y + 1.4 * s, z - .1 * s], [.66 * s, .6 * s, .66 * s], c.clone().offsetHSL(0, .02, .06).getHex(), { ...L, ry: rnd() * TAU, jit: .1 });
+  part('ico', [x - .28 * s, y + .98 * s, z + .2 * s], [.6 * s, .52 * s, .6 * s], c.clone().offsetHSL(.01, -.03, -.06).getHex(), { ...L, ry: rnd() * TAU, jit: .1 });
   circleOb(x, z, .32 * s);
 }
 function pine(x, z, s) {
-  const y = groundY(x, z);
-  part('cyl6', [x, y + .35 * s, z], [.16 * s, .7 * s, .16 * s], 0x7a5a40);
-  [[.6, 1.1, 1.3], [1.1, .95, 1.05], [1.55, .7, .8]].forEach(([h, r, hh], i) => part('cone6', [x, y + h * s + .2 * s, z], [r * s * 1.3, hh * s, r * s * 1.3], [0x5f9a63, 0x6aa66b, 0x76b274][i], { ry: rnd(), jit: .1 }));
+  const y = groundY(x, z), L = { into: LEAF, sw: [x, y, z, 2.2 * s, .06 * s, x * .9 + z * .7] };
+  part('cyl6', [x, y + .35 * s, z], [.16 * s, .7 * s, .16 * s], 0x7a5a40, L);
+  [[.6, 1.1, 1.3], [1.1, .95, 1.05], [1.55, .7, .8]].forEach(([h, r, hh], i) => part('cone6', [x, y + h * s + .2 * s, z], [r * s * 1.3, hh * s, r * s * 1.3], [0x5f9a63, 0x6aa66b, 0x76b274][i], { ...L, ry: rnd(), jit: .1 }));
   circleOb(x, z, .3 * s);
 }
 function palm(x, z, s) {
-  const y = groundY(x, z), lean = rnd() * TAU;
+  const y = groundY(x, z), lean = rnd() * TAU, ph = x * .9 + z * .7, sw = [x, y, z, 2.4 * s, .13 * s, ph];
   let px = x, pz = z, py = y;
   for (let i = 0; i < 5; i++) {
     const nx = px + Math.cos(lean) * .08 * s, nz = pz + Math.sin(lean) * .08 * s;
-    part('cyl6', [nx, py + .25 * s, nz], [.16 * s, .52 * s, .16 * s], i % 2 ? 0x9b7a55 : 0x8a6a48, { rx: Math.sin(lean) * .15, rz: -Math.cos(lean) * .15 });
+    part('cyl6', [nx, py + .25 * s, nz], [.16 * s, .52 * s, .16 * s], i % 2 ? 0x9b7a55 : 0x8a6a48, { into: LEAF, sw, rx: Math.sin(lean) * .15, rz: -Math.cos(lean) * .15 });
     px = nx; pz = nz; py += .48 * s;
   }
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 6; i++) {   // 棕櫚葉：葉尖抖得比較厲害
     const a = i / 6 * TAU + rnd() * .3;
-    part('box', [px + Math.cos(a) * .55 * s, py + .02, pz + Math.sin(a) * .55 * s], [1.15 * s, .05, .3 * s], i % 2 ? 0x6fae5a : 0x7dbb64, { ry: -a, rz: -.32 });
+    part('box', [px + Math.cos(a) * .55 * s, py + .02, pz + Math.sin(a) * .55 * s], [1.15 * s, .05, .3 * s], i % 2 ? 0x6fae5a : 0x7dbb64, { into: LEAF, sw: [px, y, pz, 2.4 * s, .13 * s, ph + i * 1.1, .05 / s], ry: -a, rz: -.32 });
   }
   circleOb(x, z, .25 * s);
 }
@@ -1320,10 +1569,20 @@ buildGate();
 buildCoin();
 for (const k of KEYS) if (k.spot) keep(k.spot[0], k.spot[1], 1.4);
 for (const g of GAMES) keep(g.door[0], g.door[1], 1.3);
+bench(BENCH[0], BENCH[1], Math.atan2(OUT[0], OUT[1]));
+for (const lx of [-.56, .56]) { const [x, z] = local(SIGN[0], SIGN[1] + .05, -.35, lx, -.07); part('cyl6', [x, groundY(...SIGN) + .68, z], [.11, 1.36, .11], 0x7d5c3f); }   // 兩根柱子在牌子後面
+circleOb(SIGN[0], SIGN[1] + .15, .75); keep(SIGN[0], SIGN[1], 1.5);
+for (const [d, r] of [[.8, 3], [.87, 2.6], [.94, 2.2], [.72, 2.8], [.64, 2.8], [.56, 2.6], [.48, 2.2]]) { const [x, z] = polar(BEACH_A, d); keep(x, z, r); }   // 前面留空看得到海，後面留一條空地給坐下時的鏡頭
 scatter();
 buildAmbient();
 scene.add(merged(SOLID, MAT.solid));
 scene.add(merged(GLOW, MAT.glow, false));
+{
+  const m = merged(LEAF, MAT.leaf);
+  m.frustumCulled = false;
+  m.customDepthMaterial = windy(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }));
+  scene.add(m);
+}
 
 /* ---------- 走路：格點地圖＋A* ---------- */
 const GRID = { x0: -24, z0: -24, cs: .4, n: 120 };
@@ -1409,7 +1668,7 @@ const AV = {};
   AV.body = new THREE.Group();
   avatar.add(AV.body);
   // 長袍下擺＋米白內衫（前襟交疊）＋皮帶
-  add(AV.body, new THREE.CylinderGeometry(.25, .34, .52, 10), M(ROBE), [0, .36, 0]);
+  AV.hem = add(AV.body, new THREE.CylinderGeometry(.25, .34, .52, 10), M(ROBE), [0, .36, 0]);
   add(AV.body, new RoundedBoxGeometry(.46, .46, .32, 2, .1), M(TUNIC), [0, .78, 0]);
   for (const sx of [-1, 1]) add(AV.body, new THREE.BoxGeometry(.06, .44, .02), M(TUNIC2), [sx * .04, .79, .165 + (sx > 0 ? .003 : 0)], [1, 1, 1], [0, 0, sx * -.32]);
   add(AV.body, new THREE.BoxGeometry(.49, .08, .35), M(LEATHER), [0, .6, 0]);
@@ -1520,8 +1779,20 @@ function walkTo(x, z, { follow: f = false, onArrive = null, mark = false } = {})
 const keysDown = {};
 const joy = { x: 0, y: 0 };
 const _fw = new THREE.Vector3(), _rt = new THREE.Vector3(), _mv = new THREE.Vector3();
+function poseSeated(k, seatY) {   // k：坐下去的程度；seatY：屁股多高（長椅／地上）
+  AV.legL.rotation.x = lerp(AV.legL.rotation.x, -1.28, k); AV.legR.rotation.x = lerp(AV.legR.rotation.x, -1.28, k);
+  AV.armL.rotation.x = lerp(AV.armL.rotation.x, -.75, k); AV.armR.rotation.x = lerp(AV.armR.rotation.x, -.75, k);
+  AV.body.position.y = lerp(AV.body.position.y, seatY - .42, k);
+  if (AV.hem) { AV.hem.scale.y = lerp(1, .34, k); AV.hem.position.y = lerp(.36, .5, k); }   // 坐下來下襬收起來，不要穿過椅面
+}
 function updateAvatar(dt) {
   if (ride.phase) return;   // 騎巨獸（飛過去、騎著、飛回來）：位置和姿勢在 updateRide 裡擺
+  AV.halo.visible = !sit.phase && !state.photo;
+  if (sit.phase) {   // 坐在長椅上：位置在 updateSit 裡擺
+    poseSeated(smooth(sit.k), .5);
+    AV.head.rotation.y = lerp(AV.head.rotation.y, clamp(-sit.wy * .8, -.7, .7), Math.min(1, dt * 3));
+    return;
+  }
   if (flight.phase) {   // 飛行中：分身在船上，只有走坡道時擺腿
     const sw = flight.walking ? Math.sin(walk.phase += dt * 9) * .65 : 0;
     AV.legL.rotation.x = sw; AV.legR.rotation.x = -sw; AV.armL.rotation.x = -sw * .8;
@@ -1585,6 +1856,10 @@ function updateAvatar(dt) {
   AV.body.position.y = moving ? Math.abs(Math.sin(walk.phase)) * .05 : Math.sin(performance.now() / 600) * .012;
   if (AV.crouchT > 0) { AV.crouchT -= dt; AV.body.position.y -= Math.sin(Math.max(0, AV.crouchT) / .7 * Math.PI) * .22; }   // 蹲下放魚
   if (rod.visible && AV.throwT <= 0) AV.armL.rotation.x = -.55;   // 拿著釣竿
+  if (WX.leafK > .02 && AV.throwT <= 0) AV.armL.rotation.x = lerp(AV.armL.rotation.x, -2.75, WX.leafK);   // 撐葉子：左手舉高
+  if (photo.count > 0 && photo.calling) AV.armR.rotation.x = -2.4 + Math.sin(performance.now() / 130) * .25;   // 倒數：舉手揮一揮
+  if (idle.k > .01) poseSeated(smooth(idle.k), .13);   // 發呆太久：坐在地上
+  if (sit.k > .01) poseSeated(smooth(sit.k), .5);      // 站起來的那一下
   AV.halo.rotation.z += dt * 1.6;
   if (marker.material.opacity > 0) { marker.material.opacity = Math.max(0, marker.material.opacity - dt * .9); marker.scale.multiplyScalar(1 + dt * .4); }
   walk.moving = moving;
@@ -1613,14 +1888,15 @@ function petHit(group, id, [x, y, z], [w, hh, d]) {
   group.add(hb);
   pickables.push(hb);
 }
-function bubble(group, text, y) {
+function bubble(group, text, y, ms = 1700) {
   const wrap = document.createElement('div'), span = document.createElement('span');
   span.className = 'bubble'; span.textContent = text;
+  if (ms !== 1700) { span.style.animationDuration = `${ms}ms`; wrap.className = 'say'; }   // 長一點的話：留久一點，蓋在名牌上面
   wrap.appendChild(span);
   const o = new CSS2DObject(wrap);
   o.center.set(.5, 1); o.position.set(0, y, 0);
   group.add(o);
-  setTimeout(() => group.remove(o), 1700);
+  setTimeout(() => group.remove(o), ms);
   voice(group, text);   // 叫聲跟著對話泡泡出來
 }
 function turnTo(g, dx, dz, dt) {
@@ -1689,7 +1965,7 @@ const dog = { path: null, i: 0, state: 'idle', t: 2, phase: 0, wag: 0, petT: 0, 
   pin.obj.position.set(0, 1.45, 0);
 }
 function updateDog(dt, t) {
-  const D = dog, p = D.g.position, av = avatar.position, dAv = Math.hypot(av.x - p.x, av.z - p.z), sleepy = night > .85;
+  const D = dog, p = D.g.position, av = avatar.position, dAv = Math.hypot(av.x - p.x, av.z - p.z), sleepy = night > .85 && !sit.phase;   // 陪你看海時不去睡
   if (sleepy && D.state !== 'bed' && D.state !== 'sleep') { if (fetchS.phase === 'carried') dropBall(p.x, p.z); D.state = 'bed'; goTo(D, DOG_BED[0], DOG_BED[1]); }
   if (!sleepy && D.state === 'sleep') { D.state = 'idle'; D.t = 1; }
   if (!sleepy && walk.moving && dAv < 6 && (D.state === 'idle' || D.state === 'walk')) D.state = 'follow';
@@ -1707,6 +1983,7 @@ function updateDog(dt, t) {
   } else if (D.state === 'idle') {
     if ((D.t -= dt) <= 0) {
       if (!keyState.crystal && elapsed > D.hintAt && goTo(D, GROTTO_MOUTH[0], GROTTO_MOUTH[1])) { D.state = 'toSniff'; D.hintAt = elapsed + 150 + rnd() * 90; }
+      else if (rnd() < .2 && digSpot(D)) D.state = 'toDig';
       else { const sp = randomSpot(...(rnd() < .5 ? PLAZA : [p.x, p.z]), 9); if (sp && goTo(D, sp[0], sp[1])) D.state = 'walk'; else D.t = 2; }
     }
   } else if (D.state === 'walk' || D.state === 'toSniff' || D.state === 'bed') {
@@ -1738,20 +2015,37 @@ function updateDog(dt, t) {
       if (fetchN === 1 || fetchN === 10 || fetchN % 50 === 0) addLog('pet', `阿滿撿回第 ${fetchN} 次球`);
     } else if (D.repath <= 0) { goTo(D, av.x + Math.sin(avatar.rotation.y) * 1.1, av.z + Math.cos(avatar.rotation.y) * 1.1); D.repath = .6; }
   }
-  const moving = stepAlong(D, speed, dt);
+  else if (D.state === 'pose') speed = 6.4;   // 倒數拍照：衝過來站好
+  else if (D.state === 'greet') {   // 你回來了：繞著你跑
+    D.petT = 1; D.t -= dt; D.orbit = (D.orbit ?? Math.atan2(p.x - av.x, p.z - av.z)) + dt * 2.8;
+    const tx = av.x + Math.sin(D.orbit) * 1.25, tz = av.z + Math.cos(D.orbit) * 1.25, dx = tx - p.x, dz = tz - p.z, d = Math.hypot(dx, dz);
+    if (d > .03 && walkableAt(tx, tz)) { const st = Math.min(d, 5 * dt); p.x += dx / d * st; p.z += dz / d * st; turnTo(D.g, dx, dz, dt); D.run = true; }
+    if (D.t <= 0) { D.state = 'follow'; D.t = 0; D.orbit = null; }
+  } else if (D.state === 'toBench') {   // 陪你看海：走到長椅左邊趴下
+    speed = 3.4;
+    if (!D.path) { D.state = 'rest'; }
+  } else if (D.state === 'rest') turnTo(D.g, OUT[0], OUT[1], dt);
+  else if (D.state === 'toDig') { speed = 3.2; if (!D.path) { D.state = 'dig'; D.t = 3.2; D.digN = 0; } }
+  else if (D.state === 'dig') {   // 挖沙：前腳一直扒，沙飛起來
+    D.t -= dt;
+    if ((D.digN = (D.digN || 0) + dt) > .22) { D.digN = 0; sandStamp(p.x + Math.sin(D.g.rotation.y) * .32, p.z + Math.cos(D.g.rotation.y) * .32, 1, 0, .24, .24, .5); sandFling(p, D.g.rotation.y); }
+    if (D.t <= 0) { D.state = 'idle'; D.t = 2.5; digFound(p); }
+  }
+  const moving = stepAlong(D, speed, dt) || D.run;
+  D.run = false;
   p.y = groundY(p.x, p.z);
   D.phase += dt * (moving ? speed * 3.4 : 0);
-  const sw = moving ? Math.sin(D.phase) * .6 : 0, lie = D.state === 'sleep', sit = !moving && !lie && D.state !== 'sniff';
-  D.legs.forEach((l, i) => { l.rotation.x = lie ? (i < 2 ? -1.35 : 1.35) : (i === 0 || i === 3 ? sw : -sw); });
+  const sw = moving ? Math.sin(D.phase) * .6 : 0, lie = D.state === 'sleep' || D.state === 'rest', sat = !moving && !lie && D.state !== 'sniff' && D.state !== 'dig';
+  D.legs.forEach((l, i) => { l.rotation.x = lie ? (i < 2 ? -1.35 : 1.35) : D.state === 'dig' ? (i < 2 ? Math.sin(t * 22 + i * 3) * .9 - .4 : 0) : (i === 0 || i === 3 ? sw : -sw); });
   const k = Math.min(1, dt * 6);
-  D.body.rotation.x = lerp(D.body.rotation.x, sit ? -.3 : 0, k);
-  D.body.position.y = lerp(D.body.position.y, lie ? -.24 : sit ? -.05 : Math.abs(Math.sin(D.phase)) * .04, k);
-  D.head.rotation.x = lerp(D.head.rotation.x, D.state === 'sniff' ? .55 + Math.sin(t * 10) * .12 : lie ? .4 : sit ? .25 : 0, k);
+  D.body.rotation.x = lerp(D.body.rotation.x, sat ? -.3 : D.state === 'dig' ? .28 : 0, k);
+  D.body.position.y = lerp(D.body.position.y, lie ? -.24 : sat ? -.05 : Math.abs(Math.sin(D.phase)) * .04, k);
+  D.head.rotation.x = lerp(D.head.rotation.x, D.state === 'sniff' ? .55 + Math.sin(t * 10) * .12 : D.state === 'dig' ? .5 : lie ? .4 : sat ? .25 : 0, k);
   D.petT -= dt;
   D.wag += dt * (D.petT > 0 ? 24 : lie ? 1 : moving || D.state === 'follow' ? 12 : 5);
   D.tail.rotation.z = Math.sin(D.wag) * (D.petT > 0 ? .7 : lie ? .05 : .3);
   if (D.petT > 1.6) D.body.position.y += Math.sin((2 - D.petT) * Math.PI / .4) * .12;
-  if (lie && (D.zzz -= dt) <= 0) { D.zzz = 4; bubble(D.g, 'Zzz', 1.1); }
+  if (D.state === 'sleep' && (D.zzz -= dt) <= 0) { D.zzz = 4; bubble(D.g, 'Zzz', 1.1); }
 }
 
 /* 阿滿撿球：點阿滿，分身往面對的方向丟球，阿滿衝去撿、叼回你腳邊 */
@@ -1858,9 +2152,9 @@ const CAT_NAPS = [[PLAZA[0] + Math.cos(.55) * 3.2, PLAZA[1] + Math.sin(.55) * 3.
   pin.obj.position.set(0, .8, 0);
 }
 const catNapLen = () => night > .6 ? 6 + rnd() * 6 : 22 + rnd() * 20;
-function catJump(up, next) {   // 跳上／跳下小蜜蜂機台
+function catJump(up, next, to = null) {   // 跳上／跳下小蜜蜂機台（to：跳到別的地方，例如長椅）
   const c = cat;
-  c.jump = { from: c.g.position.clone(), to: up ? CAT_PERCH.clone() : new THREE.Vector3(CAT_FOOT[0], groundY(CAT_FOOT[0], CAT_FOOT[1]), CAT_FOOT[1]), t: 0, up, next };
+  c.jump = { from: c.g.position.clone(), to: to || (up ? CAT_PERCH.clone() : new THREE.Vector3(CAT_FOOT[0], groundY(CAT_FOOT[0], CAT_FOOT[1]), CAT_FOOT[1])), t: 0, up, next, custom: !!to };
   c.path = null;
   turnTo(c.g, c.jump.to.x - c.jump.from.x, c.jump.to.z - c.jump.from.z, 1);
 }
@@ -1918,7 +2212,8 @@ function updateCat(dt, t) {
     p.y += Math.sin(Math.PI * J.t) * 1.1;
     if (J.t >= 1) {
       c.jump = null; c.perch = J.up; c.state = J.next; c.t = J.next === 'nap' ? catNapLen() : 1.5; c.repath = 0;
-      if (J.up) c.g.rotation.y = .6 + cabFrame(GAME.bee).ry;
+      if (J.up && !J.custom) c.g.rotation.y = .6 + cabFrame(GAME.bee).ry;
+      if (J.custom && J.up) c.g.rotation.y = Math.atan2(OUT[0], OUT[1]);
     }
     return catPose(dt, t, 'jump');
   }
@@ -1929,7 +2224,10 @@ function updateCat(dt, t) {
     c.state = 'seek'; c.repath = 0; c.path = null;
   }
   let speed = 1.5, slide = false;
-  if (c.state === 'nap') {
+  if (c.state === 'pose') speed = 5;   // 倒數拍照
+  if (c.state === 'benchSit') { c.awakeT = 1; }   // 坐在長椅上陪你看海（站起來時跳下來）
+  else if (c.state === 'toBench') { speed = 2.6; if (!c.path) { catJump(true, 'benchSit', catSeat()); return catPose(dt, t, 'jump'); } }
+  else if (c.state === 'nap') {
     if ((c.t -= dt) <= 0) { if (c.perch) catJump(false, 'idle'); else { c.state = 'idle'; c.t = 2; } }
   } else if (c.state === 'idle') {
     if ((c.t -= dt) <= 0) {
@@ -1987,42 +2285,68 @@ function updateCat(dt, t) {
   const moving = stepAlong(c, speed, dt) || slide;
   if (!c.perch) p.y = groundY(p.x, p.z);
   catPose(dt, t, moving ? 'walk' : c.state === 'nap' ? 'nap' : c.state === 'eat' ? 'eat' : 'sit');
+  if (c.state === 'benchSit') { c.head.rotation.y = Math.sin(t * .3) * .3; }
 }
 
 /* 寄居蟹：沿著沙灘橫著走，有人靠近就縮進殼裡 */
 const crabs = [];
-for (const [a0, shell] of [[.95, 0xf0d9c0], [2.25, 0xe9b5a8], [-.45, 0xa9d3d0]]) {
-  const g = new THREE.Group(), legsG = new THREE.Group(), R = 0xe0663f;
-  vox(g, BASE.cone6, shell, [0, .2, -.04], [.32, .34, .32], [-.4, 0, 0]);
-  vox(g, BASE.cone6, new THREE.Color(shell).offsetHSL(0, 0, .06).getHex(), [0, .37, -.13], [.17, .2, .17], [-.7, 0, 0]);
+const SHELL_NAME = { sand: '沙色海螺', rose: '粉紅海螺', mint: '青色海螺', gold: '金色海螺', violet: '紫色海螺', cap: '瓶蓋', block: '一顆方塊' };
+const SHELL_COL = { sand: 0xf0d9c0, rose: 0xe9b5a8, mint: 0xa9d3d0, gold: 0xe8c15a, violet: 0xb9a0dc };
+function makeShell(kind) {
+  const g = new THREE.Group();
+  g.userData.kind = kind;
+  if (kind === 'cap') {   // 瓶蓋：寄居蟹真的會住
+    vox(g, new THREE.CylinderGeometry(.2, .23, .14, 14), 0xc8352b, [0, .2, -.03], [1, 1, 1], [-.28, 0, 0]);
+    vox(g, new THREE.CylinderGeometry(.14, .14, .01, 14), 0xf4efe2, [0, .275, -.05], [1, 1, 1], [-.28, 0, 0]);
+  } else if (kind === 'block') {   // 方塊山上掉下來的一顆
+    vox(g, RB, 0x3cc4ee, [0, .22, -.04], [.33, .33, .33], [-.2, .3, 0]);
+    vox(g, BASE.box, 0x8fe4fa, [0, .39, -.05], [.14, .015, .14], [-.2, .3, 0]);
+  } else {
+    const c = SHELL_COL[kind] ?? SHELL_COL.sand;
+    vox(g, BASE.cone6, c, [0, .2, -.04], [.32, .34, .32], [-.4, 0, 0]);
+    vox(g, BASE.cone6, new THREE.Color(c).offsetHSL(0, 0, .06).getHex(), [0, .37, -.13], [.17, .2, .17], [-.7, 0, 0]);
+  }
+  return g;
+}
+const crabSaved = ls.json('sanasai_crabshells', null);
+for (const [i, [a0, kind, size]] of [[2.28, 'sand', .72], [2.62, 'rose', .86], [2.98, 'mint', 1.02]].entries()) {
+  const g = new THREE.Group(), legsG = new THREE.Group(), R = 0xe0663f, myKind = (Array.isArray(crabSaved) && crabSaved[i]) || kind, sh = makeShell(myKind);
+  g.add(sh);
   g.add(legsG);
+  const belly = vox(legsG, RB, 0xeeb09c, [0, .14, -.06], [.17, .15, .24], [-.3, 0, 0]);   // 出殼時才看得到的軟肚子
+  belly.visible = false;
   vox(legsG, RB, R, [0, .08, .12], [.2, .08, .1]);
   for (const sx of [-1, 1]) {
     vox(legsG, RB, R, [sx * .12, .1, .2], [.09, .07, .1]);
     vox(legsG, BASE.box, 0x2a2523, [sx * .04, .17, .15], [.02, .08, .02]);
     for (const lz of [-.04, .04, .12]) vox(legsG, BASE.box, R, [sx * .15, .04, lz], [.1, .03, .03], [0, 0, sx * .5]);
   }
-  g.scale.setScalar(.85);
+  g.scale.setScalar(size);
   scene.add(g);
-  const c = { g, legsG, a: a0, a0, dir: rnd() < .5 ? -1 : 1, hide: 0, t: 0 };
+  const c = { g, legsG, a: a0, a0, dir: rnd() < .5 ? -1 : 1, hide: 0, t: 0, size, sh, belly, kind: myKind, hopY: 0, joy: 0, qa: null };
   petHit(g, 'crab' + crabs.length, [0, .2, 0], [.6, .5, .6]);
   crabs.push(c);
 }
 function updateCrabs(dt, t) {
   const av = avatar.position;
   for (const c of crabs) {
-    const [x, z] = polar(c.a, .905), near = Math.hypot(av.x - x, av.z - z) < 2.2;
+    const [x, z] = polar(c.a, .905), near = Math.hypot(av.x - x, av.z - z) < 2.2 && !swap.on;
     if (near && c.hide <= 0) c.hide = 3;
     c.hide -= dt;
-    const hidden = c.hide > 0;
+    const hidden = c.hide > 0 && !swap.on;
     c.legsG.scale.setScalar(lerp(c.legsG.scale.x, hidden ? .01 : 1, Math.min(1, dt * 10)));
-    if (!hidden) {
+    if (swap.on && c.qa !== null && swap.phase === 'gather') {   // 趕去排隊：跑得比平常快很多
+      const da = c.qa - c.a;
+      c.a += clamp(da, -.34 * dt, .34 * dt);
+      c.legsG.position.y = Math.abs(Math.sin(t * 26)) * .03;
+    } else if (!hidden && !swap.on) {
       if ((c.t -= dt) <= 0) { c.t = 2 + rnd() * 4; if (rnd() < .4) c.dir *= -1; }
       if (Math.abs(c.a + c.dir * .02 - c.a0) > .35) c.dir *= -1;
       c.a += c.dir * dt * .022;
       c.legsG.position.y = Math.abs(Math.sin(t * 14)) * .015;
     }
-    c.g.position.set(x, groundY(x, z), z);
+    if (c.joy > 0) { c.joy -= dt; c.legsG.position.y = Math.abs(Math.sin(c.joy * 15)) * .09; }   // 換好殼：開心地抖一抖
+    c.g.position.set(x, groundY(x, z) + c.hopY, z);
     c.g.rotation.y = Math.atan2(x, z);   // 面向大海、橫著走
   }
 }
@@ -2048,7 +2372,9 @@ const blob = { path: null, i: 0, state: 'idle', t: 1, hop: 0 };
 }
 function updateBlob(dt, t) {
   const B = blob, p = B.g.position;
-  if (night > .85 && B.state !== 'pier' && B.state !== 'gaze') { B.state = 'pier'; goTo(B, 0, 22.2); }
+  if (sit.phase) { if (B.state !== 'toSea' && B.state !== 'sea') { const [x, z] = sitSpot(.75, 1.5); if (goTo(B, x, z)) B.state = 'toSea'; else B.state = 'sea'; } }   // 陪你看海
+  else if (B.state === 'toSea' || B.state === 'sea') { B.state = 'idle'; B.t = 1; }
+  if (!sit.phase && night > .85 && B.state !== 'pier' && B.state !== 'gaze' && B.state !== 'pose') { B.state = 'pier'; goTo(B, 0, 22.2); }
   if (night < .6 && (B.state === 'pier' || B.state === 'gaze')) { B.state = 'idle'; B.t = 1; }
   if (B.state === 'idle' && (B.t -= dt) <= 0) {
     const g = GAMES[(rnd() * GAMES.length) | 0], sp = rnd() < .45 ? [g.door[0] + (rnd() - .5) * .8, g.door[1] + (rnd() - .5) * .8] : randomSpot(...PLAZA, 7);
@@ -2060,7 +2386,9 @@ function updateBlob(dt, t) {
     if ((B.t -= dt) <= 0) { B.state = 'idle'; B.t = 1 + rnd() * 3; }
   } else if (B.state === 'pier' && !B.path) { B.state = 'gaze'; }
   if (B.state === 'gaze') turnTo(B.g, 0, 1, dt);
-  const moving = stepAlong(B, 1.9, dt);
+  if (B.state === 'toSea' && !B.path) B.state = 'sea';
+  if (B.state === 'sea') turnTo(B.g, OUT[0], OUT[1], dt);
+  const moving = stepAlong(B, B.state === 'pose' ? 5.6 : 1.9, dt);
   B.hop = moving ? B.hop + dt * 9 : B.hop;
   const jump = moving ? Math.abs(Math.sin(B.hop)) * .14 : B.state === 'tap' ? Math.abs(Math.sin(t * 8)) * .05 : 0;
   p.y = groundY(p.x, p.z);
@@ -2083,6 +2411,7 @@ function waterSplash(x, z, size = 1, quiet = false) {
   sp.size = size; sp.t = .9;
   sp.drops.forEach((d, i) => { d.position.set(x, .1, z); d.userData.v.set(Math.cos(i * 1.05) * .9, 2.2 + rnd(), Math.sin(i * 1.05) * .9).multiplyScalar(size); d.visible = true; });
   if (!quiet) sfx('splash', _ssp.set(x, .1, z), size);
+  if (night > .65 && size > .3) blueTear(x, z, false);   // 夜裡水花帶一點藍光
 }
 function updateSplashes(dt) {
   for (const sp of splashes) {
@@ -2146,7 +2475,30 @@ scene.add(groundFish, hookFish);
 
 /* 碼頭盡頭釣魚：站到釣魚點點提示列（或按 Enter）拋竿；浮標往下沉、頭上跳出「！」時，點畫面、提示列或按空白鍵就釣到 */
 const FISH_SPOT = [-.55, 22.35], BOB_AT = new THREE.Vector3(-3.6, .06, 24.3);
-const FISH_KINDS = [['橘色', 0xf08a3c], ['銀色', 0xc9d6df], ['黃色', 0xf2c14e]];
+/* 魚種：什麼時候上鉤跟島上的時段、天氣、真實月相有關；w＝現在釣到的機率權重 */
+const isDusk = () => (curMin > 330 && curMin < 480) || (curMin > 1020 && curMin < 1170), isDayT = () => night < .35, isNightT = () => night > .6;
+const FISH = [
+  { id: 'tilapia', name: '吳郭魚', c: 0x8a9a88, lo: 14, hi: 34, w: () => 4 },
+  { id: 'milk', name: '虱目魚', c: 0xc9d6df, lo: 20, hi: 48, w: () => isDayT() ? 4 : 1 },
+  { id: 'porgy', name: '黑鯛', c: 0x4c5560, lo: 18, hi: 44, w: () => 3 },
+  { id: 'clown', name: '小丑魚', c: 0xf08a3c, lo: 6, hi: 12, w: () => isDayT() ? 2.4 : .3, tip: '白天' },
+  { id: 'grouper', name: '石斑', c: 0xb0724a, lo: 25, hi: 80, w: () => 1.2 },
+  { id: 'puffer', name: '河豚', c: 0xe8d48a, lo: 10, hi: 26, w: () => .8 },
+  { id: 'flying', name: '飛魚', c: 0x6aa8e0, lo: 20, hi: 36, w: () => isDusk() ? 3.2 : .1, tip: '清晨和黃昏' },
+  { id: 'mahi', name: '鬼頭刀', c: 0x56c08a, lo: 40, hi: 110, w: () => isDayT() ? 1 : .1, tip: '白天' },
+  { id: 'hairtail', name: '白帶魚', c: 0xe8eef5, lo: 50, hi: 130, w: () => isNightT() ? 3 : .05, tip: '夜裡' },
+  { id: 'eel', name: '鰻魚', c: 0x5a5a3a, lo: 30, hi: 90, w: () => isNightT() || WX.k > .3 ? 2 : .05, tip: '夜裡或下雨' },
+  { id: 'lantern', name: '燈籠魚', c: 0x46e0ff, lo: 5, hi: 14, w: () => isNightT() && TODAY_LIT < .3 ? .9 : 0, rare: true, tip: '沒有月亮的夜裡' },
+  { id: 'sunfish', name: '翻車魚', c: 0xa8b8c8, lo: 120, hi: 260, w: () => TODAY_LIT > .85 ? .5 : .03, rare: true, tip: '接近滿月的時候' },
+  { id: 'marlin', name: '旗魚', c: 0x3a6ab0, lo: 150, hi: 320, w: () => isDayT() ? .09 : 0, rare: true, tip: '白天，運氣要很好' },
+];
+function fishPick() {
+  const ws = FISH.map(f => f.w());
+  let k = rnd() * ws.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < FISH.length; i++) if ((k -= ws[i]) <= 0) return i;
+  return 0;
+}
+const fishDex = ls.json('sanasai_fishdex', {}) || {};
 const fishing = { phase: null, t: 0, wait: 0, kind: 0, cm: 0 };
 const rod = new THREE.Group(), rodTip = new THREE.Object3D();
 {
@@ -2197,9 +2549,10 @@ function endFishing() {
 function reel() {   // 拉竿
   const F = fishing;
   if (F.phase === 'bite') {
-    Object.assign(F, { phase: 'catch', t: 0, kind: (rnd() * 3) | 0, cm: Math.round(12 + rnd() * rnd() * 30) });   // 小魚多、大魚少
-    hookFish.userData.mat.color.setHex(FISH_KINDS[F.kind][1]);
-    hookFish.scale.setScalar(.7 + F.cm / 40);
+    const fi = fishPick(), fk = FISH[fi];
+    Object.assign(F, { phase: 'catch', t: 0, kind: fi, cm: Math.round(fk.lo + (fk.hi - fk.lo) * rnd() * rnd()) });   // 小魚多、大魚少
+    hookFish.userData.mat.color.setHex(fk.c);
+    hookFish.scale.setScalar(.7 + Math.min(F.cm, 160) / 70);
     hookFish.visible = true;
     bobber.visible = fishLine.visible = false;
     waterSplash(BOB_AT.x, BOB_AT.z, .8);
@@ -2215,8 +2568,14 @@ function showCatch(kind, cm) {
   ls.set('sanasai_fish_n', String(n));
   if (rec) ls.set('sanasai_fish_best', String(cm));
   const el = $('#catch-card');
-  el.style.setProperty('--c', '#' + FISH_KINDS[kind][1].toString(16).padStart(6, '0'));
-  $('#catch-text').textContent = `一條${FISH_KINDS[kind][0]}的魚，${cm} 公分${rec && n > 1 ? '（最大紀錄）' : ''}`;
+  const fk = FISH[kind], isNew = !fishDex[fk.id];
+  fishDex[fk.id] = Math.max(fishDex[fk.id] || 0, cm);
+  ls.set('sanasai_fishdex', JSON.stringify(fishDex));
+  el.style.setProperty('--c', '#' + fk.c.toString(16).padStart(6, '0'));
+  $('#catch-title').textContent = isNew ? `新魚種！（${Object.keys(fishDex).length}/${FISH.length}）` : '釣到了！';
+  $('#catch-text').textContent = `一條${fk.name}，${cm} 公分${rec && n > 1 ? '（最大紀錄）' : ''}`;
+  if (Object.keys(fishDex).length >= 5) discover('fish5');
+  if (fk.rare) discover('fishrare');
   el.hidden = false;
   sfx('jingle', null, rec && n > 1);
   clearTimeout(showCatch.timer);
@@ -2260,7 +2619,7 @@ function updateFishing(dt, t) {
     if (k >= 1) {
       hookFish.visible = false;
       rod.visible = false;
-      carry.color = FISH_KINDS[F.kind][1];
+      carry.color = FISH[F.kind].c;
       heldFish.userData.mat.color.setHex(carry.color);
       heldFish.visible = true;
       showCatch(F.kind, F.cm);
@@ -2323,8 +2682,8 @@ function swing() {
   if (best) avatar.rotation.y = Math.atan2(best.g.position.x - avatar.position.x, best.g.position.z - avatar.position.z);
 }
 const BIT_GEO = new THREE.BoxGeometry(.11, .11, .11), BIT_MATS = [0xf5c518, 0x2a2a35, 0xe63946, 0xffffff].map(c => new THREE.MeshBasicMaterial({ color: c }));
-function pixelBurst(pos, mats = BIT_MATS) {
-  for (let i = 0; i < 16; i++) {
+function pixelBurst(pos, mats = BIT_MATS, count = 16) {
+  for (let i = 0; i < count; i++) {
     let b = bits.find(q => q.t <= 0);
     if (!b) { b = { m: new THREE.Mesh(BIT_GEO, BIT_MATS[0]), v: new THREE.Vector3(), t: 0 }; scene.add(b.m); bits.push(b); }
     b.m.material = mats[i % mats.length];
@@ -3496,8 +3855,10 @@ const DAY = [
   [1230, 0x142146, 0x33447a, 0xb0c0ff, .8, 0x7a8ac6, 0x3c3652, 1.0, 1, 0x234670],
   [1440, 0x0e1a3a, 0x24345e, 0xa9bcff, .8, 0x7487c4, 0x3a3450, .95, 1, 0x1f3f66],
 ];
-const _c1 = new THREE.Color(), _c2 = new THREE.Color();
+const _c1 = new THREE.Color(), _c2 = new THREE.Color(), _sd = new THREE.Vector3(), _md = new THREE.Vector3();
 let night = 0;
+const TODAY_LIT = moonLit();
+const skyPath = (out, p, peak) => { const th = lerp(.64, Math.PI - .64, p); return out.set(Math.cos(th), Math.sin(clamp(p, 0, 1) * Math.PI) * peak, Math.sin(th)).normalize(); };
 function lerpHex(target, a, b, t) { target.copy(_c1.setHex(a)).lerp(_c2.setHex(b), t); }
 function applyDay(min) {
   let i = 0;
@@ -3518,32 +3879,51 @@ function applyDay(min) {
   const elev = Math.max(.3, Math.sin(clamp(ang, .05, Math.PI - .05)) * (day ? 1 : .8));
   const dir = _p.set(Math.cos(ang) * .9, elev, .45 + .2 * Math.sin(ang)).normalize();
   sun.position.copy(dir).multiplyScalar(70);
-  sunDisc.position.copy(dir).multiplyScalar(380); sunDisc.visible = day;
-  moonDisc.position.copy(dir).multiplyScalar(380); moonDisc.visible = !day;
+  // 天上的太陽和月亮走自己的路：東南升起、經過南方、往西南落進海裡（海面的光路跟著走）。日光的方向照舊，影子才不會拉到天邊
+  const sp = (min - 345) / 780, mp = ((min - 1110 + 1440) % 1440) / 690;
+  skyPath(_sd, sp, .82); skyPath(_md, mp, .9);
+  sunDisc.position.copy(_sd).multiplyScalar(380); sunDisc.visible = sp > -.03 && sp < 1.05;
+  moonDisc.position.copy(_md).multiplyScalar(380); moonDisc.visible = mp < 1;
+  const low = 1 - smooth(_sd.y / .34);
+  sunDisc.material.color.setRGB(1, lerp(1, .6, low), lerp(1, .36, low));
+  sunDisc.scale.setScalar(lerp(58, 104, low));
+  const lit = TODAY_LIT, sw = clamp((_sd.y + .02) / .05, 0, 1) * (sp > -.03 && sp < 1.05 ? 1 : 0), mw = mp < 1 ? clamp((_md.y + .02) / .08, 0, 1) * (.3 + .7 * lit) : 0;
+  SEA_U.uLight.value.copy(sw > .01 ? _sd : _md);
+  SEA_U.uLightCol.value.setRGB(1, lerp(.97, .62, low), lerp(.9, .38, low)).multiplyScalar(sw * 1.05);
+  if (sw <= .01) SEA_U.uLightCol.value.setRGB(.72, .8, 1).multiplyScalar(mw * .95);
+  SEA_U.uSpark.value = lerp(1, .35, night);
+  SEA_U.uDesat.value = night * .42;
+  SHORE_U.uBio.value = smooth((night - .6) / .35) * (.42 + .58 * (1 - lit));   // 藍眼淚：夜裡浪花會發藍光，月亮越暗越亮（照真實的月相）
   const g = lerp(.9, 2.1, night);
   MAT.glow.color.setScalar(g);
   for (const m of glowMats) m.color.copy(m.userData.base).multiplyScalar(g);
   if (neonMat) neonMat.color.setScalar(lerp(.95, 2.0, night));
   stars.material.opacity = Math.pow(night, 1.4);
   for (const m of marqueeMats) m.color.setScalar(lerp(.95, 1.7, night));
-  if (mazeArea) mazeArea.flies.material.opacity = night * .9;
   KJ_HALO.opacity = smooth((night - .3) / .5) * .75;
   renderer.toneMappingExposure = lerp(1.0, .95, night);
+  applyWeather();
 }
 const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60; };
 let timeMode = 'auto', curMin = nowMin();
+const future = { min: 0, hold: 0, back: 0 };   // 跳光速回來：島上的時間先停在抵達的時刻，過一陣子才慢慢回到現在
 const TIME_LABEL = { auto: '自動', 390: '清晨', 720: '白天', 1070: '黃昏', 1290: '夜晚' };
 function setTime(mode) {
   timeMode = mode;
+  future.hold = future.back = 0;
   $$('[data-time]').forEach(b => b.classList.toggle('active', b.dataset.time === String(mode)));
   $('#btn-time-label').textContent = TIME_LABEL[mode];
 }
 function updateTime(dt) {
-  const target = showNight ? 1165 : timeMode === 'auto' ? nowMin() : +timeMode;   // 放煙火：天色很快暗成藍調的夜（不到阿滿去睡覺那麼暗）
+  if (sit.phase === 'sit' || sit.phase === 'down') { curMin = (curMin + dt * sitRate()) % 1440; applyDay(curMin); return; }   // 坐著看海：時間過得比較快
+  if (flight.phase === 'hyper') return;   // 跳光速：天色由飛船那邊快轉
+  if (!flight.phase && future.hold > 0 && (future.hold -= dt) <= 0) future.back = 26;
+  future.back = Math.max(0, future.back - dt);
+  const target = showNight ? 1165 : future.hold > 0 ? future.min : timeMode === 'auto' ? nowMin() : +timeMode;   // 放煙火：天色很快暗成藍調的夜（不到阿滿去睡覺那麼暗）
   let d = target - curMin;
   if (d > 720) d -= 1440;
   if (d < -720) d += 1440;
-  curMin = (curMin + (Math.abs(d) < .05 ? d : d * Math.min(1, dt * (showNight ? 1.3 : fw.show || ride.phase ? .7 : 2.4))) + 1440) % 1440;   // 煙火秀：天色很快暗下來，放完慢慢亮回去
+  curMin = (curMin + (Math.abs(d) < .05 ? d : d * Math.min(1, dt * (showNight ? 1.3 : fw.show || ride.phase ? .7 : future.back > 0 ? .16 : 2.4))) + 1440) % 1440;   // 煙火秀：天色很快暗下來，放完慢慢亮回去
   applyDay(curMin);
 }
 
@@ -3617,14 +3997,14 @@ function updateCamera(dt) {
     controls.target.add(want);
     camera.position.add(want);
   }
-  if ((!flight.phase || ['board', 'touch', 'off'].includes(flight.phase)) && !ride.phase) controls.update();   // 騎巨獸也是：鏡頭由跟著你的彈簧鏡頭接手   // 飛行中由飛船鏡頭接手：旋轉控制會限制仰角和距離，看不到往上衝的船和太空裡的島
+  if ((!flight.phase || ['board', 'touch', 'off'].includes(flight.phase)) && !ride.phase && !sit.phase) controls.update();   // 騎巨獸也是：鏡頭由跟著你的彈簧鏡頭接手   // 飛行中由飛船鏡頭接手：旋轉控制會限制仰角和距離，看不到往上衝的船和太空裡的島
 }
 
 /* ---------- 介面狀態 ---------- */
 const ui = { side: !isMobile(), sidePref: true, card: false, log: false, tab: 'places', logTab: 'log', full: false };
 const state = { selected: null, nearGame: null, names: true, freeze: reduced, bird: false, inGame: false, inEnding: false, intro: false, flying: false };
 let landed = false;
-const uiLock = () => state.inGame || state.inEnding || state.flying;
+const uiLock = () => state.inGame || state.inEnding || state.flying || state.sitting || state.photo;
 function syncLayout() {
   body.classList.toggle('side-closed', !ui.side);
   body.classList.toggle('card-open', ui.card);
@@ -3647,6 +4027,20 @@ function openLog(on = true) {
   if (on) { ui.side = false; if (isMobile()) closeCard(false); renderLog(); }
   else if (!isMobile()) ui.side = ui.sidePref;
   syncLayout();
+}
+let panelStash = null;
+function stashPanels() {   // 飛船放映：右邊的清單或日誌先收起來，畫面全給這一段（手機本來就收著）
+  if (isMobile() || panelStash) return;
+  panelStash = { side: ui.side, log: ui.log };
+  ui.side = ui.log = false;
+  syncLayout();
+}
+function restorePanels() {   // 放完照原樣回來；放映中自己按開過就照你的
+  const P = panelStash;
+  panelStash = null;
+  if (!P || isMobile() || ui.side || ui.log) return;
+  if (P.log) openLog(true);
+  else if (P.side) { ui.side = ui.sidePref; syncLayout(); }
 }
 function closeCard(sync = true) {
   ui.card = false; ui.full = false; state.selected = null;
@@ -3711,6 +4105,7 @@ function subline(id) {
   if (id === 'blocks') return r.blocks.marathon ? `MARATHON ${fmt(r.blocks.marathon)}` : r.blocks.sprint ? `SPRINT 40 ${fmtTime(r.blocks.sprint)}` : '還沒有紀錄';
   if (id === 'maze') return r.maze.cleared ? `通過 ${r.maze.cleared} 關・★ ${r.maze.stars}` : '還沒有紀錄';
   if (id === 'pier') return '老飛船・入口石碑';
+  if (id === 'beach') return '坐下來看海・打水漂・撿貝殼';
   if (id === 'gate') return '三鑰齊聚，門已開啟';
   return '';
 }
@@ -3721,7 +4116,7 @@ function renderSide() {
   $('#tab-places').setAttribute('aria-selected', String(ui.tab === 'places'));
   $('#tab-keys').setAttribute('aria-selected', String(ui.tab === 'keys'));
   if (ui.tab === 'places') {
-    const ids = [...GAMES.map(g => g.id), 'pier', ...(gate.visible ? ['gate'] : [])];
+    const ids = [...GAMES.map(g => g.id), 'pier', 'beach', ...(gate.visible ? ['gate'] : [])];
     el.innerHTML = ids.map(id => {
       const P = PLACE[id];
       return `<button class="idx${state.selected === id ? ' active' : ''}" data-place="${id}" style="--c:${P.color}"><span class="no">${P.no}</span><span><b>${esc(P.name)}</b><small>${esc(subline(id))}</small></span><span class="go">${svg('arrow')}</span></button>`;
@@ -3741,10 +4136,10 @@ function renderSide() {
   }
 }
 function renderDock() {
-  const ids = [...GAMES.map(g => g.id), 'pier', ...(gate.visible ? ['gate'] : [])];
+  const ids = [...GAMES.map(g => g.id), 'pier', 'beach', ...(gate.visible ? ['gate'] : [])];
   $('#dock').innerHTML = ids.map(id => {
     const P = PLACE[id], icon = ICON[id] ? id : 'play';
-    return `<button data-place="${id}" style="--c:${P.color};--cs:${tint(P.color)}"${state.selected === id ? ' class="active"' : ''}><i>${svg(icon)}</i><span>${esc(id === 'pier' ? '碼頭' : id === 'gate' ? '門' : P.name)}</span></button>`;
+    return `<button data-place="${id}" style="--c:${P.color};--cs:${tint(P.color)}"${state.selected === id ? ' class="active"' : ''}><i>${svg(icon)}</i><span>${esc(id === 'pier' ? '碼頭' : id === 'gate' ? '門' : id === 'beach' ? '看海' : P.name)}</span></button>`;
   }).join('');
 }
 function stat(label, value, cls = '') { return `<div class="stat ${cls}"><small>${label}</small><b>${value}</b></div>`; }
@@ -3791,6 +4186,11 @@ function renderCard() {
     h += `<div class="sec">入口石碑</div>` + (steleRead ? `<p class="quote" style="--c:#5c6570">霓虹照不到的暗處，沉著第三把鑰匙。</p>` : `<div class="empty">石碑上刻了字，走近才看得清楚。</div>`);
     if (keyState.coin) h += `<div class="sec">25¢ 復活幣</div><p class="lead" style="margin-top:0">穿過隱嶼之門的紀念，從此留在碼頭邊。</p>`;
     actions = `<button class="btn primary" data-act="fly">${svg('pier')}開飛船</button><button class="btn" data-act="fish">${svg('wave')}去釣魚</button><button class="btn" data-act="walk">${svg('walk')}走到石碑前</button>`;
+  } else if (id === 'beach') {
+    const sk = num('sanasai_skip_best'), bag = shellBag.length;
+    h += `<div class="sec">沙灘</div><div class="stats">${stat('打水漂最多', sk ? `${sk} 下` : '—', sk ? 'hero' : 'hero dim')}${stat('袋子裡的貝殼', `${bag} 個`)}${stat('看海', `${num('sanasai_sits')} 次`)}</div>`;
+    h += `<p class="note">貝殼放在寄居蟹旁邊，牠們會排隊換殼。走到水邊可以打水漂。</p>`;
+    actions = `<button class="btn primary" data-act="sit">${svg('beach')}坐下來看海</button><button class="btn" data-act="skip">${svg('wave')}打水漂</button>`;
   } else if (id === 'gate') {
     actions = `<button class="btn primary" data-act="gate">${svg('walk')}走進門裡</button>`;
   }
@@ -3822,14 +4222,24 @@ function renderLog() {
   $$('[data-logtab]').forEach(b => b.classList.toggle('active', b.dataset.logtab === ui.logTab));
   $('#log-overview').hidden = ui.logTab !== 'overview';
   $('#log-list').hidden = ui.logTab !== 'log';
-  if (ui.logTab === 'log') {
+  $('#log-extra').hidden = !['little', 'letters', 'album'].includes(ui.logTab);
+  if (ui.logTab === 'little') {
+    const n = Object.keys(little).length, fn = Object.keys(fishDex).length;
+    $('#log-extra').innerHTML = `<p class="lx-lead">島上發生過的小事。還沒看到的只有線索。<b>${n} / ${LITTLE.length}</b></p><ul class="lx-list">${[...LITTLE].sort((a, b) => (little[b[0]] ? 1 : 0) - (little[a[0]] ? 1 : 0)).map(([id, name, tip]) => little[id] ? `<li class="on"><i></i><span><b>${esc(name)}</b></span></li>` : `<li><i></i><span><b>？？？</b><small>${esc(tip)}</small></span></li>`).join('')}</ul>
+      <div class="sec">魚 ${fn} / ${FISH.length}</div><ul class="lx-fish">${FISH.map(f => fishDex[f.id] ? `<li style="--c:#${f.c.toString(16).padStart(6, '0')}"><i></i><b>${esc(f.name)}</b><small>${fishDex[f.id]} 公分</small></li>` : `<li class="off"><i></i><b>？？？</b><small>${esc(f.tip || '')}</small></li>`).join('')}</ul>`;
+  } else if (ui.logTab === 'letters') {
+    $('#log-extra').innerHTML = letters.length ? `<ul class="lx-letters">${letters.map((L, i) => `<li><button data-letter="${i}"><small>${esc(L.d.slice(5).replace('-', '/'))}・${esc(L.from)}</small><span>${esc(L.text.split('\n')[0])}</span></button></li>`).join('')}</ul>` : '<p class="lx-lead">每天都有一瓶信漂上岸。沙灘上看到了就走過去撿。</p>';
+  } else if (ui.logTab === 'album') {
+    const al = photoAlbum();
+    $('#log-extra').innerHTML = al.length ? `<ul class="lx-album">${al.map((a, i) => `<li><button data-photo="${i}"><img src="${a.src}" alt="${esc(a.line)}"></button></li>`).join('')}</ul><p class="lx-lead">相簿留最近 12 張。</p>` : '<p class="lx-lead">按右上角的相機拍照；倒數的話大家會跑過來站好。</p>';
+  } else if (ui.logTab === 'log') {
     $('#log-list').innerHTML = logItems.length ? logItems.map(e => {
       const d = new Date(e.t), [cls, label] = TAG[e.tag] || TAG.land;
       return `<li><span class="tag ${cls}">${label}</span><span><time>${d.getMonth() + 1}/${d.getDate()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}</time>${esc(e.text)}</span></li>`;
     }).join('') : '<li class="empty-row">還沒有紀錄。</li>';
-  } else {
+  } else if (ui.logTab === 'overview') {
     const r = records, plays = ls.json('sanasai_plays', {}) || {};
-    $('#log-overview').innerHTML = `<div class="ov-grid">${stat('登島', `${num('sanasai_visits')} 次`)}${stat('鑰匙', `${KEYS.filter(k => keyState[k.id]).length} / 3`)}${stat('25¢ 復活幣', keyState.coin ? '有' : '還沒')}${stat('迷宮章節', `${r.maze.chapters.filter(c => c.done).length} / 6`)}</div>
+    $('#log-overview').innerHTML = `<div class="ov-grid">${stat('登島', `${num('sanasai_visits')} 次・${num('sanasai_days')} 天`)}${stat('鑰匙', `${KEYS.filter(k => keyState[k.id]).length} / 3`)}${stat('25¢ 復活幣', keyState.coin ? '有' : '還沒')}${stat('迷宮章節', `${r.maze.chapters.filter(c => c.done).length} / 6`)}</div>
       <div class="sec">最佳紀錄</div>
       <div class="ov-line"><span>小蜜蜂</span><span>${r.bee.best ? fmt(r.bee.best) : '—'}</span></div>
       <div class="ov-line"><span>Blocks MARATHON</span><span>${r.blocks.marathon ? fmt(r.blocks.marathon) : '—'}</span></div>
@@ -3861,8 +4271,9 @@ function refresh() {
   applyRecords();
   checkKeys();
   renderAll();
+  return news;
 }
-function applyRecords() { applyOverflow(); }
+function applyRecords() { applyOverflow(); setFountainCoins(); }
 
 /* ---------- 鑰匙狀態機 ---------- */
 function checkKeys() {
@@ -3955,10 +4366,15 @@ function updateProximity() {
     else { const b = Math.floor(ride.t / 5) % 2; setHint('r:ride' + b, b ? (isTouch ? '搖桿走・按住「吼」蓄力' : '方向鍵走・按住空白鍵蓄力') : '點畫面噴火・拖曳轉鏡頭', 'prompt'); }   // 電腦：提示在按鈕列正上方，兩句短的輪流（其他快捷鍵寫在按鈕上；一開始先秀操作說明卡）
     return;
   }
+  if (sit.phase) { setHint('sit:' + sit.phase, '', 'prompt'); return; }
+  if (state.photo) return;
+  if (swap.on) { setHint('swap', '牠們在排隊，照大小一隻接一隻搬家…', 'lore'); return; }
+  if (skip.phase === 'aim') { setHint('skip:aim', isTouch ? '點畫面丟出去：指針越靠中間跳越多' : '按空白鍵或點畫面丟出去：指針越靠中間跳越多', 'prompt', throwStone); return; }
+  if (skip.phase) { setHint('skip:fly', '數數看跳了幾下…', 'lore'); return; }
   if (flight.phase) {
     const F = flight;
     if (F.phase === 'pilot') setHint(F.far ? 'far' : 'pilot', F.far ? '飛太遠了，自動轉回島' : isTouch ? '左下搖桿或拖曳畫面轉向・往上推升高・按「降落」回碼頭' : '方向鍵轉向・↑↓ 升降・空白鍵加速・Esc 降落', 'prompt');
-    else if (['climb', 'hyper', 'descent'].includes(F.phase)) setHint('f:space', isTouch ? '衝上太空再回來…（點這裡跳過）' : '衝上太空再回來…（Esc 跳過）', 'prompt', skipFlight);
+    else if (['climb', 'hyper', 'arrive'].includes(F.phase)) setHint('f:space', isTouch ? '衝上太空再回來…（點這裡跳過）' : '衝上太空再回來…（Esc 跳過）', 'prompt', skipFlight);
     else setHint(F.phase === 'board' || F.phase === 'lift' ? 'f:up' : 'f:down', F.phase === 'board' || F.phase === 'lift' ? '起飛中…' : '回碼頭中…', 'prompt');
     return;
   }
@@ -3990,6 +4406,10 @@ function updateProximity() {
   else if (nearStele) setHint('stele', '石碑：「霓虹照不到的暗處，沉著第三把鑰匙。」', 'lore');
   else if (!keyState.crystal && dc < 6.5) setHint('dark', dc < 3 ? '岩洞深處有什麼在發光……' : '這裡好暗……', 'lore');
   else if (gate.visible && !keyState.coin && dist(PLACE.gate.at[0], PLACE.gate.at[1]) < 5) setHint('gate', '隱嶼之門──走進去', 'prompt');
+  else if (bottle.on && dist(bottle.g.position.x, bottle.g.position.z) < 2) setHint('bottle', isTouch ? '點這裡打開瓶中信' : '按 Enter（或點這裡）打開瓶中信', 'prompt', openBottle);
+  else if (shellBag.length && nearCrab()) setHint('swap?', `點這裡放一個貝殼給寄居蟹（袋子裡 ${shellBag.length} 個）`, 'prompt', startSwap);
+  else if (dist(PLACE.beach.door[0], PLACE.beach.door[1]) < 1.5) setHint('sit', isTouch ? '點這裡坐下來看海' : '按 Enter（或點這裡）坐下來看海', 'prompt', startSit);
+  else if (atWater(ax, az)) setHint('skip?', isTouch ? '點這裡打水漂' : '按 Enter（或點這裡）打水漂', 'lore', startSkip);
   else if (carry.color !== null) setHint('carry', '手上有魚：花捲聞到了，正跑過來', 'lore');
   else if (onPier(ax, az)) setHint('pier', '碼頭盡頭可以釣魚（點這裡走過去）', 'lore', startFishing);   // 碼頭上先講釣魚，阿滿跟過來也不蓋掉
   else if (dogFree && fetchN < 3 && dist(D.g.position.x, D.g.position.z) < 3.2) setHint('dog', '點阿滿，丟球給牠撿', '', throwBall);
@@ -4025,7 +4445,8 @@ function closeGame() {
   sndIdle(false);
   const mins = Math.round((Date.now() - gameStart) / 60000);
   if (mins >= 1) addLog('play', `在《${GAME[gameId].name}》待了 ${mins} 分鐘`);
-  refresh();
+  if (mins >= 30) setTimeout(() => toast(`玩了 ${mins} 分鐘了，看一下遠方吧`), 3200);
+  if (refresh().some(n => n.tag === 'rec')) celebrate(gameId);
 }
 $('#btn-back').addEventListener('click', closeGame);
 
@@ -4035,6 +4456,7 @@ const INTRO = [
   ['分身會替你走過去', isTouch ? '點地面，分身就走到那裡；也可以用左下角的搖桿。單指拖曳轉視角，雙指縮放。' : '點地面，分身就走到那裡；方向鍵或 WASD 也能走。拖曳轉視角，滾輪縮放。'],
   ['島會記得你的紀錄', '成績越好，溢出來的越多：小蜜蜂分數越高，飛出機台的蜜蜂越多；Blocks 的方塊山跟著分數長高；迷宮球每通過一章，地上的迷宮就長大一圈。'],
   ['三把鑰匙', '銅鑰匙看小蜜蜂，玉鑰匙看 Blocks Pro，水晶鑰匙藏在島上的暗處。三把到齊，隱嶼之門就會出現。'],
+  ['不玩遊戲也可以', '沙灘上有一張長椅，坐下來時間會過得比較快。每天有一瓶信漂上岸；天氣和月亮跟真的一樣。島上的小事都記在日誌裡，看到了就會打勾。'],
 ];
 let introStep = 0;
 function showIntro(step = 0) {
@@ -4052,6 +4474,7 @@ function closeIntro() {
   state.intro = false;
   $('#intro').hidden = true;
   ls.set('sanasai_intro_v2', '1');
+  setTimeout(showGreet, 500);
 }
 $('#intro-next').addEventListener('click', () => introStep < INTRO.length - 1 ? showIntro(introStep + 1) : closeIntro());
 $('#intro-skip').addEventListener('click', closeIntro);
@@ -4059,7 +4482,7 @@ $('#intro-skip').addEventListener('click', closeIntro);
 /* ---------- 介面事件 ---------- */
 $('#btn-home').addEventListener('click', overview);
 $('#btn-index').addEventListener('click', () => openSide(!ui.side));
-$('#btn-help').addEventListener('click', () => showIntro(0));
+for (const id of ['#btn-help', '#btn-help2']) $(id).addEventListener('click', () => { if (isMobile()) openSide(false); showIntro(0); });
 $('#btn-time').addEventListener('click', () => {
   const order = ['auto', 390, 720, 1070, 1290], next = order[(order.findIndex(m => String(m) === String(timeMode)) + 1) % order.length];
   setTime(next);
@@ -4082,6 +4505,11 @@ $('#card-close').addEventListener('click', () => closeCard());
 $('#log-close').addEventListener('click', () => openLog(false));
 $('#log-handle').addEventListener('click', () => openLog(false));
 $$('[data-logtab]').forEach(b => b.addEventListener('click', () => { ui.logTab = b.dataset.logtab; renderLog(); }));
+$('#log-extra').addEventListener('click', e => {
+  const l = e.target.closest('[data-letter]'), ph = e.target.closest('[data-photo]');
+  if (l) showLetter(letters[+l.dataset.letter]);
+  if (ph) { photo.last = null; const a = photoAlbum()[+ph.dataset.photo]; if (a) showPolaroid(a.src, a.line); }
+});
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-place], [data-getkey], [data-act], [data-pet]');
   if (!el) return;
@@ -4093,6 +4521,8 @@ document.addEventListener('click', e => {
   if (act === 'play') enterGame(GAME[id]);
   if (act === 'fly') startFlight();
   if (act === 'fish') startFishing();
+  if (act === 'sit') { startSit(); if (isMobile()) closeCard(); }
+  if (act === 'skip') { startSkip(); if (isMobile()) closeCard(); }
   if (act === 'walk') { walkTo(STELE[0] + .6, STELE[1] + 1.4, { follow: true, mark: true }); if (isMobile()) closeCard(); }
   if (act === 'gate') { walkTo(PLACE.gate.at[0], PLACE.gate.at[1], { follow: true, mark: true }); if (isMobile()) closeCard(); }
 });
@@ -4121,12 +4551,19 @@ addEventListener('pointerup', e => {
   const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y), dtm = performance.now() - down.t;
   down = null;
   if (moved <= 8 && dtm <= 650 && e.target === renderer.domElement && (fishing.phase === 'wait' || fishing.phase === 'bite')) return reel();   // 釣魚時點畫面任何地方都是拉竿
+  if (moved <= 8 && dtm <= 650 && e.target === renderer.domElement && skip.phase === 'aim') return throwStone();   // 打水漂：點畫面丟出去
   if (moved > 8 || dtm > 650 || uiLock() || e.target !== renderer.domElement) return;
   ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
   ray.setFromCamera(ndc, camera);
   const hit = ray.intersectObjects(pickables, false)[0];
-  if (hit) return hit.object.userData.pet ? petTap(hit.object.userData.pet) : selectPlace(hit.object.userData.place);
+  if (hit) {
+    const u = hit.object.userData;
+    if (u.bottle) return openBottle();
+    if (u.gray) return tapGray();
+    return u.pet ? petTap(u.pet) : selectPlace(u.place);
+  }
   const g = ray.intersectObjects(groundPick, false)[0];
+  if (g && g.object === water && night > .6) return blueTear(g.point.x, g.point.z);   // 夜裡點海面：藍眼淚（不用走過去）
   if (g) walkTo(g.point.x, g.point.z, { follow: true, mark: true });
 });
 addEventListener('pointercancel', e => { dragging = false; down = null; if (rp.size) ridePointer('cancel', e); if (e.pointerId === steer.id) Object.assign(steer, { id: null, x: 0, y: 0 }); });
@@ -4135,6 +4572,11 @@ addEventListener('pointercancel', e => { dragging = false; down = null; if (rp.s
 addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (e.key === 'Escape') {
+    if (!$('#letter').hidden) { $('#letter-ok').click(); return; }
+    if (!$('#polaroid').hidden) { $('#pola-close').click(); return; }
+    if (state.photo) return exitPhoto();
+    if (skip.phase === 'aim') { skip.phase = null; $('#skip-meter').hidden = true; return; }
+    if (sit.phase) return endSit();
     if (ride.phase) rideExit();
     else if (flight.phase) skipFlight();
     else if (state.inGame) closeGame();
@@ -4144,6 +4586,12 @@ addEventListener('keydown', e => {
     else if (isMobile() && ui.side) openSide(false);
     return;
   }
+  if (sit.phase) {   // 看海：Esc、Enter、方向鍵都是站起來；空白鍵許願
+    if (['Escape', 'Enter', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) || ['w', 'a', 's', 'd'].includes(k)) { e.preventDefault(); endSit(); }
+    else if (e.code === 'Space') { e.preventDefault(); makeWish(); }
+    return;
+  }
+  if (state.photo) { if (e.code === 'Space') { e.preventDefault(); if (photo.count <= 0 && $('#polaroid').hidden) takePhoto(); } return; }
   if (flight.phase === 'pilot') {   // 開飛船：方向鍵／WASD 轉向升降、空白鍵加速
     if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) { keysDown[k] = true; e.preventDefault(); }
     return;
@@ -4164,6 +4612,9 @@ addEventListener('keydown', e => {
   }
   const onStage = document.activeElement === body || document.activeElement === renderer.domElement;
   if ((e.key === 'Enter' || e.code === 'Space') && onStage && (fishing.phase === 'wait' || fishing.phase === 'bite')) { e.preventDefault(); return reel(); }
+  if ((e.key === 'Enter' || e.code === 'Space') && onStage && skip.phase === 'aim') { e.preventDefault(); return throwStone(); }
+  if (e.key === 'Enter' && onStage && !$('#letter').hidden) return $('#letter-ok').click();
+  if (e.key === 'Enter' && onStage && ['bottle', 'sit', 'skip?', 'swap?'].includes(hintKey) && hintAction) { e.preventDefault(); return hintAction(); }
   if (e.key === 'Enter' && state.nearGame && onStage) enterGame(GAME[state.nearGame]);
   else if (e.key === 'Enter' && hintKey === 'board' && onStage) startFlight();
   else if (e.key === 'Enter' && hintKey === 'fishspot' && onStage) startFishing();
@@ -4207,12 +4658,18 @@ addEventListener('pageshow', e => { if (e.persisted) refresh(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden && !state.inGame) refresh(); });
 addEventListener('storage', e => { if (e.key && !e.key.startsWith('sanasai_')) refresh(); });
 
-/* ---------- 開飛船：走上坡道起飛後換你駕駛，穿過三台機台上空的光圈；三個都過就一鏡到底衝上太空、跳光速、降落回碼頭 ---------- */
-const flight = { phase: null, t: 0, walking: false, yaw: Math.PI, bank: 0, pitch: 0, speed: 0, boostBtn: false, far: false, clock: 0, sec: -1, done: false, jumped: false, from: new THREE.Vector3(), route: null, dur: 1, kl: 0 };
+/* ---------- 開飛船：走上坡道起飛後換你駕駛，穿過三台機台上空的光圈；三個都過就一鏡到底衝上太空、跳光速到幾個小時後、貼著海面飛回碼頭 ---------- */
+const flight = { phase: null, t: 0, walking: false, yaw: Math.PI, bank: 0, pitch: 0, speed: 0, boostBtn: false, far: false, clock: 0, sec: -1, done: false, fut: null, from: new THREE.Vector3(), route: null, dur: 1, kl: 0 };
 const steer = { id: null, x0: 0, y0: 0, x: 0, y: 0 };
 const V3 = a => new THREE.Vector3(...a);
-const FLY = { board: 1.4, lift: 2.2, climb: 7, hyper: 1.1, descent: 9, touch: 2.6, off: 1.3 };
-const DESCENT = new THREE.CatmullRomCurve3([[-34, 300, -240], [-20, 180, -150], [-9, 80, -68], [-3, 26, -20], [.5, 12, 2], [3.4, 6.5, 13], [4.1, 3, 17.2], [SHIP.x, SHIP.y, SHIP.z]].map(V3), false, 'centripetal');   // 跳光速回來：從北方高空一路俯衝、減速，直接停進碼頭
+const FLY = { board: 1.4, lift: 2.2, climb: 7, hyper: 2.8, arrive: 6, touch: 2.6, off: 1.3 };
+const futureOf = from => { const to = from >= 300 && from < 960 ? 1085 : 375; return { from, to, gap: (to - from + 1440) % 1440 }; };   // 光速去未來：白天走、黃昏回，黃昏以後走、清晨回（都是太陽剛好貼在海上的時候）；時間只往前
+const hoursZh = gap => { const h = Math.max(1, Math.round(gap / 60)); return h <= 10 ? '一兩三四五六七八九十'[h - 1] : `十${'一二三四五'[h - 11]}`; };
+const flyPath = pts => new THREE.CatmullRomCurve3(pts.map(V3), false, 'centripetal');
+const ARRIVE = {   // 跳出光速後的路：貼著海面朝太陽飛，經過島上空停進碼頭。黃昏的太陽在西南、清晨在東南，所以從東北或西北進來
+  dusk: flyPath([[156, 14, -154], [96, 14, -94], [46, 14, -44], [22, 14, -16], [10.5, 12, 3], [6.2, 8, 11.5], [4.8, 4, 16.6], [SHIP.x, SHIP.y, SHIP.z]]),
+  dawn: flyPath([[-120, 14, -175], [-76, 14, -116], [-36, 14, -58], [-12, 14, -22], [-.5, 12, 2], [3, 8, 11], [4.2, 4, 16.4], [SHIP.x, SHIP.y, SHIP.z]]),
+};
 const _fp = new THREE.Vector3(), _ft = new THREE.Vector3(), _cp = new THREE.Vector3(), _cl = new THREE.Vector3();
 const fmtSec = s => `${Math.floor(s / 60)}:${pad2(Math.floor(s % 60))}`;
 const rings = GAMES.map(g => {   // 三台機台上空各一個霓虹光圈，會轉過來面對飛船（從哪個方向都穿得過）；下面一道光柱，遠遠就看得到
@@ -4233,27 +4690,48 @@ const hud = $('#flight-hud'), hudTime = $('#fh-time');
 $('#fh-rings').innerHTML = rings.map(R => `<i style="--c:${R.g.color}" title="${esc(R.g.name)}上空"></i>`).join('');
 for (const type of ['pointerdown', 'pointerup', 'pointerleave', 'pointercancel']) $('#fh-boost').addEventListener(type, () => { flight.boostBtn = type === 'pointerdown'; });
 $('#fh-land').addEventListener('click', () => landNow());
-const warpCv = document.createElement('canvas');
-warpCv.id = 'warp';
-$('#app').appendChild(warpCv);
-const warpStars = Array.from({ length: 180 }, () => ({ a: rnd() * TAU, r: .03 + rnd() * .5, v: .4 + rnd() * .9, o: .4 + rnd() * .6 }));
-function drawWarp(k) {   // 星光從中心拉長成線，最亮時白光一閃
-  const dpr = Math.min(2, devicePixelRatio || 1), w = warpCv.width = innerWidth * dpr, h = warpCv.height = innerHeight * dpr, x = warpCv.getContext('2d');
-  const cx = w / 2, cy = h / 2, R = Math.hypot(cx, cy);
-  if (!reduced) {
-    x.lineCap = 'round';
-    for (const s of warpStars) {
-      const r1 = R * (s.r + k * k * 1.6 * s.v), r0 = Math.max(0, r1 - R * (.02 + k * .5 * s.v));
-      x.strokeStyle = `rgba(220,240,255,${Math.min(1, k * 2.2) * s.o})`;
-      x.lineWidth = (1 + k * 2.5 * s.v) * dpr;
-      x.beginPath();
-      x.moveTo(cx + Math.cos(s.a) * r0, cy + Math.sin(s.a) * r0);
-      x.lineTo(cx + Math.cos(s.a) * r1, cy + Math.sin(s.a) * r1);
-      x.stroke();
-    }
+/* 光速的星線：從船頭前方的消失點一條條往外流。畫在場景裡、離鏡頭 30 的地方，線才會從船後面過去，不會蓋在船上 */
+const warp = (() => {
+  const N = 260, S = new Float32Array(N * 16), C = new Float32Array(N * 8), I = [];
+  for (let i = 0; i < N; i++) {
+    const a = rnd() * TAU, ph = rnd(), v = .5 + rnd() * .9, o = .35 + rnd() * .65;
+    for (let k = 0; k < 4; k++) { S.set([a, ph, v, o], (i * 4 + k) * 4); C.set([k >> 1, k & 1 ? 1 : -1], (i * 4 + k) * 2); }
+    I.push(i * 4, i * 4 + 1, i * 4 + 2, i * 4 + 1, i * 4 + 3, i * 4 + 2);
   }
-  const flash = smooth(1 - Math.abs(k - .55) / .14);
-  if (flash > 0) { x.fillStyle = `rgba(236,246,255,${flash * .92})`; x.fillRect(0, 0, w, h); }
+  const g = new THREE.BufferGeometry(), U = { uT: { value: 0 }, uE: { value: 0 }, uC: { value: new THREE.Vector2() } };
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 12), 3));   // 位置全在 shader 裡算
+  g.setAttribute('aS', new THREE.BufferAttribute(S, 4));
+  g.setAttribute('aC', new THREE.BufferAttribute(C, 2));
+  g.setIndex(I);
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: U, transparent: true, depthWrite: false, fog: false, toneMapped: false, side: THREE.DoubleSide,
+    vertexShader: `
+      attribute vec4 aS; attribute vec2 aC;
+      uniform float uT, uE; uniform vec2 uC;
+      varying float vA; varying vec2 vQ;
+      void main() {
+        float ph = fract(aS.y + uT * aS.z), r1 = .02 + ph * ph * 1.7, r0 = r1 * (1. - .75 * uE);   // 越外面跑越快，線的長度跟著速度
+        vec2 d = vec2(cos(aS.x), sin(aS.x)), n = vec2(-d.y, d.x);
+        vec2 p = uC + d * mix(r0, r1, aC.x) + n * aC.y * (.0016 + r1 * .0042);
+        gl_Position = projectionMatrix * vec4(p * 30., -30., 1.);
+        vA = aS.w * min(1., uE * 1.6) * smoothstep(0., .1, ph);
+        vQ = aC;
+      }`,
+    fragmentShader: `
+      varying float vA; varying vec2 vQ;
+      void main() { gl_FragColor = vec4(.86, .94, 1., vA * (1. - vQ.y * vQ.y) * (.15 + .85 * vQ.x)); }`,
+  }));
+  m.frustumCulled = false; m.visible = false; m.renderOrder = 3;
+  scene.add(m);
+  return { m, U };
+})();
+const _warpV = new THREE.Vector3(), _warpQ = new THREE.Quaternion(), _yAxis = new THREE.Vector3(0, 1, 0);
+function warpSet(e, dt) {   // e：速度（0 停、1 全速）。消失點＝船頭方向在畫面上的位置
+  warp.m.visible = e > .01 && !reduced;
+  warp.U.uE.value = e;
+  warp.U.uT.value += dt * (.1 + 1.25 * e);
+  _warpV.copy(_fh).applyQuaternion(_warpQ.copy(camera.quaternion).invert());
+  if (_warpV.z < -.2) warp.U.uC.value.set(_warpV.x / -_warpV.z, _warpV.y / -_warpV.z);
 }
 const baseFov = () => innerWidth / innerHeight < .85 ? 48 : 38;
 /* 一鏡到底的鏡頭：位置和看的點都記成「相對於船」，換構圖時用彈簧慢慢滑過去（起步和停下都是緩的），船再快也不會甩掉鏡頭 */
@@ -4289,7 +4767,7 @@ function poseAlong(C, u, dt) {   // 照路線擺船：位置、航向跟著切�
   ship.position.copy(_fp);
   ship.rotation.set(flight.pitch, flight.yaw, flight.bank);
 }
-/* 衝上太空再回來用的東西：一層雲（升空和回來時各穿過一次）、船頭的火光、火光尾巴 */
+/* 衝上太空時穿過的一層雲 */
 const cloudDeck = new THREE.Group();
 {
   const r = mulberry32(77), cm = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x9aa6b5, flatShading: true, roughness: 1, transparent: true, opacity: .92 });   // 底部偏灰藍，從下面看才像雲
@@ -4301,56 +4779,47 @@ const cloudDeck = new THREE.Group();
   cloudDeck.visible = false;
   scene.add(cloudDeck);
 }
-const fireShell = glowSprite('rgba(255,244,214,1)', 'rgba(255,118,30,.7)', 7);   // 船頭的火球（橘黃色光暈）
-scene.remove(fireShell);
-fireShell.position.set(0, -.2, -2.4);   // 船頭前方（局部 -z）
-fireShell.visible = false;
-ship.add(fireShell);
-const trail = [];
-let trailMat = null;
-function emitTrail(p, heat) {   // 火光尾巴：一顆顆發光的球留在後面慢慢散掉
-  let q = trail.find(o => o.life <= 0);
-  if (!q) {
-    if (trail.length >= 70) return;
-    if (!trailMat) { const g = glowSprite('rgba(255,214,140,1)', 'rgba(255,96,24,.55)', 1); trailMat = g.material; scene.remove(g); }
-    q = { spr: new THREE.Sprite(trailMat.clone()), life: 0, max: .9, size: 3 };
-    scene.add(q.spr);
-    trail.push(q);
-  }
-  q.spr.position.set(p.x + (rnd() - .5) * 1.4, p.y + (rnd() - .5) * 1.4, p.z + (rnd() - .5) * 1.4);
-  q.life = q.max; q.size = 1.2 + heat * 2.2; q.spr.visible = true;
-}
-function updateTrail(dt) {
-  for (const q of trail) {
-    if (q.life <= 0) continue;
-    q.life -= dt;
-    const f = Math.max(0, q.life / q.max);
-    q.spr.scale.setScalar(q.size * (1.6 - f * .6));
-    q.spr.material.opacity = f * .75;
-    if (q.life <= 0) q.spr.visible = false;
-  }
-}
-function spaceView(sp) {   // sp：0＝平常的天空，1＝太空（黑天、星星）。天空和星星跟著鏡頭走，霧跟著高度拉遠，島才不會被霧吃掉
+function spaceView(sp, clear = 1, away = 0) {   // sp：0＝平常的天空，1＝太空（黑天、星星）。clear：1＝看得到世界，0＝世界藏在跟天空同色的霧裡。away：離島很遠時日月也跟著鏡頭走。天空和星星跟著鏡頭走，霧跟著高度拉遠，島才不會被霧吃掉
   skyDome.position.copy(camera.position);
   stars.position.copy(camera.position);
-  const h = Math.max(0, camera.position.y - 40);
-  scene.fog.near = 85 + h * .9;
-  scene.fog.far = 250 + h * 1.6;
-  if (sp <= 0) return;
-  skyMat.uniforms.top.value.lerp(_c1.setHex(0x01020a), sp);
-  skyMat.uniforms.horizon.value.lerp(_c2.setHex(0x060a1c), sp);
-  scene.fog.color.copy(skyMat.uniforms.horizon.value);
-  stars.material.opacity = Math.max(stars.material.opacity, sp);
-  if (sp > .4) sunDisc.visible = moonDisc.visible = false;
+  const h = Math.max(0, camera.position.y - 40), U = skyMat.uniforms;
+  scene.fog.near = lerp(22, 85 + h * .7, clear);
+  scene.fog.far = lerp(34, 250 + h * .65, clear);   // 飛高了海的邊緣要淡進霧裡，才看不出海是一片圓盤
+  U.hCol.value.copy(U.horizon.value);
+  if (sp > 0) {
+    U.top.value.lerp(_c1.setHex(0x01020a), sp);
+    U.horizon.value.lerp(_c2.setHex(0x060a1c), sp);
+    scene.fog.color.copy(U.horizon.value);
+    stars.material.opacity = Math.max(stars.material.opacity, sp);
+    if (sp > .4) sunDisc.visible = moonDisc.visible = false;
+  }
+  if (clear < 1) {   // 整片天抹成霧的顏色：雲和海才不會留下剪影
+    U.top.value.lerp(U.horizon.value, 1 - clear);
+    stars.material.opacity *= clear;
+  }
+  sunDisc.material.opacity *= clear; moonDisc.material.opacity *= clear;
+  if (away > 0) { sunDisc.position.addScaledVector(camera.position, away); moonDisc.position.addScaledVector(camera.position, away); }   // 海上的光路是照無限遠算的，日月要留在同一個方向
 }
 function spaceReset() {
   skyDome.position.set(0, 0, 0);
   stars.position.set(0, 0, 0);
   scene.fog.near = 85; scene.fog.far = 250;
   camera.up.set(0, 1, 0);
-  fireShell.visible = cloudDeck.visible = false;
-  warpCv.classList.remove('on');
+  cloudDeck.visible = warp.m.visible = false;
+  skyMat.uniforms.hole.value = 0;
   body.classList.remove('space');
+}
+function reachFuture() {   // 抵達：時間定在幾個小時後，阿滿和柑仔丁已經跑到碼頭等你（鏡頭不在這裡，直接站好）
+  const T = flight.fut.to;
+  curMin = T;
+  applyDay(curMin);
+  Object.assign(future, { min: T, hold: 60, back: 0 });
+  if (fetchS.phase === 'carried') dropBall(dog.g.position.x, dog.g.position.z);
+  for (const [m, x, z] of [[dog, -.55, 16.6], [blob, .5, 16.1]]) {
+    m.g.position.set(x, groundY(x, z), z);
+    m.g.rotation.y = Math.atan2(SHIP.x - x, SHIP.z - z);
+    m.path = null; m.state = 'pose';
+  }
 }
 function startFlight() {
   if (flight.phase || uiLock() || state.intro) return;
@@ -4366,7 +4835,7 @@ function startFlight() {
   walk.path = null; follow = false; fly = null; controls.enabled = false;
   state.flying = true;
   body.classList.add('flying', 'autopilot');
-  Object.assign(flight, { phase: 'board', t: 0, walking: true, yaw: Math.PI, bank: 0, pitch: 0, done: false });
+  Object.assign(flight, { phase: 'board', t: 0, walking: true, yaw: Math.PI, bank: 0, pitch: 0, done: false, fut: null });
   avatar.rotation.y = Math.PI / 2;   // 面向飛船
 }
 function setRings(show) {
@@ -4404,7 +4873,9 @@ function skipFlight() {
   const F = flight, ph = F.phase;
   if (ph === 'pilot') landNow();
   else if (ph === 'return') nextFlight('touch');
-  else if (['climb', 'hyper', 'descent'].includes(ph)) {   // 看太空那段可以按 Esc：直接到碼頭上空降落
+  else if (['climb', 'hyper', 'arrive'].includes(ph)) {   // 看太空那段可以按 Esc：直接到碼頭上空降落
+    restorePanels();   // 先放回來：下面碼頭的鏡頭要算進清單的寬度
+    if (ph === 'hyper') reachFuture();
     spaceReset();
     ship.position.set(SHIP.x, SHIP.y + 2, SHIP.z);
     Object.assign(F, { yaw: Math.PI, pitch: 0, bank: 0 });
@@ -4425,6 +4896,7 @@ function nextFlight(phase) {
   if (phase === 'pilot') { Object.assign(F, { clock: 0, sec: -1, speed: 6, pitch: 0 }); setRings(true); hud.hidden = false; }
   if (phase === 'climb' || phase === 'return') { hud.hidden = true; for (const R of rings) R.beam.visible = false; }
   if (phase === 'climb') {   // 從穿過第三個光圈的地方，順著原本的方向往前、弧線拉起來衝上太空，到頂再擺平
+    stashPanels();
     const p = ship.position, f = _fh.set(-Math.sin(F.yaw), 0, -Math.cos(F.yaw)).clone(), at = (h, v) => p.clone().addScaledVector(f, h).add(_c3.set(0, v, 0));
     F.route = new THREE.CatmullRomCurve3([p.clone(), at(14, 3), at(28, 22), at(36, 80), at(44, 220), at(70, 420), at(150, 520), at(260, 540)], false, 'centripetal');
     F.len = F.route.getLength();
@@ -4434,21 +4906,29 @@ function nextFlight(phase) {
     cloudDeck.visible = true;
     rigFrom();
   }
-  if (phase === 'hyper') { F.jumped = false; warpCv.classList.add('on'); }
-  if (phase === 'descent') {   // 白光最亮的那一刻換到北方高空（白光遮住這一次切換）
-    F.route = DESCENT;
-    DESCENT.getTangentAt(0, _ft);
-    Object.assign(F, { yaw: Math.atan2(-_ft.x, -_ft.z), pitch: Math.atan2(_ft.y, Math.hypot(_ft.x, _ft.z)) * .7, bank: 0, pier: viewFor('pier') });
-    poseAlong(DESCENT, 0, 1 / 60);
-    rig.off.copy(_c3.crossVectors(_ft, camera.up).normalize()).multiplyScalar(isMobile() ? 16 : 12).addScaledVector(_ft, 4).add(_c3.set(0, isMobile() ? 12 : 9, 0));
-    rig.look.set(0, 0, 0); rig.vo.set(0, 0, 0); rig.vl.set(0, 0, 0);
-    rigTo(rig.off, rig.look, 1 / 60);
-    cloudDeck.position.set(-10, 64, -64);
-    cloudDeck.visible = true;
-    setRings(false);   // 回程會飛過島，穿過的光圈先收起來
-    warpCv.classList.remove('on');   // 留下最後一格白光，靠 CSS 慢慢淡掉
+  if (phase === 'hyper') {
+    F.fut = futureOf(curMin);
+    F.route = F.fut.to === 1085 ? ARRIVE.dusk : ARRIVE.dawn;
+    F.route.getTangentAt(0, _ft);
+    let dy = Math.atan2(-_ft.x, -_ft.z) - F.yaw;
+    while (dy > Math.PI) dy -= TAU;
+    while (dy < -Math.PI) dy += TAU;
+    Object.assign(F, { turn: dy, turnK: 0 });
+    cloudDeck.visible = false;
   }
-  body.classList.toggle('space', ['climb', 'hyper', 'descent'].includes(phase));   // 太空那段把名牌藏起來
+  if (phase === 'arrive') {   // 世界還藏在霧裡，天空是一片同色：把船放到回程的起點，畫面上看不出來
+    reachFuture();
+    F.route.getPointAt(0, ship.position);
+    const M = isMobile(), dusk = F.route === ARRIVE.dusk, D = M ? 27 : 17, at = V3([2.2, 1.1, 18.6]);   // 停靠的鏡頭：從海上看回來，前面沒有樹擋，船、碼頭上等你的人都在畫面裡；從哪邊進來就繞哪邊
+    Object.assign(F, { pitch: 0, bank: 0, kl: 0, gust: false, pier: { pos: V3([at.x + (dusk ? .2 : -.78) * D, M ? 13 : 8.5, at.z + (dusk ? .98 : .62) * D]), target: at } });
+    skyMat.uniforms.hole.value = 0;
+    ship.rotation.set(0, F.yaw, 0);
+    setRings(false);   // 回程會飛過島，穿過的光圈先收起來
+    shipAxes();
+    rigTo(rig.off, rig.look, 1 / 60);
+    spaceView(0, 0, 1);
+  }
+  body.classList.toggle('space', ['climb', 'hyper', 'arrive'].includes(phase));   // 太空那段把名牌藏起來
   if (phase === 'touch') { spaceReset(); F.from.copy(ship.position); flyTo(viewFor('pier'), 1.8); setRings(false); }
 }
 function alongRamp(k, back) {   // 沿坡道折線走（照長度分配時間）
@@ -4492,11 +4972,18 @@ function endFlight() {
   const n = num('sanasai_flights') + 1;
   ls.set('sanasai_flights', String(n));
   if (!F.done) addLog('ship', `開飛船繞島（第 ${n} 趟）`);
-  toast('回到碼頭了');
+  if (!F.fut) return toast('回到碼頭了');
+  const say = hoursZh(F.fut.gap);
+  F.fut = null;
+  bubble(blob.g, `你才走三秒，我們等了${say}個小時！`, 1.5, 3600);
+  bubble(dog.g, '汪汪！', 1.25);
+  Object.assign(dog, { state: 'greet', t: 2.6, orbit: null, path: null });   // 繞著你跑
+  addLog('ship', `跳光速回來，島上過了${say}個小時`);
+  discover('future');
+  setTimeout(() => { if (!state.photo) releasePose(); restorePanels(); }, 3600);   // 那句話講完才算放完
 }
 function updateFlight(dt) {
   const F = flight;
-  updateTrail(dt);
   if (!F.phase) return;
   F.t += dt;
   if (F.phase === 'board' || F.phase === 'off') {
@@ -4586,23 +5073,35 @@ function updateFlight(dt) {
     camera.updateProjectionMatrix();
     spaceView(smooth((t - 2.6) / 3.2));   // 天色照時間變：穿過雲層之後約 3 秒轉黑
     if (F.t >= FLY.climb) nextFlight('hyper');
-  } else if (F.phase === 'hyper') {   // 一鏡到底②：船往前加速衝出去、越變越小，星光拉長，白光一閃
-    const k = Math.min(1, F.t / FLY.hyper);
-    shipAxes();
-    F.speed *= 1 + dt * 2.5;
-    ship.position.addScaledVector(_fh, F.speed * dt);
+  } else if (F.phase === 'hyper') {   // 一鏡到底②：星線拉長，船留在畫面同一個位置；線後面的天色快轉到幾個小時後
+    const t = F.t, T = FLY.hyper, M = isMobile();
+    if (t >= T) return nextFlight('arrive');
+    const e = smooth(t / .7) * (1 - .55 * smooth((t - T + .3) / .3));
+    curMin = (F.fut.from + F.fut.gap * smooth((t - .3) / 1.3)) % 1440;
+    applyDay(curMin);
+    const q = smooth((t - .7) / 1.4), dy = F.turn * (q - F.turnK);   // 世界看不到的時候轉到回程的方向：船和鏡頭一起轉，畫面上看不出來
+    F.turnK = q; F.yaw += dy;
+    for (const v of [rig.off, rig.look, rig.vo, rig.vl]) v.applyAxisAngle(_yAxis, dy);
     F.pitch = lerp(F.pitch, 0, Math.min(1, dt * 4));
-    F.bank = lerp(F.bank, 0, Math.min(1, dt * 4));
+    F.bank = lerp(F.bank, Math.sin(t * 31) * .006 * e, Math.min(1, dt * 4));
     ship.rotation.set(F.pitch, F.yaw, F.bank);
-    _ro.copy(_fh).multiplyScalar((isMobile() ? -19 : -13) - 70 * k * k).addScaledVector(_srt, isMobile() ? 0 : 1.5).add(_c3.set(0, 4.5, 0));
-    _rl.copy(_fh).multiplyScalar(30).add(_c3.set(0, 1, 0));
+    shipAxes();
+    ship.position.addScaledVector(_fh, F.speed * dt);
+    const lurch = Math.sin(Math.min(1, t / 1.5) * Math.PI);   // 起跳時船往前一衝，鏡頭再追上來
+    _ro.copy(_fh).multiplyScalar(-(M ? 19 : 13) - 7 * lurch).addScaledVector(_srt, M ? 0 : 1.5).add(_c3.set(0, 4.5, 0));
+    _rl.copy(_fh).multiplyScalar(14).add(_c3.set(0, 1, 0));
     rigTo(_ro, _rl, dt, 3.5);
-    spaceView(1);
-    drawWarp(k * .55);   // 白光在這一段的最後一刻最亮
-    if (k >= 1) nextFlight('descent');
-  } else if (F.phase === 'descent') {   // 一鏡到底③：拖著火光重返大氣層，一路減速飛過島上空，直接停進碼頭、放下坡道
-    const k = Math.min(1, F.t / FLY.descent), u = 1 - (1 - k) * (1 - k), heat = 1 - smooth((k - .28) / .25);
-    poseAlong(DESCENT, u, dt);
+    camera.fov = lerp(camera.fov, baseFov() + 9 * e, Math.min(1, dt * 3));
+    camera.updateProjectionMatrix();
+    warpSet(e, dt);
+    spaceView(1, 1 - smooth(t / .5));
+    skyMat.uniforms.hDir.value.copy(_fh);
+    skyMat.uniforms.hole.value = 1.6 * smooth((t - .9) / 1.4);
+  } else if (F.phase === 'arrive') {   // 一鏡到底③：跳出光速，霧從船邊散開，一路減速飛過島上空，直接停進碼頭、放下坡道
+    const k = Math.min(1, F.t / FLY.arrive), u = 1 - (1 - k) ** 3, c = Math.min(1, F.t / 1.2), clear = 1 - (1 - c) ** 3, p = ship.position, M = isMobile();
+    poseAlong(F.route, u, dt);
+    F.kl = lerp(F.kl, Math.max(0, kjFloor(p.x, p.z) - p.y), Math.min(1, dt * 3));   // 路上經過巨獸就拉高
+    p.y += F.kl;
     const dock = smooth((k - .8) / .2);   // 最後一段：船擺正、轉回停靠方向
     if (dock > 0) {
       let dy = Math.PI - ship.rotation.y;
@@ -4611,31 +5110,26 @@ function updateFlight(dt) {
       ship.rotation.set(ship.rotation.x * (1 - dock), ship.rotation.y + dy * dock, ship.rotation.z * (1 - dock));
     }
     ramp.scale.x = k < .93 ? .02 : lerp(.02, 1, (k - .93) / .07);
-    F.heat = heat;
-    fireShell.visible = heat > .02;
-    fireShell.material.opacity = heat * (.85 + Math.sin(F.t * 40) * .15);
-    fireShell.scale.setScalar(5 + heat * 3 + Math.sin(F.t * 33) * .4);
-    if (heat > .05) { emitTrail(ship.position, heat); emitTrail(ship.position, heat); }
+    if (!F.gust && Math.hypot(p.x, p.z) < 36) { F.gust = true; windKick = 2.6; }   // 飛過島的時候全島的樹一起彎
     shipAxes();
-    DESCENT.getTangentAt(u, _ft);
-    const M = isMobile();   // 手機直立畫面比較窄，鏡頭拉遠一點、不偏左右
-    if (F.t < 3.2) {   // 鏡頭在船的斜上方一起往下衝：看得到圓盤頂面，火光尾巴往後拖
-      _ro.copy(_c3.crossVectors(_ft, camera.up).normalize()).multiplyScalar(M ? 16 : 12).addScaledVector(_ft, 4).add(_c3.set(0, M ? 12 : 9, 0));
-      _rl.set(0, 0, 0);
-    } else {   // 慢慢繞到船後上方，跟著它飛過島
-      _ro.copy(_fh).multiplyScalar(M ? -16 : -11).addScaledVector(_srt, M ? 0 : 3).add(_c3.set(0, M ? 6.5 : 5, 0));
-      _rl.copy(_fh).multiplyScalar(8).add(_c3.set(0, .5, 0));
-    }
-    rigTo(_ro, _rl, dt, 1.8);
-    const toPier = smooth((k - .72) / .28);   // 最後滑到碼頭的固定視角
-    if (toPier > 0) {
-      camera.position.lerp(F.pier.pos, toPier);
-      controls.target.lerp(F.pier.target, toPier);
+    _ro.copy(_fh).multiplyScalar(M ? -19 : -13).addScaledVector(_srt, M ? 0 : 1.5).add(_c3.set(0, 4.5, 0));
+    _rl.copy(_fh).multiplyScalar(14).add(_c3.set(0, 1, 0)).multiplyScalar(1 - smooth((k - .4) / .2));   // 靠近碼頭時鏡頭改對著船：轉彎時船才不會滑出畫面
+    rigTo(_ro, _rl, dt, 2.4);
+    const toPier = smooth((k - .6) / .4);   // 最後滑到碼頭的固定視角
+    if (toPier > 0) {   // 繞著碼頭轉過去：直線滑過去會擦過船邊
+      const A = F.pier.target, B = F.pier.pos, c = camera.position, r0 = Math.hypot(c.x - A.x, c.z - A.z), r1 = Math.hypot(B.x - A.x, B.z - A.z), a0 = Math.atan2(c.x - A.x, c.z - A.z);
+      let da = Math.atan2(B.x - A.x, B.z - A.z) - a0;
+      while (da > Math.PI) da -= TAU;
+      while (da < -Math.PI) da += TAU;
+      const a = a0 + da * toPier, r = lerp(r0, r1, toPier);
+      c.set(A.x + Math.sin(a) * r, lerp(c.y, B.y, toPier), A.z + Math.cos(a) * r);
+      controls.target.lerp(A, toPier);
       camera.lookAt(controls.target);
     }
     camera.fov = lerp(camera.fov, baseFov(), Math.min(1, dt * 3));
     camera.updateProjectionMatrix();
-    spaceView(1 - smooth((F.t - 1) / 3.4));   // 天色照時間變：重返大氣層後約 3 秒轉亮
+    warpSet(.45 * (1 - smooth(F.t / .35)), dt);
+    spaceView(0, clear, 1 - toPier);
     body.classList.toggle('space', k < .55);
     if (k < 1) return;
     spaceReset();
@@ -5059,6 +5553,7 @@ function cloudBurn(i, quiet = false) {
   C.burn = .001; C.quiet = quiet;
   if (!quiet) { sfx('poof', cloudWorld(C.c, _cl1)); const n = num('sanasai_clouds') + 1; ls.set('sanasai_clouds', String(n)); if (n === 1) addLog('pet', '機械巨獸噴火把一朵雲燒掉了'); }
 }
+const _cg = new THREE.Color();
 function updateClouds(dt) {
   cloudCS = Math.cos(clouds.rotation.y); cloudSN = Math.sin(clouds.rotation.y);
   for (const C of CLOUD) {
@@ -5079,6 +5574,8 @@ function updateClouds(dt) {
     if (on) { C.m.scale.setScalar(C.s); C.m.position.copy(C.c).multiplyScalar(1 - C.s); }
     const hk = C.burn > 0 ? 1 - C.burn / 1.4 : Math.min(1, C.heat / 46) * .6;
     C.m.material.emissive.setRGB(1, .42, .12).multiplyScalar(hk * (C.quiet ? 0 : .7));
+    _cg.copy(skyMat.uniforms.horizon.value).lerp(skyMat.uniforms.top.value, .22).multiplyScalar(lerp(.74, .3, night));   // 雲底照到的是天光：從下面看才不會像一塊石頭
+    C.m.material.emissive.add(_cg);
   }
 }
 
@@ -5532,6 +6029,7 @@ const wave = (() => {
 })();
 const _wv = new THREE.Vector3();
 function startWave(x, z) {
+  windKick = Math.max(windKick, 1.6);
   const W = wave, a = Math.atan2(z, x), shore = polar(a, 1.06);
   Object.assign(W, { on: true, x, z, R: 1.5, max: Math.hypot(x, z) + 30 });
   W.m.position.set(x, .3, z); W.m.scale.setScalar(W.max); W.mat.uniforms.uO.value.set(x, z);
@@ -5911,7 +6409,7 @@ function buildAudio() {
   snd.hum = c.createGain(); snd.hum.gain.value = 0;
   h1.connect(hl); h2.connect(hl); hl.connect(snd.hum).connect(snd.sfx);
   h1.start(); h2.start();
-  // 飛船：引擎低音（跟著速度升高）＋隆隆的風聲；重返大氣層的火光是另一層轟隆聲
+  // 飛船：引擎低音（跟著速度升高）＋隆隆的風聲；光速隧道裡多一層呼嘯聲
   const eo = c.createOscillator(), elp = biq('lowpass', 300), eg = c.createGain(), rlp = biq('lowpass', 300), rg = c.createGain(), og = c.createGain();
   eo.type = 'sawtooth'; eo.frequency.value = 45; eg.gain.value = rg.gain.value = og.gain.value = 0;
   eo.connect(elp).connect(eg).connect(snd.sfx);
@@ -5928,6 +6426,16 @@ function buildAudio() {
   ag.connect(snd.sfx);
   ao.start();
   snd.aura = ag;
+  // 雨聲、噴泉的水聲（跟距離走）、坐著看海時的音樂（有一點回音）
+  snd.rain = c.createGain(); snd.rain.gain.value = 0;
+  noiseLoop().connect(biq('highpass', 1300)).connect(biq('lowpass', 7000)).connect(snd.rain).connect(snd.amb);
+  snd.fount = c.createGain(); snd.fount.gain.value = 0;
+  noiseLoop().connect(biq('bandpass', 2100, .5)).connect(snd.fount).connect(snd.sfx);
+  snd.mus = c.createGain(); snd.mus.gain.value = 1;
+  const dl = c.createDelay(1), fb = c.createGain(), wet = c.createGain();
+  dl.delayTime.value = .38; fb.gain.value = .36; wet.gain.value = .5;
+  snd.mus.connect(snd.sfx);
+  snd.mus.connect(dl); dl.connect(fb).connect(dl); dl.connect(wet).connect(snd.sfx);
 }
 function audioUnlock() {
   if (!snd.on) return;
@@ -6007,6 +6515,21 @@ const SFX = {
     s.start(t0, Math.random()); s.stop(t0 + 1.3);
   },
   boing(o) { osc(o, { curve: [200, 560, 420, 470, 380], dur: .38, v: .2, vib: [16, 22] }); },
+  // 隱士的日常
+  little(o) { osc(o, { f: 1046.5, dur: .5, v: .06 }); osc(o, { f: 1568, t: .09, dur: .7, v: .05 }); },
+  kalimba(o, f = 523, v = .1) { osc(o, { f, dur: 1.5, v, a: .004 }); osc(o, { f: f * 2.01, dur: .42, v: v * .32, a: .003 }); osc(o, { f: f * 4.07, dur: .1, v: v * .16, a: .002 }); },
+  cork(o) { osc(o, { curve: [340, 880], dur: .06, v: .16 }); hiss(o, { t: .03, dur: .05, v: .1, f: 2400 }); },
+  sitdown(o) { hiss(o, { dur: .2, v: .09, type: 'lowpass', f: 700 }); osc(o, { f: 130, f2: 90, t: .1, dur: .12, v: .12 }); },
+  thunder(o) { hiss(o, { dur: 2.4, v: .3, type: 'lowpass', f: 240, f2: 60, a: .03 }); hiss(o, { t: .1, dur: .4, v: .16, type: 'lowpass', f: 900, f2: 200 }); },
+  tear(o) { osc(o, { f: 1760, f2: 2640, dur: .5, v: .035 }); osc(o, { f: 2349, f2: 3136, t: .12, dur: .6, v: .025 }); },
+  skip(o, i = 1) { const f = 620 + i * 90; osc(o, { f, f2: f * 1.5, dur: .07, v: .13 }); hiss(o, { dur: .06, v: .1, f: 2600, q: 1.4 }); },
+  plop(o) { osc(o, { f: 300, f2: 120, dur: .16, v: .17 }); hiss(o, { t: .03, dur: .16, v: .08, type: 'lowpass', f: 1400 }); },
+  clank(o) { osc(o, { type: 'square', f: 1250, f2: 900, dur: .11, v: .09 }); osc(o, { type: 'square', f: 2080, dur: .07, v: .05 }); },
+  pick(o) { osc(o, { type: 'triangle', f: 980, dur: .08, v: .1 }); osc(o, { type: 'triangle', f: 1470, t: .07, dur: .12, v: .09 }); },
+  pop(o, k = 1) { osc(o, { f: 420 * k, f2: 760 * k, dur: .08, v: .12 }); },
+  flap(o) { for (let i = 0; i < 5; i++) hiss(o, { t: i * .11, dur: .08, v: .1, f: 900, q: .7 }); },
+  shutter(o) { hiss(o, { dur: .04, v: .22, f: 3000, q: .9 }); hiss(o, { t: .07, dur: .05, v: .16, f: 2100, q: .9 }); },
+  tick(o) { osc(o, { type: 'square', f: 1500, dur: .03, v: .05 }); },
   whistle(o) { osc(o, { curve: [1300, 2500, 2100, 2800, 1700], dur: .5, v: .07 }); },
   gull(o) { const n = 2 + ((Math.random() * 2) | 0); for (let i = 0; i < n; i++) osc(o, { type: 'sawtooth', curve: [1250, 1450, 950], t: i * .3, dur: .24, v: .08, filter: ['bandpass', 1500, 3], vib: [30, 40] }); },
   chirp(o, f) { for (let i = 0; i < 3; i++) osc(o, { f, t: i * .05, dur: .03, v: .045, a: .003 }); },
@@ -6167,20 +6690,21 @@ function updateSound(dt) {
   if (b < .9 && snd.blade >= .9 && AV.swingT <= 0) sfx('retract', avatar);
   snd.blade = b;
   snd.hum.gain.setTargetAtTime(b * .03 * place(avatar)[0], now, .05);
-  // 飛船：坡道收放、跳光速、白光、降落；引擎跟著速度，重返大氣層時多一層轟隆聲
+  // 飛船：坡道收放、跳光速、跳出光速的音爆、降落；引擎跟著速度，隧道裡多一層呼嘯聲
   const r = ramp.scale.x;
   if ((r > .03 && snd.ramp <= .03) || (r < .97 && snd.ramp >= .97)) sfx('servo', ship);
   snd.ramp = r;
   if (F.phase !== snd.fph) {
+    if (F.phase === 'lift') windKick = 2.6;
     if (F.phase === 'hyper') sfx('warp');
-    else if (F.phase === 'descent') sfx('boom');
+    else if (F.phase === 'arrive') sfx('boom');
     else if (F.phase === 'off') sfx('land', ship);
     snd.fph = F.phase;
   }
   let lvl = 0, spd = 0;
   if (F.phase === 'lift') { const k = Math.min(1, F.t / FLY.lift); lvl = .35 + .65 * k; spd = 3 + 5 * k; }
   else if (['pilot', 'climb', 'hyper', 'return'].includes(F.phase)) { lvl = 1; spd = F.speed; }
-  else if (F.phase === 'descent') { const k = Math.min(1, F.t / FLY.descent); lvl = 1 - .6 * smooth((k - .85) / .15); spd = lerp(40, 4, k); }
+  else if (F.phase === 'arrive') { const k = Math.min(1, F.t / FLY.arrive); lvl = 1 - .6 * smooth((k - .85) / .15); spd = lerp(40, 4, k); }
   else if (F.phase === 'touch') { lvl = 1 - Math.min(1, F.t / FLY.touch); spd = 5; }
   else if (F.phase === 'board' || F.phase === 'off') lvl = .25;
   const E = snd.eng, sp = Math.min(spd, 60);
@@ -6189,8 +6713,1428 @@ function updateSound(dt) {
   E.eg.gain.setTargetAtTime(lvl * .06, now, .15);
   E.rlp.frequency.setTargetAtTime(160 + sp * 16, now, .25);
   E.rg.gain.setTargetAtTime(lvl * (.03 + sp * .0018), now, .15);
-  E.og.gain.setTargetAtTime(F.phase === 'descent' ? (F.heat || 0) * .2 : 0, now, .1);
+  E.og.gain.setTargetAtTime(F.phase === 'hyper' ? warp.U.uE.value * .16 : 0, now, .1);
   snd.aura.gain.setTargetAtTime(aura.k * (.06 + aura.boost * .06) * place(avatar, 18)[0], now, .12);   // 金色火焰燒著的聲音
+  snd.rain.gain.setTargetAtTime(WX.k * .035, now, .6);
+  snd.fount.gain.setTargetAtTime(.024 * place(fountain.at, 7)[0], now, .3);
+}
+
+/* ---------- 隱士的日常：夜裡的燈、噴泉、螢火蟲、蝴蝶 ---------- */
+const softTex = (() => {   // 共用的柔光貼圖：中間亮、往外淡掉
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const x = c.getContext('2d'), g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(.25, 'rgba(255,255,255,.55)'); g.addColorStop(.6, 'rgba(255,255,255,.14)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+})();
+/* 夜裡的燈：地上一圈暖暖的光（貼著地面的斜度）、燈頭一團光暈；天黑時一盞接一盞亮起來。機台螢幕和霓虹拱門也照亮地面 */
+const nightLights = (() => {
+  const list = LAMPS.map(([x, y, z, r, c]) => ({ x, y, z, r, c, head: true }));
+  for (const g of GAMES) { const F = cabFrame(g), [x, z] = F.w(0, 2.1); list.push({ x, y: F.y, z, r: 8.5, c: hexNum(g.color), v: .5 }); }
+  list.push({ x: 0, y: TOP, z: 10.3, r: 8.5, c: 0xff4f9a, v: .42 });
+  list.push({ x: PLAZA[0], y: TOP, z: PLAZA[1], r: 4.2, c: 0x4fd0dc, v: .35 });   // 噴泉池底的燈
+  const n = list.length, geo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+  const mesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ map: softTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, toneMapped: false }), n);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), nrm = new THREE.Vector3(), pos = new THREE.Vector3(), sc = new THREE.Vector3(), c3 = new THREE.Color(0, 0, 0);
+  list.forEach((L, i) => {
+    const e = .25, h = (a, b) => groundY(a, b), gy = h(L.x, L.z);
+    nrm.set(h(L.x - e, L.z) - h(L.x + e, L.z), 2 * e, h(L.x, L.z - e) - h(L.x, L.z + e)).normalize();
+    q.setFromUnitVectors(up, nrm);
+    mesh.setMatrixAt(i, m4.compose(pos.set(L.x, gy + .14, L.z), q, sc.set(L.r, 1, L.r)));
+    mesh.setColorAt(i, c3);
+    L.k = 0; L.col = new THREE.Color(L.c); L.delay = i * .3 + rnd() * .3;
+  });
+  mesh.renderOrder = 1; mesh.frustumCulled = false;
+  scene.add(mesh);
+  const heads = list.filter(L => L.head), hp = new Float32Array(heads.length * 3), hc = new Float32Array(heads.length * 3);
+  heads.forEach((L, i) => hp.set([L.x, L.y, L.z], i * 3));
+  const hg = new THREE.BufferGeometry();
+  hg.setAttribute('position', new THREE.BufferAttribute(hp, 3));
+  hg.setAttribute('color', new THREE.BufferAttribute(hc, 3));
+  const halo = new THREE.Points(hg, new THREE.PointsMaterial({ map: softTex, size: 2.3, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, toneMapped: false }));
+  halo.frustumCulled = false;
+  scene.add(halo);
+  const plaza = new THREE.PointLight(0xffc58a, 0, 13, 1.7);
+  plaza.position.set(PLAZA[0], TOP + 3.2, PLAZA[1]);
+  scene.add(plaza);
+  return { list, heads, mesh, halo, plaza, on: 0, c3 };
+})();
+function updateLights(dt, t) {
+  const N = nightLights, want = night > .4;
+  N.on = want ? N.on + dt : 0;
+  let dirty = false;
+  N.list.forEach((L, i) => {
+    let to = want && N.on > L.delay ? 1 : 0;
+    if (to && N.on < L.delay + .5 && Math.sin(N.on * 47 + i) > .2) to = .25;   // 剛亮的時候閃兩下
+    const k = approach(L.k, to, dt * (to ? 5 : 1.6));
+    const fl = L.head ? 1 : L.v * (.88 + .12 * Math.sin(t * (2.2 + i) + i));   // 機台螢幕的光會微微閃
+    if (k !== L.k || (!L.head && k > 0)) {
+      L.k = k; dirty = true;
+      N.c3.copy(L.col).multiplyScalar(k * fl * (L.head ? .36 : 1) * (.45 + night * .55));
+      N.mesh.setColorAt(i, N.c3);
+    }
+  });
+  if (dirty) {
+    N.mesh.instanceColor.needsUpdate = true;
+    const c = N.halo.geometry.attributes.color;
+    N.heads.forEach((L, i) => { N.c3.copy(L.col).multiplyScalar(L.k * .5); c.setXYZ(i, N.c3.r, N.c3.g, N.c3.b); });
+    c.needsUpdate = true;
+  }
+  N.plaza.intensity = smooth((night - .4) / .4) * 11;
+}
+
+/* 噴泉：廣場中央的小水池，六道水柱往外畫弧線落進池裡；池底的硬幣＝你從島上進遊戲的次數 */
+const fountain = (() => {
+  const [px, pz] = PLAZA, y = TOP, U = { uT: { value: 0 }, uHor: skyMat.uniforms.horizon, uTop: skyMat.uniforms.top, uN: { value: 0 }, uPx: { value: Math.min(devicePixelRatio, 2) * innerHeight / 800 } };
+  const water = new THREE.Mesh(new THREE.CircleGeometry(1.42, 40).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
+    uniforms: U, transparent: true, depthWrite: false,
+    vertexShader: 'varying vec2 vP; void main() { vP = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `
+      varying vec2 vP; uniform float uT, uN; uniform vec3 uHor, uTop;
+      void main() {
+        float r = length(vP), rip = 0.0;
+        for (int i = 0; i < 6; i++) {                       // 六道水柱落點的漣漪
+          float a = float(i) * 1.0472 + .5;
+          float d = length(vP - vec2(cos(a), sin(a)) * 1.02);
+          rip += smoothstep(.05, .0, abs(fract(d * 2.4 - uT * 1.1 + float(i) * .37) - .5) * .4) * smoothstep(.9, .1, d);
+        }
+        float w = .5 + .5 * sin(r * 16.0 - uT * 2.2);
+        vec3 c = mix(vec3(.34, .68, .72), mix(uHor, uTop, .4) * 1.1, .4);
+        c = mix(c, vec3(.2, .86, .92), uN * .5);
+        c += rip * .17 + w * .025;
+        gl_FragColor = vec4(c, .56 + rip * .22);
+        #include <colorspace_fragment>
+      }`,
+  }));
+  water.position.set(px, y + .2, pz);
+  water.renderOrder = 2;
+  scene.add(water);
+  const coins = new THREE.InstancedMesh(new THREE.CylinderGeometry(.075, .075, .016, 12), new THREE.MeshStandardMaterial({ color: 0xe8b84a, metalness: .55, roughness: .35 }), 40);
+  coins.count = 0;
+  scene.add(coins);
+  const n = 216, P = new Float32Array(n * 3), A = new Float32Array(n * 2);
+  for (let i = 0; i < n; i++) { A.set([(i % 6) * 1.0472 + .5, (i / 6 | 0) / 36 + rnd() * .012], i * 2); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(P, 3));
+  g.setAttribute('aJ', new THREE.BufferAttribute(A, 2));
+  const jets = new THREE.Points(g, new THREE.ShaderMaterial({
+    uniforms: U, transparent: true, depthWrite: false,
+    vertexShader: `
+      attribute vec2 aJ; uniform float uT, uPx;
+      void main() {
+        float k = fract(uT * .62 + aJ.y), r = .34 + .7 * k;
+        vec3 p = vec3(cos(aJ.x) * r, .42 + 1.5 * k - 1.72 * k * k, sin(aJ.x) * r);
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        gl_Position = projectionMatrix * mv;
+        gl_PointSize = (52.0 - k * 16.0) * uPx / -mv.z;
+      }`,
+    fragmentShader: `
+      uniform float uN;
+      void main() { float d = length(gl_PointCoord - .5); gl_FragColor = vec4(mix(vec3(.92, .98, 1.0), vec3(.55, .96, 1.0), uN), smoothstep(.5, .1, d) * .62); }`,
+  }));
+  jets.position.set(px, y + .2, pz);
+  jets.frustumCulled = false;
+  jets.renderOrder = 3;
+  scene.add(jets);
+  return { U, coins, at: new THREE.Vector3(px, y + .5, pz), shown: -1 };
+})();
+function setFountainCoins() {
+  const plays = ls.json('sanasai_plays', {}) || {}, n = Math.min(40, Object.values(plays).reduce((a, b) => a + (+b || 0), 0));
+  if (n === fountain.shown) return;
+  fountain.shown = n;
+  const r = mulberry32(2525), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), [px, pz] = PLAZA;
+  for (let i = 0; i < n; i++) {
+    const a = r() * TAU, d = .45 + Math.sqrt(r()) * .85;
+    e.set((r() - .5) * .3, r() * TAU, (r() - .5) * .3);
+    fountain.coins.setMatrixAt(i, m4.compose(_p.set(px + Math.cos(a) * d, TOP + .1, pz + Math.sin(a) * d), q.setFromEuler(e), _s.set(1, 1, 1)));
+  }
+  fountain.coins.count = n;
+  fountain.coins.instanceMatrix.needsUpdate = true;
+}
+
+/* 螢火蟲：夜裡在林間慢慢飄、一閃一閃（圓圓的柔光，取代原本迷宮上的白點）；蝴蝶：白天在花叢間飛 */
+const fireflies = (() => {
+  const n = 70, P = new Float32Array(n * 3), A = new Float32Array(n), r = mulberry32(88), U = { uT: { value: 0 }, uO: { value: 0 }, uPx: { value: Math.min(devicePixelRatio, 2) * innerHeight / 800 } };
+  for (let i = 0; i < n; i++) {
+    let x, z, k = 0;
+    do { const a = r() * TAU, d = .25 + r() * .55; [x, z] = polar(a, d); } while (++k < 12 && !freeSpot(x, z, .1));
+    P.set([x, groundY(x, z) + .45 + r() * 1.5, z], i * 3); A[i] = r() * 40;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(P, 3));
+  g.setAttribute('aP', new THREE.BufferAttribute(A, 1));
+  const m = new THREE.Points(g, new THREE.ShaderMaterial({
+    uniforms: U, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: `
+      attribute float aP; uniform float uT, uO, uPx; varying float vA;
+      void main() {
+        vec3 p = position + vec3(sin(uT * .31 + aP) * 1.1 + sin(uT * .9 + aP * 2.0) * .2, sin(uT * .47 + aP * 3.0) * .4, cos(uT * .27 + aP) * 1.1 + cos(uT * .8 + aP) * .2);
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        gl_Position = projectionMatrix * mv;
+        vA = uO * pow(max(sin(uT * (.8 + fract(aP) * .7) + aP), 0.0), 5.0);
+        gl_PointSize = 190.0 * uPx / -mv.z;
+      }`,
+    fragmentShader: `
+      varying float vA;
+      void main() { float d = length(gl_PointCoord - .5), c = smoothstep(.5, .0, d); gl_FragColor = vec4(vec3(.82, 1.0, .35), vA * (c * c * .85 + smoothstep(.09, .03, d))); }`,
+  }));
+  m.frustumCulled = false;
+  scene.add(m);
+  return { m, U };
+})();
+const butterflies = (() => {
+  const n = 9, wing = new THREE.BufferGeometry();
+  wing.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, .03, .15, 0, .13, .2, 0, 0, 0, 0, .03, .2, 0, 0, .11, 0, -.1, 0, 0, .03, .11, 0, -.1, 0, 0, -.06], 3));
+  wing.computeVertexNormals();
+  const mesh = new THREE.InstancedMesh(wing, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }), n * 2);
+  mesh.frustumCulled = false;
+  const cols = [0xf6d36b, 0xf2a6c0, 0xffffff, 0xf08a3c, 0xa7c8f0], r = mulberry32(61), list = [], c3 = new THREE.Color();
+  for (let i = 0; i < n; i++) {
+    let x, z, k = 0;
+    do { const a = r() * TAU, d = Math.sqrt(r()) * .76; [x, z] = polar(a, d); } while (++k < 20 && !freeSpot(x, z, .3));
+    list.push({ x, z, ph: r() * 40, y: groundY(x, z) + .5, sc: .75 + r() * .5 });
+    c3.setHex(cols[i % cols.length]);
+    mesh.setColorAt(i * 2, c3); mesh.setColorAt(i * 2 + 1, c3);
+  }
+  scene.add(mesh);
+  return { mesh, list, m4: new THREE.Matrix4(), q: new THREE.Quaternion(), e: new THREE.Euler(), p: new THREE.Vector3(), s: new THREE.Vector3(), k: 1 };
+})();
+function updateButterflies(dt, t) {
+  const B = butterflies, want = night < .35 && SEA_U.uRain.value < .3 ? 1 : 0;
+  B.k = approach(B.k, want, dt * .5);
+  B.mesh.visible = B.k > .01;
+  if (!B.mesh.visible) return;
+  const av = avatar.position;
+  B.list.forEach((b, i) => {
+    const px = b.x + Math.sin(t * .23 + b.ph) * 2.4 + Math.sin(t * .71 + b.ph * 2) * .6, pz = b.z + Math.cos(t * .19 + b.ph) * 2.4 + Math.cos(t * .63 + b.ph) * .6;
+    const py = b.y + Math.sin(t * 1.7 + b.ph) * .22 + Math.sin(t * .4 + b.ph) * .28;
+    const yaw = Math.atan2(Math.cos(t * .23 + b.ph) * .55 + Math.cos(t * .71 + b.ph * 2) * .43, -Math.sin(t * .19 + b.ph) * .46 - Math.sin(t * .63 + b.ph) * .38);
+    const f = Math.sin(t * 15 + b.ph * 3), open = .35 + f * .95, s = b.sc * B.k;
+    B.p.set(px, py, pz); B.s.set(s, s, s);
+    B.e.set(0, yaw - Math.PI / 2, open, 'YXZ');
+    B.mesh.setMatrixAt(i * 2, B.m4.compose(B.p, B.q.setFromEuler(B.e), B.s));
+    B.e.set(0, yaw + Math.PI / 2, -open, 'YXZ');
+    B.s.x = -s;
+    B.e.set(0, yaw - Math.PI / 2, -open, 'YXZ');
+    B.mesh.setMatrixAt(i * 2 + 1, B.m4.compose(B.p, B.q.setFromEuler(B.e), B.s));
+  });
+  B.mesh.instanceMatrix.needsUpdate = true;
+}
+/* 足跡：分身一步一個腳印、阿滿四個小爪印、寄居蟹一串小點；風慢慢吹淡，浪打到就沖掉 */
+const onSand = (x, z) => !onPier(x, z) && baseHeight(x, z) < .62;
+const footT = { step: 0, dx: 0, dz: 0, dn: 0, cn: [0, 0, 0] };
+function updatePrints() {
+  const p = avatar.position;
+  if (walk.moving && !flight.phase && !ride.phase) {
+    const k = Math.floor(walk.phase / Math.PI);
+    if (k !== footT.step) {
+      footT.step = k;
+      if (onSand(p.x, p.z)) {
+        const y = avatar.rotation.y, side = k % 2 ? 1 : -1, fx = Math.sin(y), fz = Math.cos(y), ox = fz * .12 * side, oz = -fx * .12 * side;
+        sandStamp(p.x + ox + fx * .05, p.z + oz + fz * .05, fx, fz, .115, .062, .9);      // 腳掌
+        sandStamp(p.x + ox - fx * .13, p.z + oz - fz * .13, fx, fz, .064, .052, .8);      // 腳跟
+      }
+    }
+  }
+  const d = dog.g.position, mv = Math.hypot(d.x - footT.dx, d.z - footT.dz);
+  if (mv > .34) {
+    footT.dx = d.x; footT.dz = d.z;
+    if (onSand(d.x, d.z)) { footT.dn++; const y = dog.g.rotation.y, fx = Math.sin(y), fz = Math.cos(y), s = footT.dn % 2 ? .11 : -.11; sandStamp(d.x + fz * s, d.z - fx * s, fx, fz, .07, .056, .8); }
+  }
+  crabs.forEach((c, i) => {
+    const q = c.g.position;
+    if (c.hide <= 0 && Math.abs(c.a - footT.cn[i]) > .012) {
+      footT.cn[i] = c.a;
+      const fx = Math.cos(c.a), fz = Math.sin(c.a);
+      for (const o of [-.13, .13]) sandStamp(q.x + fx * o, q.z + fz * o, 1, 0, .03, .026, .42);
+    }
+  });
+}
+/* ---------- 島上小事：一本筆記，記你看過哪些小事；還沒看到的只給線索 ---------- */
+const LITTLE = [
+  ['sit', '坐下來看海', '沙灘上有一張面向海的長椅'],
+  ['sunset', '看太陽落進海裡', '坐在長椅上等到黃昏'],
+  ['stars', '坐著等到滿天星星', '從白天一直坐到晚上'],
+  ['meteor', '看到流星', '夜裡抬頭看，一下子就過去了'],
+  ['wish', '對流星許願', '流星劃過去時動作要快'],
+  ['bluetear', '藍眼淚', '夜裡點一下海面'],
+  ['bottle', '撿到瓶中信', '每天都有一瓶漂上岸'],
+  ['shell', '撿到貝殼', '沙灘上走一走'],
+  ['swap', '寄居蟹排隊換殼', '把貝殼放在牠們旁邊'],
+  ['cap', '有一隻寄居蟹背瓶蓋', '牠們什麼都願意住'],
+  ['dig', '阿滿挖到東西', '阿滿偶爾會跑去沙灘挖洞'],
+  ['skip3', '打水漂跳三下', '走到水邊'],
+  ['skip8', '打水漂跳八下', '指針停在正中間'],
+  ['bonk', '石頭打到巨獸', '要打很遠，牠也要剛好在那邊'],
+  ['gull', '把海鷗嚇飛', '碼頭的木樁上有海鷗'],
+  ['escort', '海豚陪你飛', '開飛船貼著海面飛'],
+  ['leaf', '下雨撐葉子', '等下雨，或自己按下雨'],
+  ['rainbow', '雨後的彩虹', '雨停的時候往遠方看'],
+  ['photo', '拍第一張照片', '右上角的相機'],
+  ['family', '全家福', '阿滿、花捲、柑仔丁和你同框'],
+  ['monster', '跟巨獸合照', '牠很大，要退遠一點'],
+  ['fish5', '釣到五種魚', '不同時間上鉤的魚不一樣'],
+  ['fishrare', '釣到很少見的魚', '有的魚只在特定的時候出現'],
+  ['gray', '灰色的小點', '有一個小方塊不該在那裡'],
+  ['late', '半夜還在島上', '大家都睡了'],
+  ['fullmoon', '滿月的夜晚', '要等真的滿月那幾天'],
+  ['future', '船上三秒，島上好幾個小時', '開飛船穿過三個光圈，回來時看看天色'],
+];
+const LITTLE_ID = Object.fromEntries(LITTLE.map(([id, name]) => [id, name]));
+const little = ls.json('sanasai_little', {}) || {};
+function discover(id) {
+  if (little[id] || !LITTLE_ID[id]) return false;
+  little[id] = Date.now();
+  ls.set('sanasai_little', JSON.stringify(little));
+  addLog('pet', `小事：${LITTLE_ID[id]}`);
+  const n = Object.keys(little).length;
+  littleQueue.push(`島上小事 ${n}/${LITTLE.length}：${LITTLE_ID[id]}`);
+  sfx('little');
+  if (ui.log) renderLog();
+  return true;
+}
+const littleQueue = [];
+let littleT = 0;
+function updateLittleQueue(dt) {
+  if ((littleT -= dt) > 0 || !littleQueue.length || !landed || state.intro) return;
+  littleT = 3.2;
+  toast(littleQueue.shift(), 'gold');
+}
+
+/* ---------- 島記得你：離開多久、今天第幾天、真實的台北天氣 ---------- */
+const dayKey = (d = new Date()) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const TODAY = dayKey(), lastSeen = num('sanasai_last'), gapH = lastSeen ? (Date.now() - lastSeen) / 3.6e6 : -1, firstToday = ls.get('sanasai_day') !== TODAY;
+if (firstToday) { ls.set('sanasai_day', TODAY); ls.set('sanasai_days', String(num('sanasai_days') + 1)); }
+const markSeen = () => ls.set('sanasai_last', String(Date.now()));
+addEventListener('pagehide', markSeen);
+document.addEventListener('visibilitychange', () => { if (document.hidden) markSeen(); });
+setInterval(markSeen, 30000);
+
+const WX = { mode: ls.get('sanasai_wxmode') || 'auto', real: null, k: 0, rainbow: 0, flash: 0, boltT: 9, leafK: 0 };
+const WX_NAME = c => c === 0 ? '晴' : c <= 2 ? '晴時多雲' : c === 3 ? '陰天' : c <= 48 ? '有霧' : c <= 57 ? '毛毛雨' : c <= 67 ? '下雨' : c <= 77 ? '下雪' : c <= 82 ? '陣雨' : '雷雨';
+const wxWet = c => (c >= 51 && c <= 67) || (c >= 80 && c <= 99);
+async function fetchWeather() {   // 台北現在的天氣（固定座標，不用定位；抓不到就當作晴天）
+  const c = ls.json('sanasai_wxreal', null);
+  if (c && Date.now() - c.at < 1800000) { WX.real = c; return; }
+  try {
+    const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 4000);
+    const r = await fetch('https://api.open-meteo.com/v1/forecast?latitude=25.03&longitude=121.56&current=temperature_2m,weather_code,precipitation,wind_speed_10m&timezone=Asia%2FTaipei', { signal: ctl.signal });
+    clearTimeout(tm);
+    const j = (await r.json()).current;
+    if (!j || typeof j.weather_code !== 'number') return;
+    WX.real = { at: Date.now(), temp: Math.round(j.temperature_2m), code: j.weather_code, mm: j.precipitation || 0, wind: j.wind_speed_10m || 0 };
+    ls.set('sanasai_wxreal', JSON.stringify(WX.real));
+  } catch (e) {}
+}
+const wxWant = () => WX.mode === 'rain' ? 1 : WX.mode === 'sun' || !WX.real || !wxWet(WX.real.code) ? 0 : clamp(.6 + WX.real.mm * .2, .6, 1);
+function wxButton() {
+  const label = { auto: '天氣', rain: '下雨', sun: '放晴' }[WX.mode];
+  $$('[data-wx]').forEach(b => { b.setAttribute('aria-pressed', String(WX.mode !== 'auto')); b.title = WX.mode === 'auto' ? `天氣跟著台北走${WX.real ? `（現在${WX_NAME(WX.real.code)} ${WX.real.temp}°）` : ''}；點一下換成下雨` : WX.mode === 'rain' ? '現在是下雨；點一下換成放晴' : '現在是放晴；點一下換回跟著台北走'; const sp = b.querySelector('span'); if (sp) sp.textContent = label; });
+}
+function setWeather(mode) { WX.mode = mode; ls.set('sanasai_wxmode', mode); wxButton(); }
+$$('[data-wx]').forEach(b => b.addEventListener('click', () => {
+  const next = { auto: 'rain', rain: 'sun', sun: 'auto' }[WX.mode];
+  setWeather(next);
+  toast({ auto: `天氣跟著台北走${WX.real ? `：現在${WX_NAME(WX.real.code)}` : ''}`, rain: '島上開始下雨', sun: '島上放晴' }[next]);
+}));
+const _gy = new THREE.Color();
+function applyWeather() {   // 蓋在日夜上面：天色變灰、日光變弱、遠方起霧；閃電亮一下
+  const w = WX.k, top = skyMat.uniforms.top.value, hor = skyMat.uniforms.horizon.value;
+  sunDisc.material.opacity = moonDisc.material.opacity = 1 - w;   // 下雨看不到日月
+  if (w > .001) {
+    const g = lerp(.42, .05, night);
+    top.lerp(_gy.setRGB(g * .85, g * .92, g * 1.05), w * .82);
+    hor.lerp(_gy.setRGB(g * 1.1, g * 1.15, g * 1.22), w * .78);
+    scene.fog.color.copy(hor);
+    sun.intensity *= 1 - w * .74;
+    hemi.intensity *= 1 - w * .16;
+    SEA_U.uLightCol.value.multiplyScalar(1 - w * .9);
+  }
+  if (WX.flash > 0) { const f = WX.flash; top.lerp(_gy.setRGB(.8, .85, 1), f * .6); hor.lerp(_gy.setRGB(.8, .85, 1), f * .6); hemi.intensity += f * 1.6; }
+  SEA_U.uRain.value = w;
+}
+const rainFx = (() => {
+  const n = isTouch ? 520 : 950, P = new Float32Array(n * 6), E = new Float32Array(n * 2), r = mulberry32(17), U = { uT: { value: 0 }, uK: { value: 0 }, uC: { value: new THREE.Vector3() } };
+  for (let i = 0; i < n; i++) {
+    const x = (r() - .5) * 74, y = r() * 40, z = (r() - .5) * 74;
+    P.set([x, y, z, x, y, z], i * 6);
+    E[i * 2] = 0; E[i * 2 + 1] = 1;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(P, 3));
+  g.setAttribute('aE', new THREE.BufferAttribute(E, 1));
+  const m = new THREE.LineSegments(g, new THREE.ShaderMaterial({
+    uniforms: U, transparent: true, depthWrite: false,
+    vertexShader: `
+      attribute float aE; uniform float uT; uniform vec3 uC;
+      void main() {
+        float y = mod(position.y - uT * 33.0, 40.0);
+        vec3 p = vec3(uC.x + position.x + y * .09, y + aE * .85, uC.z + position.z + y * .05);
+        p += aE * vec3(.08, 0.0, .05);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+      }`,
+    fragmentShader: `uniform float uK; void main() { gl_FragColor = vec4(.84, .9, .98, uK * .34); }`,
+  }));
+  m.frustumCulled = false; m.visible = false; m.renderOrder = 4;
+  scene.add(m);
+  return { m, U };
+})();
+const rainbow = (() => {
+  const g = new THREE.RingGeometry(40, 46, 72, 1, 0, Math.PI).scale(.66, .66, .66), U = { uA: { value: 0 } };
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: U, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    vertexShader: 'varying vec2 vP; void main() { vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `
+      varying vec2 vP; uniform float uA;
+      vec3 hue(float h) { return clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0); }
+      void main() {
+        float k = (length(vP) / .66 - 40.0) / 6.0;
+        float edge = smoothstep(0.0, .14, k) * smoothstep(1.0, .86, k);
+        float fade = smoothstep(-1.0, 7.0, vP.y);
+        gl_FragColor = vec4(mix(hue(.76 - k * .76), vec3(1.0), .16), edge * fade * uA);
+      }`,
+  }));
+  m.visible = false; m.renderOrder = 1;
+  m.rotation.order = 'YXZ';
+  scene.add(m);
+  return { m, U };
+})();
+function updateWeather(dt, t) {
+  const want = wxWant(), was = WX.k;
+  WX.k = approach(WX.k, want, dt * .28);
+  rainFx.m.visible = WX.k > .01 && camera.position.y < 34;   // 雲上面沒有雨
+  if (rainFx.m.visible) { rainFx.U.uT.value = t; rainFx.U.uK.value = WX.k; rainFx.U.uC.value.copy(controls.target); if (ride.phase || flight.phase || sit.phase) rainFx.U.uC.value.copy(camera.position); }
+  if (was > .25 && WX.k <= .25 && want === 0 && night < .45) WX.rainbow = 48;   // 雨停了：出彩虹
+  if (WX.rainbow > 0) {
+    WX.rainbow -= dt;
+    const a = smooth(Math.min((48 - WX.rainbow) / 5, WX.rainbow / 7)) * .5 * (1 - night);
+    const fx = camera.position.x - controls.target.x, fz = camera.position.z - controls.target.z, L = Math.hypot(fx, fz) || 1;
+    rainbow.m.position.set(-fx / L * 24, -1.5, -fz / L * 24);
+    rainbow.m.rotation.set(-.62, Math.atan2(fx, fz), 0);   // 往後仰：鳥瞰的鏡頭才看得到整道弧
+    rainbow.U.uA.value = a; rainbow.m.visible = a > .005;
+    if (a > .2 && (cameraSeesSky() || camera.position.y < 40)) discover('rainbow');
+  } else rainbow.m.visible = false;
+  WX.flash = Math.max(0, WX.flash - dt * 3.4);
+  if (WX.k > .7 && WX.mode === 'auto' && WX.real && WX.real.code >= 95 && (WX.boltT -= dt) <= 0) { WX.boltT = 9 + Math.random() * 20; WX.flash = 1; setTimeout(() => sfx('thunder'), 500 + Math.random() * 1200); }
+  const wet = WX.k > .35 && !ride.phase && !flight.phase;   // 分身撐起一片大葉子
+  WX.leafK = approach(WX.leafK, wet ? 1 : 0, dt * 2.6);
+  leaf.visible = WX.leafK > .02;
+  if (leaf.visible) { leaf.scale.setScalar(WX.leafK); leaf.rotation.z = Math.sin(t * 1.6) * .05; }
+  if (WX.leafK > .9) discover('leaf');
+  WIND_U.uWind.value = lerp(WIND_U.uWind.value, 1 + (WX.real && WX.mode === 'auto' ? Math.min(WX.real.wind, 40) / 45 : 0) + WX.k * .75 + windKick, Math.min(1, dt * 1.6));
+  windKick = Math.max(0, windKick - dt * .9);
+}
+let windKick = 0;   // 飛船起飛、巨獸跺腳時樹被吹彎
+const leaf = (() => {   // 下雨時撐的大葉子（握在左手）
+  const g = new THREE.Group(), m = petMat(0x4f9a4c), sh = new THREE.Shape();
+  sh.moveTo(0, -.72); sh.bezierCurveTo(.66, -.5, .74, .34, 0, .78); sh.bezierCurveTo(-.74, .34, -.66, -.5, 0, -.72);
+  const lf = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: .012, bevelEnabled: false, curveSegments: 7 }), m);
+  lf.rotation.x = -Math.PI / 2 + .12; lf.position.set(0, 2.42, .05); lf.castShadow = true;
+  const rib = new THREE.Mesh(new THREE.BoxGeometry(.018, .012, 1.34), petMat(0x7cc06a));
+  rib.position.set(0, 2.44, .05); rib.rotation.x = .12;
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(.017, .02, 1.5, 5), petMat(0x5f8f4a));
+  stem.position.set(-.34, 1.68, .08); stem.rotation.z = -.2;
+  g.add(lf, rib, stem);
+  g.visible = false;
+  avatar.add(g);
+  return g;
+})();
+function cameraSeesSky() { camera.getWorldDirection(_fw); return _fw.y > -.16; }
+
+/* 流星：只在鏡頭看得到天空時才來（平常鳥瞰拍不到）；流星雨的日子照真實日期，來得比較勤 */
+const METEOR_DAYS = [[1, 3, '象限儀座'], [8, 12, '英仙座'], [11, 17, '獅子座'], [12, 13, '雙子座']];
+const meteorShower = (() => { const d = new Date(), m = d.getMonth() + 1, a = d.getDate(); const h = METEOR_DAYS.find(([M, D]) => M === m && Math.abs(a - D) <= 1); return h ? h[2] : null; })();
+const meteor = (() => {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(12), 3));
+  g.setAttribute('aA', new THREE.BufferAttribute(new Float32Array([1, 1, 0, 0]), 1));
+  g.setIndex([0, 1, 2, 1, 3, 2]);
+  const U = { uK: { value: 0 } };
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: U, transparent: true, depthWrite: false, depthTest: false, fog: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+    vertexShader: 'attribute float aA; varying float vA; void main() { vA = aA; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: 'varying float vA; uniform float uK; void main() { gl_FragColor = vec4(vec3(.85, .92, 1.0), vA * vA * uK); }',
+  }));
+  m.frustumCulled = false; m.visible = false;
+  scene.add(m);
+  return { m, U, t: 8, u: -1, a: new THREE.Vector3(), b: new THREE.Vector3(), wish: 0 };
+})();
+const _m1 = new THREE.Vector3(), _m2 = new THREE.Vector3(), _m3 = new THREE.Vector3();
+function updateMeteor(dt) {
+  const M = meteor;
+  M.wish = Math.max(0, M.wish - dt);
+  if (M.u < 0) {
+    if (night < .72 || !cameraSeesSky() || WX.k > .3) return;
+    if ((M.t -= dt) > 0) return;
+    M.t = meteorShower ? 5 + Math.random() * 9 : 16 + Math.random() * 34;
+    camera.getWorldDirection(_fw);
+    const dir = Math.random() < .5 ? -1 : 1, yaw = Math.atan2(_fw.x, _fw.z) - dir * (.06 + Math.random() * .3), el = Math.max(.1, Math.asin(clamp(_fw.y, -1, 1))) + .1 + Math.random() * .2;   // 落在畫面裡：鏡頭看的地方附近
+    M.a.set(Math.sin(yaw) * Math.cos(el), Math.sin(el), Math.cos(yaw) * Math.cos(el)).multiplyScalar(340);
+    M.b.set(Math.sin(yaw + dir * .3) * Math.cos(el - .13), Math.sin(el - .13), Math.cos(yaw + dir * .3) * Math.cos(el - .13)).multiplyScalar(340);
+    M.u = 0; M.m.visible = true;
+    discover('meteor');
+    M.wish = 3.6;
+    if (sit.phase === 'sit') { $('#sit-wish').hidden = false; clearTimeout(M.tm); M.tm = setTimeout(() => { $('#sit-wish').hidden = true; }, 3600); }
+    return;
+  }
+  M.u += dt / .85;
+  if (M.u >= 1.25) { M.u = -1; M.m.visible = false; return; }
+  const head = Math.min(1, M.u), tail = Math.max(0, M.u - .32);
+  _m1.lerpVectors(M.a, M.b, head); _m2.lerpVectors(M.a, M.b, tail);
+  _m3.copy(_m1).sub(_m2).cross(camera.getWorldDirection(_fw)).normalize().multiplyScalar(.85);
+  const P = M.m.geometry.attributes.position, o = camera.position;
+  P.setXYZ(0, _m1.x + _m3.x + o.x, _m1.y + _m3.y + o.y, _m1.z + _m3.z + o.z);
+  P.setXYZ(1, _m1.x - _m3.x + o.x, _m1.y - _m3.y + o.y, _m1.z - _m3.z + o.z);
+  P.setXYZ(2, _m2.x + o.x, _m2.y + o.y, _m2.z + o.z);
+  P.setXYZ(3, _m2.x + o.x, _m2.y + o.y, _m2.z + o.z);
+  P.needsUpdate = true;
+  M.U.uK.value = (M.u < .15 ? M.u / .15 : M.u > 1 ? (1.25 - M.u) / .25 : 1) * .95;
+}
+function makeWish() {
+  if (meteor.wish <= 0) return;
+  meteor.wish = 0;
+  $('#sit-wish').hidden = true;
+  ls.set('sanasai_wish', TODAY);
+  discover('wish');
+  addLog('pet', '對著流星許了一個願');
+  sfx('little');
+  toast('願望收到了。講出來就不靈，所以我們不問。');
+}
+$('#sit-wish').addEventListener('click', e => { e.stopPropagation(); makeWish(); });
+
+/* 回到島上的問候：離開多久、現在幾點、台北的天氣。不擋畫面，幾秒後自己收掉 */
+function greetLines() {
+  const h = new Date().getHours(), days = Math.floor(gapH / 24), late = h >= 23 || h < 5, n = num('sanasai_days');
+  const hello = late ? '這麼晚了' : h < 11 ? '早安' : h < 14 ? '午安' : h < 18 ? '午後好' : '晚上好';
+  if (num('sanasai_visits') <= 1) return null;
+  let a = `${hello}。`, b = [];
+  if (gapH >= 720) { a = '好久不見。'; b.push(`你離開 ${days} 天，島上的東西都替你留著。`); }
+  else if (gapH >= 168) { a = `${hello}，你回來了。`; b.push(`離開 ${days} 天，阿滿每天都跑到碼頭看一下。`); }
+  else if (gapH >= 48) b.push(`離開 ${days} 天，沙灘上的腳印都被浪沖掉了。`);
+  else if (gapH >= 0 && gapH < 5 && !late) return null;   // 剛剛才來過，不用再打招呼
+  else if (firstToday && n > 1) b.push(`這是你來島上的第 ${n} 天。`);
+  if (late) b.push(night > .85 ? '阿滿已經睡了，腳步輕一點。' : '早點睡。');
+  const r = WX.real;
+  if (r) {
+    const tip = wxWet(r.code) ? '出門記得帶傘。' : r.temp >= 33 ? '外面很熱，多喝水。' : r.temp <= 13 ? '外面冷，多穿一件。' : '';
+    b.push(`台北現在 ${r.temp}°，${WX_NAME(r.code)}。${tip}`);
+  }
+  return [a, b.join('')];
+}
+let greeted = false;
+function showGreet() {
+  if (greeted || state.intro) return;
+  greeted = true;
+  const L = greetLines();
+  if (L) {
+    $('#greet-a').textContent = L[0]; $('#greet-b').textContent = L[1];
+    const el = $('#greet');
+    el.hidden = false;
+    clearTimeout(showGreet.tm);
+    showGreet.tm = setTimeout(() => { el.hidden = true; }, 8500);
+    el.onclick = () => { el.hidden = true; };
+  }
+  if (gapH >= 6 && dog.state !== 'sleep' && dog.state !== 'bed' && night <= .85) {   // 離開半天以上：阿滿衝過來繞著你跑
+    Object.assign(dog, { state: 'greet', t: 4.6, path: null, orbit: null });
+    bubble(dog.g, '汪汪汪！', 1.25);
+  }
+  const hr = new Date().getHours();
+  if (hr >= 1 && hr < 5) discover('late');
+  if (Math.abs(moonPhase() - .5) < .035 && (hr >= 18 || hr < 5)) discover('fullmoon');
+}
+
+/* ---------- 瓶中信：每天一瓶，沿著海漂上岸。內容看你最近做了什麼、今天是什麼日子 ---------- */
+const SOLAR = [['小寒', 5.4055, '花捲把機台頂上的位置佔得更緊了。'], ['大寒', 20.12, '一年最冷的時候。海水我摸過，不建議。'], ['立春', 3.87, '阿滿對著空氣聞了很久，說有東西變了。'], ['雨水', 18.73, '其實沒有下雨。我只是照日曆念給你聽。'],
+  ['驚蟄', 5.63, '寄居蟹全部醒著。牠們本來就醒著。'], ['春分', 20.646, '白天和晚上一樣長。我量過，差不多。'], ['清明', 4.81, '風很乾淨，適合想想以前的人。'], ['穀雨', 20.1, '島上沒有種穀子，但是草長得很快。'],
+  ['立夏', 5.52, '阿滿開始趴在樹蔭下，舌頭收不回去。'], ['小滿', 21.04, '小小的滿。我覺得這個名字很好。'], ['芒種', 5.678, '我們什麼都沒種，所以放假。'], ['夏至', 21.37, '白天最長。可以多坐一下。'],
+  ['小暑', 7.108, '機台摸起來是燙的，花捲還是睡在上面。'], ['大暑', 22.83, '海鷗飛得很低，阿滿追了一下就放棄了。'], ['立秋', 7.5, '天氣還是熱的，早上有一點不一樣。'], ['處暑', 23.13, '暑氣要走了，走得很慢。'],
+  ['白露', 7.646, '早上草葉上有水，阿滿的腳都濕了。'], ['秋分', 23.042, '白天和晚上又一樣長了。'], ['寒露', 8.318, '晚上的海風開始有一點涼。'], ['霜降', 23.438, '島上不會結霜，我還是去看了一下。'],
+  ['立冬', 7.438, '阿滿的毛好像變厚了，花捲開始搶機台頂上的位置。'], ['小雪', 22.36, '島上沒有下雪，我把這件事寫在這裡。'], ['大雪', 7.18, '也沒有下雪。日曆講話都很誇張。'], ['冬至', 21.94, '白天最短。記得吃湯圓。']];
+function solarToday(d = new Date()) {   // 節氣日期公式（21 世紀通用）：[Y×0.2422＋C]－[Y/4]，一二月的四個節氣用 (Y-1)/4
+  const m = d.getMonth(), Y = d.getFullYear() % 100;
+  for (const i of [m * 2, m * 2 + 1]) {
+    const [name, C, line] = SOLAR[i], L = Math.floor(i < 4 ? (Y - 1) / 4 : Y / 4);
+    if (Math.floor(Y * .2422 + C) - L === d.getDate()) return { name, line };
+  }
+  return null;
+}
+const HOLIDAY = { '01-01': ['阿滿', '新年快樂！！！\n今年也要丟球！！！'], '10-31': ['花捲', '今天我全身白白的，在裝鬼。\n柑仔丁說我平常也是這樣。'], '12-24': ['花捲', '柑仔丁在棕櫚樹上掛了一顆燈泡，說是聖誕樹。\n我沒有評論。'], '12-25': ['阿滿', '聖誕快樂！！！\n那顆燈泡我舔過了，不好吃。'], '12-31': ['柑仔丁', '今天是今年最後一天。\n我把今年數的海浪歸零了，明年重來。'],
+  '2027-02-05': ['柑仔丁', '今天除夕。巨獸說要放煙火，我們請牠放遠一點。'], '2027-02-06': ['阿滿', '新年快樂！！！\n紅包可以吃嗎！！！'], '2027-02-20': ['柑仔丁', '今天元宵。我把石燈全部擦亮了。'], '2027-06-09': ['花捲', '今天端午。\n粽子的葉子比粽子好玩。'], '2027-09-15': ['花捲', '今天中秋。月亮是圓的，你應該知道。\n來碼頭坐一下，我不會走開。'], '2028-01-25': ['柑仔丁', '今天除夕。島上大家都在，等你。'], '2028-01-26': ['阿滿', '新年快樂！！！'] };
+const FILLER = [
+  ['f1', '阿滿', '今天我挖了一個洞。\n洞裡什麼都沒有。\n明天我要再挖一個看看。'],
+  ['f2', '花捲', '小蜜蜂機台頂上比較暖。\n這件事不要告訴阿滿。'],
+  ['f3', '柑仔丁', '我今天數海浪，數到 3,412 道的時候被海鷗打斷，只好重數。'],
+  ['f4', '沙灘上的三位', '隔壁那隻又換殼了。\n我們都看到了。\n很難看。'],
+  ['f5', '機械巨獸', '吼。\n\n（柑仔丁翻譯：牠說今天的水有點冷。）'],
+  ['f6', '阿滿', '你走的時候我有追到碼頭盡頭。\n然後就沒有路了。'],
+  ['f7', '花捲', '昨天有一條魚跳得很高。\n我看了一眼，沒有動。\n那是牠運氣好。'],
+  ['f8', '柑仔丁', '噴泉的水柱有六道。\n我想補上第七道，失敗了。'],
+  ['f9', '海豚', '（信紙是濕的，字都糊了，只看得出一句）\n……要一起游嗎……'],
+  ['f10', '阿滿', '球。\n球在哪裡。\n你回來的時候記得球。'],
+  ['f11', '花捲', '有人說貓不會想念人。\n這句話是我放出去的。'],
+  ['f13', '沙灘上的三位', '請不要一靠近就走過來。\n我們在房間裡。'],
+  ['f14', '柑仔丁', '碼頭有一塊木板鬆了。我修好了，但是多出一根釘子。\n不知道是哪裡的。'],
+  ['f15', '花捲', '飛船裡面有東西在滴水。\n我沒有進去看。\n我只是進去看了一下。'],
+  ['f16', '阿滿', '今天有一隻蝴蝶停在我鼻子上。\n我沒有動。\n我動了。\n牠飛走了。'],
+  ['f17', '機械巨獸', '（有人用很大的字寫）\n對\n不\n起\n\n（柑仔丁註：牠昨天踩到自己的尾巴。）'],
+  ['f18', '柑仔丁', '如果你今天有點累，可以去長椅坐一下。\n不用玩什麼。'],
+  ['f19', '花捲', '你坐在長椅上的時候，我可以坐你旁邊。\n不要看我。'],
+  ['f20', '阿滿', '海鷗把我的球叼走了！！！\n\n（後來它掉下來了。）'],
+  ['f21', '柑仔丁', '我把一封信放進瓶子丟到海裡，結果它漂回來了。\n所以這封信是寫給你的。'],
+  ['f22', '沙灘上的三位', '今天潮水比較高，我們的房子差點被收走。'],
+  ['f23', '花捲', '那隻大的走路很吵。\n我跟牠談過了。\n牠聽不懂。'],
+  ['f24', '柑仔丁', '石燈天黑才亮，是我一盞一盞去點的。\n你可能沒有注意到。沒關係。'],
+  ['f25', '阿滿', '我跟你說一個祕密。\n岩洞裡面有味道。\n什麼味道我也不知道。'],
+];
+const daysAgo = iso => iso ? Math.floor((Date.parse(TODAY) - Date.parse(iso)) / 864e5) : 9999;
+function writeLetter() {
+  const r = records, L = [], add = (pri, id, from, text, again = 0) => L.push({ pri, id, from, text, again });
+  const used = ls.json('sanasai_letter_used', {}) || {}, snap = ls.json('sanasai_letter_snap', null), d = new Date(), md = TODAY.slice(5), h = d.getHours(), ph = moonPhase();
+  const yest = dayKey(new Date(Date.now() - 864e5));
+  if (!letters.length) add(101, 'first', '柑仔丁', '你好。這是島上寄出去的第一封信。\n以後每天都有一瓶漂上岸，不用回信。\n瓶蓋請留給寄居蟹。');
+  if (ls.get('sanasai_wish') === yest) add(100, 'wish' + TODAY, '花捲', '你昨晚對流星許了願。\n我們都看到了。\n講出來就不靈，所以沒有人會問你。');
+  const hd = HOLIDAY[TODAY] || HOLIDAY[md];
+  if (hd) add(98, 'h' + TODAY, hd[0], hd[1]);
+  const st = solarToday(d);
+  if (st) add(97, 's' + TODAY, '柑仔丁', `今天${st.name}。\n${st.line}`);
+  if (meteorShower) add(96, 'm' + d.getFullYear() + meteorShower, '柑仔丁', `這幾天晚上有${meteorShower}流星雨。\n坐在長椅上抬頭就看得到，流星來的時候可以許願。`);
+  if (Math.abs(ph - .5) < .02) add(95, 'fm' + TODAY.slice(0, 7), '花捲', '今晚月亮是圓的。\n夜裡的海會很亮。\n來看的話不要吵我。');
+  if (ph < .025 || ph > .975) add(95, 'nm' + TODAY.slice(0, 7), '柑仔丁', '今晚沒有月亮，浪花會發藍光，我們叫它藍眼淚。\n月亮越暗，它越亮。\n你可以點一下海面試試看。');
+  for (const k of KEYS) if (k.id !== 'crystal' && !keyState[k.id] && k.met(r)) add(92, 'rk' + k.id, '阿滿', `${PLACE[k.place].name}旁邊的基座上有東西在發光！\n我不敢咬。\n你快來。`);
+  if (snap && r.bee.best > snap.bee && snap.bee) add(88, 'rb' + r.bee.best, '花捲', `那一場我有看到。${fmt(r.bee.best)} 分。\n機台上空的蜜蜂變多了，很吵。\n打得不錯。`);
+  if (snap && r.blocks.marathon > snap.mar && snap.mar) add(88, 'rm' + r.blocks.marathon, '柑仔丁', `MARATHON ${fmt(r.blocks.marathon)} 分。\n方塊山長高了，我重新量過。`);
+  if (snap && r.maze.cleared > snap.maze) add(88, 'rz' + r.maze.cleared, '阿滿', `迷宮變大了！！！\n我在裡面迷路了！！！\n（已經出來了）`);
+  if (h >= 23 || h < 5) add(84, 'late' + TODAY.slice(0, 7), '花捲', '這個時間還醒著的，島上只有我跟你。\n睡吧。');
+  if (h >= 5 && h < 8) add(84, 'dawn' + TODAY.slice(0, 7), '阿滿', '早！！！！！\n太陽起來了！！！！！\n你也起來了！！！！！');
+  if (WX.real && wxWet(WX.real.code)) add(83, 'rain' + TODAY.slice(0, 7), '柑仔丁', '今天下雨，海面都是小圈圈。\n我數到 200 放棄了。\n出門記得帶傘。');
+  if (!keyState.copper && r.bee.keyBest >= BEE_TARGET * .7 && r.bee.keyBest < BEE_TARGET) add(72, 'nc', '花捲', `銅鑰匙還差 ${fmt(BEE_TARGET - r.bee.keyBest)} 分。\n我只是算給你聽。`, 6);
+  if (!keyState.jade && !KEY.jade.met(r) && r.blocks.marathon >= MARATHON_TARGET * .7) add(72, 'nj', '柑仔丁', `方塊山離金線還差 ${Math.max(1, Math.ceil((MARATHON_TARGET - r.blocks.marathon) / 2500))} 層。\n我每天都去量。`, 6);
+  if (!keyState.crystal && num('sanasai_visits') > 8) add(70, 'cry', '花捲', '阿滿一直跑去岩洞口聞。\n我覺得你應該過去看一下。', 9);
+  if (allKeys() && !keyState.coin) add(75, 'gate', '柑仔丁', '三把鑰匙都到了。\n門開著，不急。', 7);
+  if (keyState.coin) add(40, 'coin', '柑仔丁', '25¢ 還放在碼頭邊。\n我每天擦一次。', 30);
+  const v = num('sanasai_visits'), dn = num('sanasai_days');
+  for (const m of [10, 30, 50, 100, 200, 500]) if (v >= m && v < m + 6) add(66, 'v' + m, '柑仔丁', `這是你第 ${v} 次登島。\n我在碼頭刻了 ${v} 條線。\n花捲說很醜。`);
+  for (const m of [7, 30, 100, 365]) if (dn === m) add(67, 'd' + m, '阿滿', `你來島上 ${m} 天了！！！\n我算不出來那是幾天，但是我很高興！！！`);
+  const fn = num('sanasai_fish_n'), fed = num('sanasai_catfed'), fe = num('sanasai_fetch'), rd = num('sanasai_rides'), sk = num('sanasai_skip_best'), fb = num('sanasai_flight_best');
+  if (fn >= 3) add(50, 'fish' + Math.floor(fn / 10), '花捲', `你釣過 ${fn} 條魚，我吃了 ${fed} 條。\n剩下的去哪裡了，我們要談一談。`);
+  if (fe >= 5) add(50, 'fetch' + Math.floor(fe / 20), '阿滿', `球撿了 ${fe} 次了。\n再一次。`);
+  if (rd >= 2) add(50, 'ride' + Math.floor(rd / 5), '機械巨獸', `吼吼。\n\n（柑仔丁翻譯：你開了牠 ${rd} 次，牠說座椅有點硬，下次坐輕一點。）`);
+  if (fb) add(48, 'fly' + Math.floor(fb / 10), '柑仔丁', `飛船最快 ${fmtSec(fb)}。\n我檢查過引擎，還可以更快。`);
+  if (sk >= 4) add(48, 'skip' + sk, '海豚', `（信紙是濕的）\n你丟的石頭跳了 ${sk} 下。\n我們有看到。下次丟遠一點。`);
+  if (num('sanasai_sits') >= 3) add(46, 'sits' + Math.floor(num('sanasai_sits') / 5), '花捲', `你常常坐在那張長椅上。\n我沒有在算。\n${num('sanasai_sits')} 次。`);
+  const fresh = L.filter(x => !used[x.id] || (x.again && daysAgo(used[x.id]) >= x.again)).sort((a, b) => b.pri - a.pri);
+  let pick = fresh[0];
+  if (!pick || pick.pri < 60) {   // 沒有要緊的事：一半機率講笑話，輪完一圈再重來
+    let left = FILLER.filter(f => !used[f[0]]);
+    if (!left.length) { for (const f of FILLER) delete used[f[0]]; left = FILLER; }
+    if (!pick || hash2(d.getDate() * 3.1, d.getMonth() * 7.7) < .55) { const f = left[Math.floor(hash2(d.getDate(), d.getFullYear()) * left.length)]; pick = { id: f[0], from: f[1], text: f[2] }; }
+  }
+  used[pick.id] = TODAY;
+  ls.set('sanasai_letter_used', JSON.stringify(used));
+  ls.set('sanasai_letter_snap', JSON.stringify({ bee: r.bee.best, mar: r.blocks.marathon, maze: r.maze.cleared }));
+  return { d: TODAY, from: pick.from, text: pick.text };
+}
+let letters = ls.json('sanasai_letters', []);
+if (!Array.isArray(letters)) letters = [];
+const bottle = (() => {
+  const g = new THREE.Group(), body = new THREE.Group();
+  const glass = new THREE.MeshStandardMaterial({ color: 0x9fdcc8, transparent: true, opacity: .5, roughness: .12, metalness: .1, emissive: 0x2a5a50, emissiveIntensity: .25 });
+  const b = new THREE.Mesh(new THREE.CylinderGeometry(.14, .14, .5, 10), glass), n = new THREE.Mesh(new THREE.CylinderGeometry(.06, .13, .2, 10), glass), c = new THREE.Mesh(new THREE.CylinderGeometry(.062, .055, .1, 8), petMat(0x9a7450)), pp = new THREE.Mesh(new THREE.CylinderGeometry(.085, .085, .34, 8), new THREE.MeshStandardMaterial({ color: 0xf2e6c8, roughness: .9 }));
+  n.position.y = .34; c.position.y = .47; pp.position.y = -.02;
+  body.add(b, n, c, pp);
+  body.rotation.z = Math.PI / 2 - .1;
+  body.scale.setScalar(1.25);
+  g.add(body);
+  const hb = new THREE.Mesh(HIT_GEO, hitMat);
+  hb.scale.set(1.5, 1, 1.5); hb.position.y = .3; hb.userData = { bottle: true };
+  g.add(hb);
+  g.visible = false;
+  scene.add(g);
+  return { g, body, hb, on: false, a: 0, u: 0 };
+})();
+function bottleAngle() {   // 今天漂到哪：避開碼頭和飛船那一段
+  const k = hash2(new Date().getDate() * 1.3, new Date().getMonth() * 2.9 + 1);
+  return 2.1 + k * 4.75;
+}
+function spawnBottle() {
+  if (ls.get('sanasai_bottle_day') === TODAY || bottle.on) return;
+  bottle.on = true; bottle.a = bottleAngle(); bottle.u = 0;
+  bottle.g.visible = true;
+  pickables.push(bottle.hb);
+  const pin = addPin('bottle', `<span class="no">${svg('wave')}</span>瓶中信`, '#3f9fb0', [0, 0, 0], openBottle, 'pet');
+  bottle.g.add(pin.obj);
+  pin.obj.position.set(0, 1.0, 0);
+}
+function updateBottle(dt, t) {
+  const B = bottle;
+  if (!B.on) return;
+  B.u = Math.min(1, B.u + dt / 15);
+  const d = lerp(1.13, .945, smooth(B.u)), [x, z] = polar(B.a, d), wet = d > .975;
+  const y = Math.max(groundY(x, z), 0);
+  B.g.position.set(x, y + (wet ? .07 + Math.sin(t * 1.9) * .035 : .1), z);
+  B.body.rotation.x = wet ? Math.sin(t * 1.3) * .22 : .1;
+  B.g.rotation.y = B.a + (wet ? Math.sin(t * .7) * .3 : .3);
+}
+function openBottle() {
+  if (!bottle.on || uiLock() || state.intro) return;
+  const [x, z] = polar(bottle.a, .925), p = avatar.position;
+  if (bottle.u < 1) { bottle.u = Math.max(bottle.u, .96); }
+  if (Math.hypot(p.x - x, p.z - z) > 1.5) { if (walkTo(x, z, { follow: true, mark: true, onArrive: openBottle }) && isMobile()) closeCard(); return; }
+  walk.path = null;
+  AV.crouchT = .7;
+  bottle.on = false;
+  bottle.g.visible = false;
+  pickables.splice(pickables.indexOf(bottle.hb), 1);
+  if (pins.bottle) { bottle.g.remove(pins.bottle.obj); pins.bottle.el.parentElement?.remove(); delete pins.bottle; }
+  ls.set('sanasai_bottle_day', TODAY);
+  const L = writeLetter();
+  letters.unshift(L);
+  letters = letters.slice(0, 60);
+  ls.set('sanasai_letters', JSON.stringify(letters));
+  addLog('pet', `瓶中信：${L.from}寄來的`);
+  showLetter(L, true);
+  sfx('cork', avatar);
+  discover('bottle');
+}
+function showLetter(L, fresh = false) {
+  const d = new Date(L.d);
+  $('#letter-date').textContent = `${d.getFullYear()} 年 ${d.getMonth() + 1} 月 ${d.getDate()} 日`;
+  $('#letter-text').textContent = L.text;
+  $('#letter-from').textContent = `── ${L.from}`;
+  $('#letter-cap').hidden = !fresh;
+  $('#letter').hidden = false;
+  state.letter = fresh;
+}
+$('#letter-ok').addEventListener('click', () => {
+  $('#letter').hidden = true;
+  if (state.letter) { state.letter = false; addShell('cap'); }   // 瓶蓋留下來
+});
+
+/* ---------- 看海：坐在長椅上，時間過得比較快，大家陪你坐。太陽落進海裡、滿天星星都等得到 ---------- */
+const sit = { phase: null, t: 0, k: 0, C0: new THREE.Vector3(), T0: new THREE.Vector3(), C1: new THREE.Vector3(), T1: new THREE.Vector3(), from: new THREE.Vector3(), yaw: 0, pitch: 0, wy: 0, wp: 0, musT: 3, run: 0, deg: 2, sun: 0, nightT: 0, ptr: null };
+const sitRate = () => night > .92 ? 3.6 : curMin > 540 && curMin < 980 ? 4.5 : 1.7;   // 大白天和深夜過快一點，日出日落慢慢看
+const sitSpot = (o, r) => [PLACE.beach.door[0] + OUT[0] * o + RIGHT[0] * r, PLACE.beach.door[1] + OUT[1] * o + RIGHT[1] * r];
+const seatAt = (r = -.3) => new THREE.Vector3(BENCH[0] + RIGHT[0] * r + OUT[0] * .03, groundY(BENCH[0], BENCH[1]), BENCH[1] + RIGHT[1] * r + OUT[1] * .03);
+const catSeat = () => seatAt(.36).setY(groundY(BENCH[0], BENCH[1]) + .49);
+function startSit() {
+  if (sit.phase || uiLock() || state.intro) return;
+  const [dx, dz] = PLACE.beach.door, p = avatar.position;
+  if (Math.hypot(p.x - dx, p.z - dz) > .55) { if (walkTo(dx, dz, { follow: true, mark: true, onArrive: startSit }) && isMobile()) closeCard(); return; }
+  endFishing();
+  closeCard();
+  if (isMobile()) { ui.side = false; ui.log = false; syncLayout(); }
+  if (state.bird) setBird(false, false);
+  walk.path = null; follow = false; fly = null; controls.enabled = false;
+  state.sitting = true;
+  body.classList.add('sitting');
+  Object.assign(sit, { phase: 'down', t: 0, yaw: 0, pitch: 0, wy: 0, wp: 0, musT: 2.5, run: 0, sun: 0, nightT: 0 });
+  sit.from.copy(p);
+  sit.C0.copy(camera.position); sit.T0.copy(controls.target);
+  const s = seatAt(), m = camera.aspect < .85;
+  sit.C1.set(s.x - OUT[0] * (m ? 7.4 : 6.2) + RIGHT[0] * (m ? .5 : 1.3), s.y + (m ? 2.6 : 2.5), s.z - OUT[1] * (m ? 7.4 : 6.2) + RIGHT[1] * (m ? .5 : 1.3));
+  sit.T1.set(s.x + OUT[0] * 70 + RIGHT[0] * (m ? 0 : -2), s.y + (m ? .6 : -1.4), s.z + OUT[1] * 70 + RIGHT[1] * (m ? 0 : -2));
+  ls.set('sanasai_sits', String(num('sanasai_sits') + 1));
+  discover('sit');
+  sfx('sitdown', avatar);
+  const D = dog;
+  if (fetchS.phase === 'carried') dropBall(D.g.position.x, D.g.position.z);
+  const [x, z] = sitSpot(-.1, -1.2);
+  if (goTo(D, x, z)) D.state = 'toBench';
+}
+function endSit() {   // 站起來：走回長椅前面，鏡頭退回平常的位置
+  if (sit.phase !== 'sit' && sit.phase !== 'down') return;
+  sit.phase = 'up'; sit.t = 0;
+  camera.getWorldDirection(_fw);
+  sit.C0.copy(camera.position);
+  sit.T0.copy(camera.position).addScaledVector(_fw, 60);
+  const [dx, dz] = PLACE.beach.door, y = groundY(dx, dz);
+  sit.T1.set(dx, y + .8, dz);
+  sit.C1.set(dx - OUT[0] * 9 + RIGHT[0] * 5, y + 8.6, dz - OUT[1] * 9 + RIGHT[1] * 5);
+  $('#sit-hud').hidden = true; $('#sit-wish').hidden = true;
+  body.classList.remove('sitting');
+  if (dog.state === 'rest' || dog.state === 'toBench') { dog.state = 'follow'; dog.t = 0; dog.path = null; dog.petT = 1; }
+  if (cat.state === 'benchSit') { const [x, z] = sitSpot(.55, 1.1); catJump(false, 'idle', new THREE.Vector3(x, groundY(x, z), z)); }
+  else if (cat.state === 'toBench') { cat.state = 'idle'; cat.t = 1; cat.path = null; }
+}
+const _sl = new THREE.Vector3(), _st2 = new THREE.Vector3();
+function updateSit(dt, t) {
+  const S = sit;
+  S.k = approach(S.k, S.phase && S.phase !== 'up' ? 1 : 0, dt * 1.5);
+  if (!S.phase) return;
+  S.t += dt;
+  if (S.phase === 'down') {
+    const k = Math.min(1, S.t / 2.8), e = easeIO(k), m = Math.min(1, S.t / 1.1), s = seatAt();
+    avatar.position.lerpVectors(S.from, s, easeIO(m));
+    turnTo(avatar, OUT[0], OUT[1], dt);
+    camera.position.lerpVectors(S.C0, S.C1, e);
+    _sl.lerpVectors(S.T0, S.T1, e);
+    camera.lookAt(_sl);
+    if (k >= 1) { S.phase = 'sit'; S.t = 0; $('#sit-hud').hidden = false; }
+    return;
+  }
+  if (S.phase === 'sit') {
+    S.wy = lerp(S.wy, S.yaw, Math.min(1, dt * 5)); S.wp = lerp(S.wp, S.pitch, Math.min(1, dt * 5));
+    camera.position.copy(S.C1);
+    camera.position.y += Math.sin(t * .4) * .03;
+    _sl.copy(S.T1).sub(S.C1).applyAxisAngle(_st2.set(0, 1, 0), S.wy);
+    _sl.y += S.wp * 70; _sl.add(camera.position);
+    camera.lookAt(_sl);
+    const h = Math.floor(curMin / 60), mi = Math.floor(curMin % 60);
+    $('#sit-clock').textContent = `${pad2(h)}:${pad2(mi)}`;
+    if (S.t > 5 && !['toBench', 'benchSit', 'seek', 'beg', 'toFish', 'eat', 'happy'].includes(cat.state) && !cat.jump && carry.color === null) {   // 花捲過一下才來，跳到你旁邊
+      if (cat.perch) catJump(false, 'idle');
+      else { const [x, z] = sitSpot(-.15, .75); if (goTo(cat, x, z)) cat.state = 'toBench'; }
+    }
+    const sp = (curMin - 345) / 780;
+    if (sp > .9 && sp < 1.02) S.sun = 1;
+    if (S.sun && sp > 1.01 && sp < 1.1) { S.sun = 0; discover('sunset'); }
+    if (night > .9) { if ((S.nightT += dt) > 6) discover('stars'); }
+    updateMusic(dt);
+    return;
+  }
+  const k = Math.min(1, S.t / 1.5), e = easeIO(k), [dx, dz] = PLACE.beach.door;
+  avatar.position.lerpVectors(seatAt(), _st2.set(dx, groundY(dx, dz), dz), smooth(k * 1.4));
+  camera.position.lerpVectors(S.C0, S.C1, e);
+  _sl.lerpVectors(S.T0, S.T1, e);
+  camera.lookAt(_sl);
+  if (k >= 1) {
+    S.phase = null; state.sitting = false;
+    controls.target.copy(S.T1); controls.enabled = true; controls.update();
+    startFollow();
+  }
+}
+/* 坐著的時候有一段很輕的音樂：五聲音階隨機走，白天高一點、晚上低一點，留很多空白 */
+const SCALE_DAY = [523.25, 587.33, 659.25, 783.99, 880, 1046.5, 1174.66], SCALE_NIGHT = [220, 261.63, 293.66, 329.63, 392, 440, 523.25];
+function updateMusic(dt) {
+  if ((sit.musT -= dt) > 0 || !snd.ctx || !snd.on || snd.ctx.state !== 'running') return;
+  const sc = night > .5 ? SCALE_NIGHT : SCALE_DAY;
+  if (sit.run <= 0) { sit.run = 3 + Math.floor(Math.random() * 5); sit.deg = 1 + Math.floor(Math.random() * 4); }
+  sit.deg = clamp(sit.deg + [-2, -1, -1, 1, 1, 2][(Math.random() * 6) | 0], 0, sc.length - 1);
+  const g = snd.ctx.createGain();
+  g.gain.value = .6;
+  g.connect(snd.mus);
+  SFX.kalimba(g, sc[sit.deg], .1 + Math.random() * .05);
+  if (Math.random() < .18) SFX.kalimba(g, sc[Math.max(0, sit.deg - 2)], .06);
+  snd.log.push('kalimba');
+  if (snd.log.length > 80) snd.log.shift();
+  sit.run--;
+  sit.musT = sit.run > 0 ? (Math.random() < .4 ? .9 : .45) * (night > .5 ? 1.5 : 1) : 5 + Math.random() * 7;
+}
+$('#sit-up').addEventListener('click', endSit);
+renderer.domElement.addEventListener('pointerdown', e => { if (sit.phase === 'sit') sit.ptr = { x: e.clientX, y: e.clientY, id: e.pointerId, x0: e.clientX, y0: e.clientY, t: performance.now() }; });
+addEventListener('pointermove', e => {
+  const P = sit.ptr;
+  if (!P || e.pointerId !== P.id) return;
+  sit.yaw = clamp(sit.yaw + (e.clientX - P.x) * .0035, -1.5, 1.5);
+  sit.pitch = clamp(sit.pitch - (e.clientY - P.y) * .0028, -.14, .6);
+  P.x = e.clientX; P.y = e.clientY;
+});
+addEventListener('pointerup', e => {
+  const P = sit.ptr;
+  if (!P || e.pointerId !== P.id) return;
+  sit.ptr = null;
+  if (Math.hypot(e.clientX - P.x0, e.clientY - P.y0) < 8 && performance.now() - P.t < 500 && night > .6) {   // 坐著點海面也有藍眼淚
+    ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const g = ray.intersectObject(water, false)[0];
+    if (g) blueTear(g.point.x, g.point.z);
+  }
+});
+
+/* 藍眼淚：夜裡點海面、魚和海豚濺起的水花，水裡亮起一圈圈藍光 */
+const tears = (() => {
+  const geo = new THREE.RingGeometry(.72, 1, 40).rotateX(-Math.PI / 2), list = [];
+  for (let i = 0; i < 10; i++) {
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x46e0ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, toneMapped: false }));
+    m.visible = false; m.renderOrder = 2;
+    scene.add(m);
+    list.push({ m, t: 0, s: 1 });
+  }
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: softTex, color: 0x38c8f0, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, toneMapped: false }));
+  glow.visible = false; glow.renderOrder = 2;
+  scene.add(glow);
+  return { list, glow, gt: 0 };
+})();
+function tearRing(x, z, s = 1, delay = 0) {
+  const r = tears.list.find(q => q.t <= 0) || tears.list[0];
+  r.t = 2 + delay; r.d = delay; r.s = s;
+  r.m.position.set(x, .08, z);
+}
+function blueTear(x, z, big = true) {
+  tearRing(x, z, big ? 1.5 : .7);
+  tearRing(x, z, big ? 1 : .5, .28);
+  if (big) { tearRing(x, z, .6, .56); tears.glow.position.set(x, .07, z); tears.gt = 1.6; discover('bluetear'); sfx('tear', _ssp.set(x, 0, z)); }
+}
+function updateTears(dt) {
+  for (const r of tears.list) {
+    if (r.t <= 0) { r.m.visible = false; continue; }
+    r.t -= dt;
+    const k = 1 - clamp(r.t / 2, 0, 1);
+    r.m.visible = r.t < 2;
+    r.m.scale.setScalar((.5 + k * 5.4) * r.s);
+    r.m.material.opacity = (1 - k) * (1 - k) * .75;
+  }
+  const T = tears;
+  T.gt = Math.max(0, T.gt - dt);
+  T.glow.visible = T.gt > 0;
+  if (T.glow.visible) { T.glow.scale.setScalar(5 + (1.6 - T.gt) * 5); T.glow.material.opacity = T.gt / 1.6 * .55; }
+}
+
+/* ---------- 打水漂：走到水邊拿一顆扁石頭，指針停得越靠中間跳得越多 ---------- */
+const skip = { phase: null, t: 0, m: 0, n: 0, i: 0, seg: 0, from: new THREE.Vector3(), to: new THREE.Vector3(), dir: new THREE.Vector3(), L: 0, H: 0, T: 0, wait: 0 };
+const stone = new THREE.Mesh(BASE.dodeca, new THREE.MeshStandardMaterial({ color: 0x8f8a80, flatShading: true, roughness: .8 }));
+stone.scale.set(.2, .07, .16);
+stone.castShadow = true; stone.visible = false;
+scene.add(stone);
+function atWater(x = avatar.position.x, z = avatar.position.z) {
+  const a = Math.atan2(z, x), d = Math.hypot(x, z) / islandR(a);
+  return d > .875 && !onPier(x, z) && !(Math.abs(x) < 7.2 && z > 12);   // 碼頭和飛船那一帶不行
+}
+function startSkip() {
+  if (skip.phase || uiLock() || state.intro || fishing.phase) return;
+  const p = avatar.position;
+  if (!atWater()) {   // 不在水邊：先走到長椅前面的水邊
+    const [x, z] = polar(BEACH_A + .14, .935);
+    if (walkTo(x, z, { follow: true, mark: true, onArrive: startSkip }) && isMobile()) closeCard();
+    return;
+  }
+  walk.path = null;
+  const a = Math.atan2(p.z, p.x);
+  skip.dir.set(Math.cos(a), 0, Math.sin(a));
+  avatar.rotation.y = Math.atan2(skip.dir.x, skip.dir.z);
+  Object.assign(skip, { phase: 'aim', t: 0, m: 0 });
+  AV.crouchT = .7;
+  stone.visible = false;
+  $('#skip-meter').hidden = false;
+  sfx('pick', avatar);
+}
+function throwStone() {
+  if (skip.phase !== 'aim' || skip.t < .25) return;
+  const S = skip, q = 1 - Math.abs(S.m - .5) * 2;
+  S.n = q > .95 ? 11 + Math.floor(Math.random() * 5) : 1 + Math.floor(Math.pow(q, 1.7) * 8 + Math.random() * 2.2);
+  $('#skip-meter').hidden = true;
+  AV.throwT = .35;
+  sfx('toss', avatar);
+  const p = avatar.position;
+  let d = 1;
+  while (d < 7 && baseHeight(p.x + S.dir.x * d, p.z + S.dir.z * d) > -.05) d += .3;   // 第一下要落在水上
+  S.from.set(p.x + S.dir.x * .3, p.y + 1.1, p.z + S.dir.z * .3);
+  S.to.set(p.x + S.dir.x * (d + .7), .04, p.z + S.dir.z * (d + .7));
+  Object.assign(S, { phase: 'fly', i: 0, seg: 0, H: .8, T: .3 + d * .06 });
+  stone.visible = true;
+  stone.position.copy(S.from);
+  follow = false;
+}
+const skipHop = i => [2.9 * Math.pow(.9, i) + .55, .6 * Math.pow(.84, i) + .05];
+function endSkip(hit) {
+  const S = skip, n = S.i, best = num('sanasai_skip_best'), rec = n > best && n > 0;
+  stone.visible = false;
+  S.phase = 'done'; S.wait = 1.5;
+  if (rec) ls.set('sanasai_skip_best', String(n));
+  if (!hit) toast(n === 0 ? '咚，直接沉下去了' : `跳了 ${n} 下${rec && best ? '（新紀錄）' : ''}`, rec && best ? 'gold' : '');
+  if (rec && n >= 5) addLog('pet', `打水漂跳了 ${n} 下`);
+  if (n >= 3) discover('skip3');
+  if (n >= 8) discover('skip8');
+  if (n >= 6 && dog.state !== 'sleep' && dog.state !== 'bed' && Math.hypot(dog.g.position.x - avatar.position.x, dog.g.position.z - avatar.position.z) < 9) { dog.petT = 2; bubble(dog.g, '汪汪！', 1.25); }
+}
+function updateSkip(dt) {
+  const S = skip;
+  if (!S.phase) return;
+  S.t += dt;
+  if (S.phase === 'aim') {
+    const u = (S.t * 1.05) % 2;
+    S.m = u < 1 ? u : 2 - u;
+    $('#skip-needle').style.left = `${S.m * 100}%`;
+    if (S.t > 9 || walk.moving) { S.phase = null; $('#skip-meter').hidden = true; }   // 放著不丟、或走開了就算了
+    return;
+  }
+  if (S.phase === 'done') {
+    if ((S.wait -= dt) <= 0) { S.phase = null; startFollow(); }
+    return;
+  }
+  S.seg += dt / S.T;
+  const k = Math.min(1, S.seg);
+  stone.position.lerpVectors(S.from, S.to, k);
+  stone.position.y += Math.sin(Math.PI * k) * S.H;
+  stone.rotation.y += dt * 20;
+  // 鏡頭稍微跟著石頭往外看
+  _p.lerpVectors(avatar.position, stone.position, .5).setY(.8).sub(controls.target).multiplyScalar(Math.min(1, dt * 2));
+  controls.target.add(_p); camera.position.add(_p);
+  if (k < 1) return;
+  const { x, z } = S.to;
+  if (S.i >= S.n) {
+    waterSplash(x, z, .5, true); sfx('plop', stone);
+    if (night > .6) tearRing(x, z, .7);
+    return endSkip(false);
+  }
+  S.i++;
+  waterSplash(x, z, Math.max(.22, .42 - S.i * .018), true);
+  if (night > .6) tearRing(x, z, .5);
+  sfx('skip', stone, S.i);
+  bubble(stone, String(S.i), .5);
+  for (const d of dolphins) if (Math.hypot(d.x - x, d.z - z) < 4.5 && rnd() < .5) dolTrick(d, 'jump');
+  if ((KJ.mode === 'walk' || KJ.mode === 'stand') && Math.hypot(KJ.x - x, KJ.z - z) < 7.5) {   // 打到巨獸的腿：牠低頭看一下，然後生氣
+    sfx('clank', stone);
+    discover('bonk');
+    toast(`跳了 ${S.i} 下，打到巨獸了`, 'gold');
+    petTap('kaiju');
+    return endSkip(true);
+  }
+  const [L, H] = skipHop(S.i);
+  S.from.copy(S.to);
+  S.to.set(S.from.x + S.dir.x * L, .04, S.from.z + S.dir.z * L);
+  S.H = H; S.T = .16 + L * .06; S.seg = 0;
+}
+
+/* ---------- 貝殼、寄居蟹換殼：放一個新殼，三隻照大小排好隊，一隻接一隻搬進前一隻的殼 ---------- */
+let shellBag = ls.json('sanasai_bag', []);
+if (!Array.isArray(shellBag)) shellBag = [];
+const saveBag = () => ls.set('sanasai_bag', JSON.stringify(shellBag));
+function addShell(kind, quiet = false) {
+  shellBag.push(kind);
+  shellBag = shellBag.slice(-30);
+  saveBag();
+  if (!quiet) toast(`撿到${SHELL_NAME[kind]}（袋子裡 ${shellBag.length} 個）`);
+  sfx('pick', avatar);
+  if (kind !== 'cap') discover('shell');
+  if (ui.card && state.selected === 'beach') renderCard();
+}
+const picks = [];
+function spawnPick(kind, x, z, today = -1) {
+  const g = new THREE.Group(), sh = makeShell(kind);
+  sh.scale.setScalar(.8);
+  sh.rotation.z = (rnd() - .5) * .7; sh.rotation.y = rnd() * TAU;
+  g.add(sh);
+  const glint = new THREE.Sprite(new THREE.SpriteMaterial({ map: softTex, color: 0xfff0c0, transparent: true, opacity: .3, depthWrite: false, blending: THREE.AdditiveBlending }));
+  glint.scale.setScalar(.34); glint.position.y = .26;
+  g.add(glint);
+  g.position.set(x, groundY(x, z), z);
+  scene.add(g);
+  picks.push({ g, kind, x, z, glint, today, ph: rnd() * 9 });
+}
+function layShells() {   // 今天沙灘上的三個貝殼：位置每天不一樣，撿過就沒了
+  const taken = ls.get('sanasai_shellday') === TODAY ? (ls.json('sanasai_shelltaken', []) || []) : [];
+  if (ls.get('sanasai_shellday') !== TODAY) { ls.set('sanasai_shellday', TODAY); ls.set('sanasai_shelltaken', '[]'); }
+  const d = new Date(), r = mulberry32(d.getFullYear() * 400 + d.getMonth() * 32 + d.getDate()), kinds = ['sand', 'rose', 'mint', 'gold', 'violet'];
+  for (let i = 0, tries = 0; i < 4 && tries < 40; tries++) {
+    const a = BEACH_A + (r() - .5) * 3.4, dd = .885 + r() * .05, [x, z] = polar(a, dd);
+    if (!walkableAt(x, z) || (Math.abs(x) < 4 && z > 12)) continue;
+    if (!taken.includes(i)) spawnPick(kinds[Math.floor(r() * 5)], x, z, i);
+    i++;
+  }
+}
+function updatePicks(t) {
+  const p = avatar.position;
+  for (let i = picks.length - 1; i >= 0; i--) {
+    const k = picks[i];
+    k.glint.material.opacity = Math.pow(Math.max(0, Math.sin(t * 1.7 + k.ph)), 6) * .5;   // 偶爾閃一下
+    if (Math.hypot(p.x - k.x, p.z - k.z) < .72 && !flight.phase && !ride.phase) {
+      scene.remove(k.g);
+      picks.splice(i, 1);
+      if (k.today >= 0) { const tk = ls.json('sanasai_shelltaken', []) || []; tk.push(k.today); ls.set('sanasai_shelltaken', JSON.stringify(tk)); }
+      addShell(k.kind);
+    }
+  }
+}
+function digSpot(D) {
+  for (let k = 0; k < 6; k++) {
+    const [x, z] = polar(rnd() * TAU, .895 + rnd() * .03);
+    if (walkableAt(x, z) && !(Math.abs(x) < 5 && z > 12) && goTo(D, x, z)) return true;
+  }
+  return false;
+}
+const SAND_BIT = [new THREE.MeshBasicMaterial({ color: 0xe0cc9c }), new THREE.MeshBasicMaterial({ color: 0xcdb684 })];
+function sandFling(p, yaw) { pixelBurst(_p.set(p.x + Math.sin(yaw) * .3, p.y + .1, p.z + Math.cos(yaw) * .3), SAND_BIT, 3); }
+function digFound(p) {
+  if (rnd() < .6) {
+    const yaw = dog.g.rotation.y, x = p.x + Math.sin(yaw) * .55, z = p.z + Math.cos(yaw) * .55, r = rnd();
+    spawnPick(r < .14 ? 'block' : r < .3 ? 'gold' : ['sand', 'rose', 'mint', 'violet'][(rnd() * 4) | 0], x, z);
+    bubble(dog.g, '汪！', 1.25);
+    dog.petT = 2;
+    discover('dig');
+  } else bubble(dog.g, '…', 1.25);
+}
+const swap = { on: false, phase: '', t: 0, a: 0, order: [], i: 0, shell: null, kind: '', chain: [] };
+function nearCrab() { const p = avatar.position; return crabs.some(c => Math.hypot(c.g.position.x - p.x, c.g.position.z - p.z) < 2.8); }
+function startSwap() {
+  if (swap.on || !shellBag.length || uiLock() || skip.phase) return;
+  const p = avatar.position, kind = shellBag.includes('cap') ? 'cap' : shellBag.includes('block') ? 'block' : shellBag[shellBag.length - 1];
+  shellBag.splice(shellBag.lastIndexOf(kind), 1);
+  saveBag();
+  walk.path = null;
+  AV.crouchT = .7;
+  const a = Math.atan2(p.z, p.x), mean = crabs.reduce((s, c) => s + c.a, 0) / 3, sgn = mean >= a ? 1 : -1, gap = .78 / islandR(a);
+  const order = [...crabs].sort((x, y) => y.size - x.size);
+  const sh = makeShell(kind), [sx, sz] = polar(a, .905);
+  sh.position.set(sx, groundY(sx, sz), sz);
+  sh.rotation.y = Math.atan2(sx, sz);
+  sh.scale.setScalar(1.08);
+  scene.add(sh);
+  order.forEach((c, i) => { c.qa = a + sgn * gap * (i + 1); c.hide = 0; c.oldA = c.qa; });
+  Object.assign(swap, { on: true, phase: 'gather', t: 0, a, order, i: 0, shell: sh, kind, sub: 0 });
+  // 鏡頭從海這邊看回來：牠們面向大海，排隊的樣子、臉都看得到，也不會被長椅和你擋住
+  const m = polar(a + sgn * gap * 1.5, .905), c = new THREE.Vector3(m[0], .45, m[1]), out = new THREE.Vector3(m[0], 0, m[1]).normalize(), sd = new THREE.Vector3(-out.z, 0, out.x);
+  follow = false;
+  flyTo({ pos: c.clone().addScaledVector(out, isMobile() ? 7 : 5.4).addScaledVector(sd, 1.6).setY(isMobile() ? 3.2 : 2.5), target: c }, 1.3);
+  sfx('pick', avatar);
+}
+function updateSwap(dt) {
+  const S = swap;
+  if (!S.on) return;
+  S.t += dt;
+  if (S.phase === 'gather') {
+    const done = S.order.every(c => Math.abs(c.qa - c.a) < .003);
+    if (done || S.t > 11) { S.order.forEach(c => { c.a = c.qa; }); S.phase = 'look'; S.t = 0; }
+  } else if (S.phase === 'look') {
+    if (S.t > 1) { S.phase = 'pull'; S.t = 0; S.i = 0; }
+  } else if (S.phase === 'pull') {   // 從舊殼裡鑽出來：露出軟軟的肚子
+    const c = S.order[S.i];
+    if (S.t < dt * 1.5) { scene.attach(c.sh); c.belly.visible = true; c.bare = c.sh; c.fromA = c.a; c.toA = S.i === 0 ? S.a : S.order[S.i - 1].fromA; sfx('pop', c.g); }
+    if (S.t > .42) { S.phase = 'hop'; S.t = 0; }
+  } else if (S.phase === 'hop') {    // 跳到前一個殼
+    const c = S.order[S.i], k = Math.min(1, S.t / .5);
+    c.a = lerp(c.fromA, c.toA, k);
+    c.hopY = Math.sin(Math.PI * k) * .36;
+    if (k >= 1) {
+      const target = S.i === 0 ? S.shell : S.order[S.i - 1].bare;
+      c.g.attach(target);
+      target.position.set(0, 0, 0); target.rotation.set(0, 0, 0); target.scale.setScalar(1);
+      c.sh = target; c.belly.visible = false; c.hopY = 0;
+      c.kind = target.userData.kind;
+      sfx('pop', c.g, 1.5);
+      S.phase = 'next'; S.t = 0;
+    }
+  } else if (S.phase === 'next') {
+    if (S.t > .24) {
+      if (++S.i < S.order.length) { S.phase = 'pull'; S.t = 0; }
+      else {   // 排完了：最小那隻的舊殼留在沙灘上，可以再撿回來
+        const old = S.order[S.order.length - 1].bare, [x, z] = polar(S.order[S.order.length - 1].fromA, .905);
+        scene.remove(old);
+        spawnPick(old.userData.kind, x, z);
+        S.order.forEach(c => { c.qa = null; c.a0 = c.a; c.joy = 1.3; });
+        S.on = false;
+        ls.set('sanasai_crabshells', JSON.stringify(crabs.map(c => c.kind)));
+        addLog('pet', '寄居蟹排隊換了一輪殼');
+        discover('swap');
+        if (crabs.some(c => c.kind === 'cap')) discover('cap');
+        setTimeout(() => { if (!swap.on && !uiLock()) startFollow(); }, 1400);
+      }
+    }
+  }
+}
+
+/* ---------- 碼頭木樁上的海鷗：一靠近就飛走，過一下飛回來 ---------- */
+const perched = [[-1.17, 21.9], [1.17, 21.9], [-1.17, 20]].map(([x, z], i) => {   // 木樁：坡道那一帶是登島的地方，海鷗站在比較外面
+  const g = new THREE.Group(), W = 0xf4f2ec, G = 0x9aa3ad;
+  vox(g, RB, W, [0, .13, 0], [.15, .17, .32]);
+  vox(g, RB, W, [0, .25, .14], [.12, .12, .13]);
+  vox(g, BASE.box, 0xe8a23a, [0, .24, .23], [.04, .03, .08]);
+  const wl = vox(g, BASE.box, G, [-.09, .15, -.03], [.03, .1, .3]), wr = vox(g, BASE.box, G, [.09, .15, -.03], [.03, .1, .3]);
+  vox(g, BASE.box, 0x2a2523, [-.05, .27, .19], [.015, .02, .02]); vox(g, BASE.box, 0x2a2523, [.05, .27, .19], [.015, .02, .02]);
+  for (const sx of [-.04, .04]) vox(g, BASE.box, 0xe8a23a, [sx, .02, 0], [.02, .06, .02]);
+  const home = new THREE.Vector3(x, DECK_Y + .6, z);
+  g.position.copy(home);
+  g.rotation.y = rnd() * TAU;
+  scene.add(g);
+  return { g, wl, wr, home, t: 0, st: 'sit', ph: i * 2.3, ang: x < 0 ? Math.PI : 0, away: 0 };
+});
+function updatePerched(dt, t) {
+  const p = avatar.position;
+  for (const b of perched) {
+    if (b.st === 'sit') {
+      if (Math.sin(t * .5 + b.ph) > .96) b.g.rotation.y += dt * 2;   // 偶爾轉頭
+      if (Math.hypot(p.x - b.home.x, p.z - b.home.z) < 1.4 && !flight.phase && !ride.phase) { b.st = 'off'; b.t = 0; sfx('flap', b.g); discover('gull'); }
+    } else if (b.st === 'off') {
+      b.t += dt;
+      const k = Math.min(1, b.t / 2.6), e = k * k;
+      b.g.position.set(b.home.x + Math.cos(b.ang) * e * 18, b.home.y + e * 9 + Math.sin(k * 3) * .4, b.home.z + 4 * e + k * 6);
+      const f = Math.sin(t * 26) * .9;
+      b.wl.rotation.z = f + .8; b.wr.rotation.z = -f - .8; b.wl.scale.z = b.wr.scale.z = 1.3; b.wl.scale.y = b.wr.scale.y = 3.4;
+      if (k >= 1) { b.st = 'gone'; b.away = 14 + rnd() * 14; b.g.visible = false; }
+    } else if (b.st === 'gone') {
+      if ((b.away -= dt) <= 0 && Math.hypot(p.x - b.home.x, p.z - b.home.z) > 5) { b.st = 'back'; b.t = 0; b.g.visible = true; }
+    } else {
+      b.t += dt;
+      const k = Math.min(1, b.t / 3), e = (1 - k) * (1 - k);
+      b.g.position.set(b.home.x + Math.cos(b.ang) * e * 18, b.home.y + e * 9, b.home.z + e * 10);
+      const f = Math.sin(t * 20) * .7 * (1 - k);
+      b.wl.rotation.z = f; b.wr.rotation.z = -f; b.wl.scale.y = b.wr.scale.y = lerp(3.4, 1, k);
+      if (k >= 1) { b.st = 'sit'; b.wl.rotation.z = b.wr.rotation.z = 0; b.wl.scale.set(1, 1, 1); b.wr.scale.set(1, 1, 1); b.wl.scale.set(.03, .1, .3); b.wr.scale.set(.03, .1, .3); }
+    }
+  }
+}
+
+/* ---------- 海豚陪飛：開飛船貼著海面飛，兩三隻海豚會在船邊一路跳 ---------- */
+const escort = (() => {
+  const list = [0, 1, 2].map(i => {
+    const g = dolphins[0].g.clone(true);
+    g.traverse(o => { if (o.isCSS2DObject) o.parent.remove(o); });
+    g.visible = false; g.scale.multiplyScalar(1.15);
+    scene.add(g);
+    return { g, u: 1, w: i * .45, side: i % 2 ? 1 : -1, off: 4.5 + i * 2, fwd: i * 2.5 - 1, p: new THREE.Vector3(), yaw: 0 };
+  });
+  return { list, k: 0, n: 0 };
+})();
+function updateEscort(dt) {
+  const F = flight, p = ship.position, r = Math.hypot(p.x, p.z);
+  const on = F.phase === 'pilot' && p.y < 8 && r > 26 && !F.far;
+  escort.k = on ? Math.min(escort.k + dt, 8) : Math.max(0, escort.k - dt * 3);
+  for (const e of escort.list) {
+    if (e.u >= 1) {
+      if (!on || escort.k < 1) { e.g.visible = false; continue; }
+      if ((e.w -= dt) > 0) continue;   // 三隻錯開來跳
+      e.u = 0; e.w = .25 + Math.random() * .8;
+      const hx = -Math.sin(F.yaw), hz = -Math.cos(F.yaw), s = e.side, o = e.off + Math.random() * 2.5, f = e.fwd + F.speed * .55;   // 船頭是 -z
+      e.p.set(p.x + hx * f + hz * s * o, 0, p.z + hz * f - hx * s * o);
+      e.yaw = F.yaw + Math.PI;
+      e.g.visible = true;
+      waterSplash(e.p.x, e.p.z, .7, true);
+      if (night > .6) tearRing(e.p.x, e.p.z, .9);
+      if (++escort.n === 4) discover('escort');
+    }
+    if (!e.g.visible) continue;
+    e.u += dt / 1.15;
+    const k = Math.min(1, e.u), v = F.speed * 1.05;
+    e.p.x += Math.sin(e.yaw) * v * dt; e.p.z += Math.cos(e.yaw) * v * dt;
+    e.g.position.set(e.p.x, Math.sin(Math.PI * k) * 3.1 - .35, e.p.z);
+    e.g.rotation.set(0, 0, 0);
+    e.g.rotation.y = e.yaw;
+    e.g.rotateX(-Math.cos(Math.PI * k) * .95);
+    if (k >= 1) { waterSplash(e.p.x, e.p.z, .7, true); e.g.visible = false; e.u = 1; }
+  }
+}
+
+/* ---------- 新紀錄：從遊戲回來時島上替你慶祝 ---------- */
+function celebrate(id) {
+  const cab = CAB[id];
+  if (!cab) return;
+  const c = cab.F, top = new THREE.Vector3(c.x, c.y + 5.4, c.z);
+  [0, 280, 560, 900].forEach((ms, i) => setTimeout(() => { pixelBurst(top.clone().add(new THREE.Vector3((i % 2 ? 1 : -1) * .9, i * .3, 0)), id === 'bee' ? BIT_MATS : [new THREE.MeshBasicMaterial({ color: hexNum(GAME[id].color) }), BIT_MATS[3], BIT_MATS[0]]); sfx('fwBurst', top, .6); }, ms));
+  mqFlash = 2.4;
+  if (dog.state !== 'sleep' && dog.state !== 'bed' && night <= .85) { Object.assign(dog, { state: 'greet', t: 3.6, path: null, orbit: null }); bubble(dog.g, '汪汪！', 1.25); }
+  blob.jolt = .6; bubble(blob.g, '♪', 1.0);
+  if (cat.state !== 'nap') bubble(cat.g, '喵', .75);
+  sfx('jingle', null, true);
+}
+let mqFlash = 0;
+
+/* ---------- 發呆：放著不動，分身會打呵欠、坐下來；再久一點鏡頭慢慢繞 ---------- */
+const idle = { t: 0, stage: 0, k: 0 };
+function wakeUp() {
+  idle.t = 0; idle.stage = 0;
+  if (controls.autoRotate) controls.autoRotate = false;
+}
+for (const type of ['pointerdown', 'keydown', 'wheel']) addEventListener(type, wakeUp, true);
+function updateIdle(dt) {
+  const busy = walk.moving || walk.path || flight.phase || ride.phase || sit.phase || fishing.phase || skip.phase || swap.on || state.photo || state.intro || ui.card || fly;
+  if (busy) {
+    idle.t = 0; idle.stage = 0; idle.k = approach(idle.k, 0, dt * 3);
+    if (controls.autoRotate) controls.autoRotate = false;
+    if (flight.phase || ride.phase) { AV.hem.scale.y = 1; AV.hem.position.y = .36; }
+    return;
+  }
+  idle.t += dt;
+  if (idle.stage === 0 && idle.t > 24) { idle.stage = 1; bubble(avatar, '哈～', 2.3); }
+  if (idle.stage === 1 && idle.t > 42) idle.stage = 2;
+  if (idle.stage === 2 && idle.t > 95) { idle.stage = 3; controls.autoRotateSpeed = -.28; controls.autoRotate = true; }
+  idle.k = approach(idle.k, idle.stage >= 2 ? 1 : 0, dt * 1.6);
+}
+
+/* ---------- 告示牌、灰點 ---------- */
+const signTex = canvasTex(512, 320, (x, w, h) => {
+  x.fillStyle = '#b48560'; rr(x, 6, 6, w - 12, h - 12, 18); x.fill();
+  x.strokeStyle = '#7d5c3f'; x.lineWidth = 8; x.stroke();
+  x.strokeStyle = 'rgba(90,60,35,.16)'; x.lineWidth = 3;
+  for (let i = 0; i < 7; i++) { x.beginPath(); x.moveTo(20, 40 + i * 42); x.bezierCurveTo(170, 28 + i * 42, 340, 52 + i * 42, w - 20, 38 + i * 42); x.stroke(); }
+  x.fillStyle = '#2f2015'; x.textAlign = 'left';
+  x.font = `700 44px ${FONT_C}`; x.fillText('隱嶼', 36, 70);
+  x.font = `600 22px ${FONT_D}`; x.fillText('H E R M I T', 150, 68);
+  x.font = `500 30px ${FONT_C}`;
+  x.fillText('人口　1 人・1 狗・1 貓', 36, 128);
+  x.fillText('　　　1 丁・3 蟹・3 鷗', 36, 170);
+  x.fillText('　　　1 隻很大的', 36, 212);
+  x.fillText(`海拔　2 公尺`, 36, 264);
+  x.font = `500 24px ${FONT_C}`; x.fillStyle = '#5a3f28'; x.textAlign = 'right';
+  x.fillText(`登島 ${num('sanasai_visits')} 次`, w - 32, 264);
+});
+{
+  const [x, z] = SIGN, y = groundY(x, z), m = new THREE.Mesh(new THREE.PlaneGeometry(1.5, .94), new THREE.MeshStandardMaterial({ map: signTex, roughness: .9 }));
+  m.position.set(x, y + 1.24, z + .05); m.rotation.y = -.35; m.castShadow = true;
+  scene.add(m);
+}
+const grayDot = (() => {
+  const [gx, gz] = GROTTO, a = Math.atan2(-gz, -gx), x = gx + Math.cos(a) * 1.75 + Math.sin(a) * 1.0, z = gz + Math.sin(a) * 1.75 - Math.cos(a) * 1.0;
+  const m = new THREE.Mesh(BASE.box, new THREE.MeshStandardMaterial({ color: 0x7f7f7f, roughness: 1 }));
+  m.scale.setScalar(.11); m.position.set(x, groundY(x, z) + .1, z);
+  scene.add(m);
+  const hb = new THREE.Mesh(HIT_GEO, hitMat);
+  hb.position.copy(m.position); hb.scale.setScalar(.7); hb.userData = { gray: true };
+  scene.add(hb);
+  pickables.push(hb);
+  return m;
+})();
+function tapGray() {
+  discover('gray');
+  showLetter({ d: TODAY, from: '（沒有署名）', text: '很久以前，有個工程師一個人做完了一款遊戲，公司不讓他把名字放上去。\n他在遊戲裡藏了一個灰色的小點，帶著它才進得去一間密室，牆上寫著他的名字。\n\n這座島也是有人做出來的。\n謝謝你走到這裡。' });
+}
+/* ---------- 拍照：右上角相機，取景後按快門；倒數的話大家會跑過來站好看鏡頭 ---------- */
+const photo = { count: 0, t: 0, calling: false, last: null };
+const photoAlbum = () => { const a = ls.json('sanasai_album', []); return Array.isArray(a) ? a : []; };
+function enterPhoto() {
+  if (state.photo || uiLock() || state.intro) return;
+  endFishing();
+  closeCard();
+  if (isMobile()) { ui.side = false; ui.log = false; }
+  syncLayout();
+  state.photo = true;
+  walk.path = null;
+  body.classList.add('photo-mode');
+  $('#photo-ui').hidden = false;
+  follow = false;
+}
+function exitPhoto() {
+  state.photo = false;
+  photo.count = 0;
+  body.classList.remove('photo-mode');
+  $('#photo-ui').hidden = true;
+  $('#photo-count').hidden = true;
+  $('#polaroid').hidden = true;
+  releasePose();
+}
+function releasePose() {
+  if (dog.state === 'pose') { dog.state = 'idle'; dog.t = 2; dog.path = null; }
+  if (blob.state === 'pose') { blob.state = 'idle'; blob.t = 1; blob.path = null; }
+  if (cat.state === 'pose') { cat.state = 'idle'; cat.t = 2; cat.path = null; }
+  photo.calling = false;
+}
+function callEveryone() {   // 倒數：島民跑到你身邊，轉過來看鏡頭
+  const p = avatar.position, spots = [[-1.1, .3], [1.1, .25], [.45, 1.05]], ry = Math.atan2(camera.position.x - p.x, camera.position.z - p.z), c = Math.cos(ry), s = Math.sin(ry);
+  const at = ([lx, lz]) => { for (const k of [1, .75, 1.3, .5]) { const x = p.x + (lx * c + lz * s) * k, z = p.z + (-lx * s + lz * c) * k; if (walkableAt(x, z)) return [x, z]; } return [p.x, p.z]; };
+  const [d, b, q] = spots.map(at);
+  if (dog.state !== 'sleep' && dog.state !== 'bed' && goTo(dog, d[0], d[1])) dog.state = 'pose';
+  if (blob.state !== 'gaze' && goTo(blob, b[0], b[1])) blob.state = 'pose';
+  if (cat.perch) catJump(false, 'idle');
+  else if (goTo(cat, q[0], q[1])) cat.state = 'pose';
+  photo.spotCat = q;
+  photo.calling = true;
+  avatar.rotation.y = ry;
+  AV.saberT = 6;
+}
+function updatePhoto(dt) {
+  if (!state.photo) return;
+  const c = camera.position;
+  if (photo.calling) {
+    if (cat.state === 'idle' && !cat.perch && !cat.jump && goTo(cat, photo.spotCat[0], photo.spotCat[1])) cat.state = 'pose';
+    for (const m of [dog, blob, cat]) if (m.state === 'pose' && !m.path) turnTo(m.g, c.x - m.g.position.x, c.z - m.g.position.z, dt);
+    turnTo(avatar, c.x - avatar.position.x, c.z - avatar.position.z, dt);
+  }
+  if (photo.count > 0) {
+    photo.count -= dt;
+    const n = Math.ceil(photo.count), el = $('#photo-count');
+    if (String(n) !== el.textContent && n > 0) { el.textContent = n; el.hidden = false; el.classList.remove('tick'); void el.offsetWidth; el.classList.add('tick'); sfx('tick'); }
+    if (photo.count <= 0) { el.hidden = true; takePhoto(); }
+  }
+}
+const inFrame = v => { _p.copy(v).project(camera); return Math.abs(_p.x) < .96 && Math.abs(_p.y) < .96 && _p.z < 1; };
+function photoSubjects() {
+  const out = [], near = v => v.distanceTo(camera.position) < 46, w = new THREE.Vector3();
+  const see = (o, n, dy = .4) => { o.getWorldPosition(w); w.y += dy; if (near(w) && inFrame(w)) out.push(n); };
+  see(avatar, '你', 1); see(dog.g, '阿滿'); see(cat.g, '花捲', .3); see(blob.g, '柑仔丁');
+  kj.waist.getWorldPosition(w);
+  if (inFrame(w)) out.push('巨獸');
+  if (dolphins.some(d => d.g.position.y > .3 && inFrame(d.g.position) && d.g.position.distanceTo(camera.position) < 60)) out.push('海豚');
+  return out;
+}
+const dayWord = () => curMin < 300 || curMin >= 1170 ? '夜晚' : curMin < 450 ? '清晨' : curMin < 960 ? '白天' : '黃昏';
+function placeWord() {
+  const t = controls.target, near = [['碼頭', 0, 19], ['廣場', 0, 6.4], ['看海的長椅', BENCH[0], BENCH[1]], ...GAMES.map(g => [g.name, g.at[0], g.at[1]])];
+  let best = '隱嶼', bd = 7;
+  for (const [n, x, z] of near) { const d = Math.hypot(t.x - x, t.z - z); if (d < bd) { bd = d; best = n; } }
+  return best;
+}
+function takePhoto() {
+  const who = photoSubjects(), d = new Date();
+  const line = (who.length ? who.join('、') : '沒有人') + `・${placeWord()}・${dayWord()}`;
+  const date = `${d.getFullYear()}.${pad2(d.getMonth() + 1)}.${pad2(d.getDate())}`;
+  renderer.render(scene, camera);   // 當場畫一次再抓，不用開 preserveDrawingBuffer
+  const src = renderer.domElement, sw = src.width, sh = src.height, r = 1.18;
+  let cw = sw, ch = sw / r;
+  if (ch > sh) { ch = sh; cw = sh * r; }
+  if (!body.classList.contains('side-closed') && !isMobile()) { /* 清單在拍照時是收起來的 */ }
+  const W = 1000, H = Math.round(W / r), pad = 44, foot = 150, c = document.createElement('canvas');
+  c.width = W + pad * 2; c.height = H + pad + foot;
+  const x = c.getContext('2d');
+  x.fillStyle = '#fbf8f1'; x.fillRect(0, 0, c.width, c.height);
+  x.drawImage(src, (sw - cw) / 2, (sh - ch) / 2, cw, ch, pad, pad, W, H);
+  x.fillStyle = '#2c2f3a'; x.font = `500 36px ${FONT_C}`; x.textAlign = 'left';
+  let txt = line;
+  while (x.measureText(txt).width > W - 8 && txt.length > 4) txt = txt.slice(0, -2) + '…';
+  x.fillText(txt, pad + 4, H + pad + 62);
+  x.fillStyle = '#8b91a1'; x.font = `500 28px ${FONT_D}`;
+  x.fillText(`HERMIT  ${date}`, pad + 4, H + pad + 112);
+  const full = c.toDataURL('image/jpeg', .9);
+  const th = document.createElement('canvas');
+  th.width = 360; th.height = Math.round(360 * c.height / c.width);
+  th.getContext('2d').drawImage(c, 0, 0, th.width, th.height);
+  const album = photoAlbum();
+  album.unshift({ t: Date.now(), line, src: th.toDataURL('image/jpeg', .68) });
+  ls.set('sanasai_album', JSON.stringify(album.slice(0, 12)));
+  ls.set('sanasai_photos', String(num('sanasai_photos') + 1));
+  $('#photo-flash').classList.remove('go'); void $('#photo-flash').offsetWidth; $('#photo-flash').classList.add('go');
+  sfx('shutter');
+  discover('photo');
+  if (['你', '阿滿', '花捲', '柑仔丁'].every(n => who.includes(n))) discover('family');
+  if (who.includes('你') && who.includes('巨獸')) discover('monster');
+  photo.last = { full, c, name: `hermit_${date.replace(/\./g, '')}_${pad2(d.getHours())}${pad2(d.getMinutes())}.jpg` };
+  showPolaroid(full, line);
+  releasePose();
+}
+function showPolaroid(src, line) {
+  $('#pola-img').src = src;
+  $('#pola-img').alt = line;
+  $('#pola-share').hidden = !(navigator.canShare && photo.last);
+  $('#pola-save').hidden = !photo.last;
+  $('#polaroid').hidden = false;
+}
+$('#btn-photo').addEventListener('click', () => { state.photo ? exitPhoto() : enterPhoto(); });
+$('#ph-close').addEventListener('click', exitPhoto);
+$('#ph-shot').addEventListener('click', () => { if (photo.count <= 0) takePhoto(); });
+$('#ph-timer').addEventListener('click', () => { if (photo.count > 0) return; photo.count = 5; callEveryone(); });
+$('#pola-again').addEventListener('click', () => { $('#polaroid').hidden = true; if (!state.photo && !uiLock()) enterPhoto(); });
+$('#pola-close').addEventListener('click', () => { $('#polaroid').hidden = true; photo.last = null; if (state.photo) exitPhoto(); });
+$('#pola-save').addEventListener('click', () => { if (!photo.last) return; const a = document.createElement('a'); a.href = photo.last.full; a.download = photo.last.name; document.body.appendChild(a); a.click(); a.remove(); });
+$('#pola-share').addEventListener('click', () => {
+  if (!photo.last) return;
+  photo.last.c.toBlob(b => { const f = new File([b], photo.last.name, { type: 'image/jpeg' }); if (navigator.canShare({ files: [f] })) navigator.share({ files: [f] }).catch(() => {}); }, 'image/jpeg', .9);
+});
+
+function updateMarquee(dt, t) {
+  if (mqFlash <= 0) return;
+  mqFlash -= dt;
+  const k = mqFlash > 0 ? (Math.sin(t * 18) > 0 ? 2.6 : 1) : lerp(.95, 1.7, night);
+  for (const m of marqueeMats) m.color.setScalar(k);
+}
+function updateLife(dt, t) {
+  updatePrints();
+  updateLights(dt, t);
+  fountain.U.uT.value = t; fountain.U.uN.value = smooth((night - .4) / .4);
+  fireflies.U.uT.value = t; fireflies.U.uO.value = smooth((night - .5) / .35);
+  updateButterflies(dt, t);
+  WIND_U.uWT.value = t * 1.15;
+  updateWeather(dt, t);
+  updateMeteor(dt);
+  updateTears(dt);
+  updateBottle(dt, t);
+  updateSkip(dt);
+  updatePicks(t);
+  updateSwap(dt);
+  updatePerched(dt, t);
+  updateEscort(dt);
+  updateIdle(dt);
+  updatePhoto(dt);
+  updateMarquee(dt, t);
+  updateLittleQueue(dt);
 }
 
 /* ---------- 主迴圈 ---------- */
@@ -6206,8 +8150,9 @@ function updateAmbient(dt, t) {
   }
   wp.needsUpdate = true;
   foamSurge = Math.max(0, foamSurge - dt * .6); shipRock = Math.max(0, shipRock - dt * .45);   // 跺腳的浪打上岸、打到飛船
-  foam.material.opacity = .32 + .2 * Math.sin(t * 1.3) + foamSurge * .45;
-  foam.scale.setScalar(1 + .006 * Math.sin(t * 1.3) + foamSurge * .025);
+  updateTide(dt, t);
+  updateSandMap(dt);
+  STAR_U.uT.value = t;
   if (!flight.phase) {
     ship.position.y = SHIP.y + Math.sin(t * 1.1) * .045 + shipRock * Math.sin(t * 5.5) * .28;
     ship.rotation.z = Math.sin(t * .8) * .006 + shipRock * Math.sin(t * 4.2) * .07;
@@ -6230,17 +8175,27 @@ function updateAmbient(dt, t) {
   crystal.group.rotation.y = t * .25;
   updateOverflow(dt, t);
 }
+const fps = { n: 0, sum: 0, done: false };
+function watchFps(raw) {   // 舊手機跑不動：登島後量一下，每秒不到 36 張就把解析度降一點，順暢比較重要
+  if (fps.done || !landed || document.hidden || state.intro) return;
+  fps.sum += Math.min(raw, .25);
+  if (++fps.n < 150) return;
+  fps.done = true;
+  if (fps.sum / fps.n > 1 / 36 && renderer.getPixelRatio() > 1.3) renderer.setPixelRatio(1.3);
+}
 function tick() {
   requestAnimationFrame(tick);
-  const dt = Math.min(clock.getDelta(), .05);
+  const raw = clock.getDelta(), dt = Math.min(raw, .05);
   if (state.inGame) return;
+  watchFps(raw);
   if (!state.freeze) elapsed += dt;
   updateTime(dt);
   updateAvatar(dt);
   updateCamera(dt);
   updateFlight(dt);
+  updateSit(dt, elapsed);
   updateSound(dt);
-  if (!state.freeze) { updateAmbient(dt, elapsed); updatePets(dt, elapsed); updateRide(dt, elapsed); }
+  if (!state.freeze) { updateAmbient(dt, elapsed); updateLife(dt, elapsed); updatePets(dt, elapsed); updateRide(dt, elapsed); }
   updateProximity();
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
@@ -6258,10 +8213,10 @@ addEventListener('resize', () => {
 });
 
 /* ---------- 登島：一打開就是島，鏡頭從海上飛向島（碰一下就停），分身從飛船走上岸 ---------- */
-for (const id of [...GAMES.map(g => g.id), 'pier']) {
+for (const id of [...GAMES.map(g => g.id), 'pier', 'beach']) {
   const P = PLACE[id];
   const y = CAB[id] ? CAB[id].F.y + 6.0 : 2.5;
-  addPin(id, `<span class="no">${P.no}</span>${esc(P.name)}`, P.color, [P.at[0], y, P.at[1]], () => selectPlace(id));
+  addPin(id, `<span class="no">${P.no}</span>${esc(id === 'beach' ? '看海' : P.name)}`, P.color, [P.at[0], y, P.at[1]], () => selectPlace(id));
 }
 camera.fov = innerWidth / innerHeight < .85 ? 48 : 38;
 camera.updateProjectionMatrix();
@@ -6275,6 +8230,11 @@ ls.set('sanasai_visits', String(visits));
 addLog('land', ls.get(SEEN_KEY) ? `第 ${visits} 次登島` : '第一次登島');
 setTime('auto');
 applyDay(curMin);
+redraw(signTex);
+layShells();
+wxButton();
+const wxLoaded = fetchWeather().then(wxButton);
+setInterval(() => fetchWeather().then(wxButton), 1800000);
 refresh();
 syncLayout();
 renderAll();
@@ -6284,6 +8244,8 @@ function land() {
   landed = true;
   if (!ls.get('sanasai_intro_v2')) showIntro(0);
   pendingToasts.splice(0).forEach(([text, tone], i) => setTimeout(() => toast(text, tone), i * 3000));
+  Promise.race([wxLoaded, new Promise(r => setTimeout(r, 2000))]).then(() => setTimeout(showGreet, 500));   // 等一下台北的天氣，抓不到就算了
+  setTimeout(spawnBottle, 2500);
 }
 walkTo(0, 13.6);
 flyTo(overviewPose(), 3.2, land);
@@ -6292,4 +8254,4 @@ tick();
 body.classList.remove('booting');
 
 /* 除錯／測試用的唯讀入口 */
-window.sanasai = { PLACE, GAMES, KEYS, CAB, keyState, state, ui, avatar, camera, controls, records: () => records, overflow: () => ({ bees: swarm && swarm.n, heap: heap && heap.layers, maze: mazeArea && mazeArea.n }), pets: () => ({ dog: dog.state, dogPos: dog.g.position.toArray().map(v => +v.toFixed(2)), cat: cat.awakeT > 0 || night > .6, crabs: crabs.map(c => +c.hide.toFixed(1)), blob: blob.state }), petTap, view: (pos, target) => { follow = false; fly = null; controls.enabled = true; camera.position.set(...pos); controls.target.set(...target); controls.update(); }, select: selectPlace, walkTo, overview, setTime, land, findPath, dolphins, pod, dolTrick, updateDolphins, updateSplashes, ship, AV, FAR_ISLES, snd, SFX, setSound, flight, startFlight, skipFlight, throwBall, fetchS, fishing, startFishing, reel, feedCat, carry, catGo, catJump, rings, landNow, swing, divers, spawnDiver, cat, dog, KJ, kj, updateKaiju, kjDepth, kjFloor, kjRipples, kjSpray, kjRoar, kjFlame, SH, shield, ride, aura, startRide, rideExit, rideRoarDown, rideRoarUp, rideStomp, rideWorks, rideFireAt, rideView, wave, fw, beamFx, seatWorld, cloudCeil, shieldHitT, updateRide, PIT, pit, oc, rcam, aim, aimPick, VIEWS, steam, CLOUD, cloudBurn, startShow, endShow, ridePointer, fishes, birds, crabs, blob, POSE, joy, keysDown, updatePets, updateAmbient };
+window.sanasai = { future, warp, ARRIVE, grayPos: () => grayDot.position.toArray(), bfly: () => { const b = butterflies.list[0]; return [b.x, b.y, b.z]; }, renderer, setMin: v => { curMin = v; applyDay(v); }, ff(sec) { for (let i = 0, n = sec * 20; i < n; i++) { elapsed += .05; updateTime(.05); updateAvatar(.05); updateAmbient(.05, elapsed); updateLife(.05, elapsed); updateSit(.05, elapsed); updatePets(.05, elapsed); } }, sit, startSit, endSit, skip, startSkip, throwStone, swap, startSwap, shellBag: () => shellBag, addShell, picks, bottle, openBottle, spawnBottle, writeLetter, letters: () => letters, solarToday, moonPhase, WX, setWeather, little, discover, LITTLE, meteor, tears, blueTear, photo, enterPhoto, exitPhoto, takePhoto, callEveryone, perched, escort, idle, fountain, setFountainCoins, nightLights, tide, sandStamp, celebrate, greetLines, showGreet, curMinNow: () => curMin, night: () => night, FISH, fishPick, snapDay: () => [SEA_U.uLight.value.toArray(), SHORE_U.uBio.value], PLAZA, BENCH, OUT, ...{ fishdex: () => fishDex }, PLACE, GAMES, KEYS, CAB, keyState, state, ui, avatar, camera, controls, records: () => records, overflow: () => ({ bees: swarm && swarm.n, heap: heap && heap.layers, maze: mazeArea && mazeArea.n }), pets: () => ({ dog: dog.state, dogPos: dog.g.position.toArray().map(v => +v.toFixed(2)), cat: cat.awakeT > 0 || night > .6, crabs: crabs.map(c => +c.hide.toFixed(1)), blob: blob.state }), petTap, view: (pos, target) => { follow = false; fly = null; controls.enabled = true; camera.position.set(...pos); controls.target.set(...target); controls.update(); }, select: selectPlace, walkTo, overview, setTime, land, findPath, dolphins, pod, dolTrick, updateDolphins, updateSplashes, ship, AV, FAR_ISLES, snd, SFX, setSound, flight, startFlight, skipFlight, throwBall, fetchS, fishing, startFishing, reel, feedCat, carry, catGo, catJump, rings, landNow, swing, divers, spawnDiver, cat, dog, KJ, kj, updateKaiju, kjDepth, kjFloor, kjRipples, kjSpray, kjRoar, kjFlame, SH, shield, ride, aura, startRide, rideExit, rideRoarDown, rideRoarUp, rideStomp, rideWorks, rideFireAt, rideView, wave, fw, beamFx, seatWorld, cloudCeil, shieldHitT, updateRide, PIT, pit, oc, rcam, aim, aimPick, VIEWS, steam, CLOUD, cloudBurn, startShow, endShow, ridePointer, fishes, birds, crabs, blob, POSE, joy, keysDown, updatePets, updateAmbient };

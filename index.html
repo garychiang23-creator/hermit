@@ -33,8 +33,6 @@
   #app { transition: opacity .8s ease; }
   body.booting #app { opacity: 0; } /* 島載入好之前不露出空殼，好了整頁一起淡入 */
   #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
-  #warp { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 4; opacity: 0; transition: opacity .7s; }
-  #warp.on { opacity: 1; }
   #labels { transition: opacity .6s; }
   body.space #labels { opacity: 0; }
 
@@ -165,7 +163,8 @@
   .bar i { display: block; height: 100%; border-radius: inherit; background: var(--c, var(--sea)); transition: width .6s ease; }
   .keyrow .bar { margin: 10px 0 0 40px; }
   .side-foot { display: none; padding: 12px 18px calc(14px + var(--sb)); border-top: 1px solid var(--line); }
-  .foot-toggles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .foot-toggles { display: flex; gap: 6px; }
+  .foot-toggles button { flex: 1 1 0; min-width: 0; padding-left: 2px; padding-right: 2px; white-space: nowrap; }
   .foot-toggles button { height: 38px; border-radius: 11px; border: 1px solid var(--line-2); background: #fff; font-size: 12.5px; }
   .foot-toggles button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
 
@@ -230,6 +229,7 @@
   .pin.pet .no svg.i { width: 13px; height: 13px; stroke-width: 2; }
   .idx .no svg.i { width: 24px; height: 24px; }
   .bubble { display: inline-block; pointer-events: none; font-size: 13px; font-weight: 700; color: var(--ink); background: #fff; border-radius: 999px; padding: 3px 11px; box-shadow: 0 3px 10px rgba(15, 22, 42, .22); white-space: nowrap; animation: bubble 1.6s ease forwards; }
+  .say { z-index: 90 !important; }
   @keyframes bubble { 0% { opacity: 0; transform: translateY(6px) scale(.8); } 15% { opacity: 1; transform: none; } 70% { opacity: 1; } 100% { opacity: 0; transform: translateY(-16px); } }
 
   /* ---------- 日誌 ---------- */
@@ -313,16 +313,98 @@
   .ending-box p { line-height: 1.85; color: rgba(246, 236, 210, .88); margin: 0; }
   .ending-box .btn { margin-top: 24px; background: #f6ecd2; color: #1c1608; border: 0; padding: 0 26px; }
 
+  /* ---------- 隱士的日常 ---------- */
+  .greet { position: fixed; z-index: 14; top: calc(84px + var(--st)); left: calc((100vw - var(--side-w)) / 2); transform: translateX(-50%); max-width: min(460px, calc(100vw - var(--side-w) - 40px)); padding: 12px 20px 13px; border-radius: 18px; cursor: pointer; animation: pop .4s ease; }
+  body.side-closed .greet { left: 50%; }
+  .greet b { display: block; font-size: 15.5px; }
+  .greet span { display: block; font-size: 13.5px; color: var(--ink-2); line-height: 1.65; margin-top: 2px; }
+  .greet span:empty { display: none; }
+  .skip-meter { position: fixed; z-index: 13; left: calc((100vw - var(--side-w)) / 2); bottom: calc(142px + var(--sb)); transform: translateX(-50%); width: min(280px, 72vw); height: 20px; padding: 0; border-radius: 999px; overflow: visible; background: linear-gradient(90deg, #d9dde4, #f3e4b6 34%, #7fd6a4 47%, #3cc48a 50%, #7fd6a4 53%, #f3e4b6 66%, #d9dde4); }
+  body.side-closed .skip-meter { left: 50%; }
+  #skip-needle { position: absolute; top: -5px; bottom: -5px; width: 4px; margin-left: -2px; border-radius: 3px; background: var(--ink); box-shadow: 0 0 0 2px rgba(255, 255, 255, .85); }
+  .skip-meter .zone { position: absolute; top: 2px; bottom: 2px; left: 47.6%; width: 4.8%; border-radius: 3px; border: 1.5px solid rgba(255, 255, 255, .95); }
+  /* 看海、拍照：介面全部退下去 */
+  .topbar, .dock, .hint, #joystick, #labels, .greet { transition: opacity .6s ease; }
+  body.sitting .topbar, body.sitting .dock, body.sitting .hint, body.sitting #joystick, body.sitting #labels, body.sitting .greet,
+  body.photo-mode .dock, body.photo-mode .hint, body.photo-mode #joystick, body.photo-mode #labels, body.photo-mode .greet, body.photo-mode .hud, body.photo-mode .brand, body.photo-mode .toolbar { opacity: 0; pointer-events: none; }
+  body.sitting .topbar *, body.sitting .dock *, body.sitting .pin, body.photo-mode .dock *, body.photo-mode .topbar *, body.photo-mode .pin { pointer-events: none !important; }
+  body.sitting .sidebar, body.photo-mode .sidebar { transform: translateX(104%); }
+  body.sitting .log, body.photo-mode .log { display: none; }
+  .sit-hud { position: fixed; z-index: 13; left: 50%; transform: translateX(-50%); bottom: calc(22px + var(--sb)); display: flex; align-items: center; gap: 12px; padding: 6px 7px 6px 18px; border-radius: 999px; background: rgba(13, 20, 38, .42); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); color: #fff; animation: fade 1.2s ease; }
+  #sit-clock { font-family: var(--display); font-size: 16px; font-variant-numeric: tabular-nums; letter-spacing: .06em; opacity: .9; }
+  .sit-hud .btn { height: 36px; font-size: 13.5px; padding: 0 14px; background: rgba(255, 255, 255, .92); color: var(--ink); border: 0; }
+  .sit-wish { position: fixed; z-index: 13; left: 50%; transform: translateX(-50%); bottom: calc(80px + var(--sb)); padding: 10px 20px; border: 0; border-radius: 999px; font-size: 14px; font-weight: 600; color: #1c1608; background: linear-gradient(90deg, #f0cf74, #ffe9a8); box-shadow: 0 0 22px rgba(255, 224, 140, .6); animation: pop .3s ease; }
+  /* 瓶中信 */
+  .letter { position: fixed; inset: 0; z-index: 36; display: grid; place-items: center; padding: 20px; background: rgba(14, 20, 36, .36); -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px); animation: fade .3s ease; }
+  .letter-paper { width: min(390px, 100%); max-height: calc(100dvh - 40px); overflow: auto; padding: 30px 30px 22px; border-radius: 5px; color: #3a2f22; background: repeating-linear-gradient(0deg, transparent 0 35px, rgba(120, 90, 50, .1) 35px 36px), linear-gradient(170deg, #f8efdc, #efe0c1); box-shadow: 0 24px 60px rgba(10, 15, 30, .35), inset 0 0 40px rgba(150, 110, 60, .1); transform: rotate(-.7deg); font-family: "Kaiti TC", "STKaiti", "BiauKai", "DFKai-SB", var(--ui); animation: unroll .45s cubic-bezier(.2, .8, .3, 1); }
+  @keyframes unroll { from { opacity: 0; transform: rotate(-.7deg) scaleY(.2); } }
+  .letter-date { font-size: 13px; color: #8a7458; margin-bottom: 12px; }
+  #letter-text { margin: 0; min-height: 5.5em; font-size: 19px; line-height: 36px; white-space: pre-wrap; }
+  .letter-from { margin-top: 14px; text-align: right; font-size: 17px; }
+  .letter-cap { margin: 12px 0 0; font-family: var(--ui); font-size: 12.5px; color: #8a7458; }
+  .letter .btn { display: block; margin: 16px 0 0 auto; height: 38px; padding: 0 20px; font-family: var(--ui); background: #3a2f22; color: #f8efdc; border: 0; }
+  /* 拍照 */
+  #photo-ui { position: fixed; inset: 0; z-index: 20; pointer-events: none; }
+  .ph-frame { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(100vw, calc(100vh * 1.18)); aspect-ratio: 1.18; box-shadow: 0 0 0 100vmax rgba(8, 12, 24, .34); }
+  .ph-frame i { position: absolute; width: 26px; height: 26px; border: 2.5px solid rgba(255, 255, 255, .95); }
+  .ph-frame i:nth-child(1) { left: 12px; top: 12px; border-right: 0; border-bottom: 0; } .ph-frame i:nth-child(2) { right: 12px; top: 12px; border-left: 0; border-bottom: 0; }
+  .ph-frame i:nth-child(3) { left: 12px; bottom: 12px; border-right: 0; border-top: 0; } .ph-frame i:nth-child(4) { right: 12px; bottom: 12px; border-left: 0; border-top: 0; }
+  .ph-bar { position: absolute; left: 50%; bottom: calc(20px + var(--sb)); transform: translateX(-50%); display: flex; align-items: center; gap: 18px; pointer-events: auto; }
+  .ph-bar .btn { height: 42px; padding: 0 16px; font-size: 14px; }
+  .ph-shot { width: 70px; height: 70px; padding: 0; border-radius: 50%; border: 5px solid rgba(255, 255, 255, .95); background: #fff; background-clip: content-box; box-shadow: 0 0 0 2px rgba(10, 16, 32, .25), 0 6px 18px rgba(10, 16, 32, .3); }
+  .ph-shot:active { transform: scale(.94); }
+  .ph-tip { position: absolute; left: 50%; top: calc(18px + var(--st)); transform: translateX(-50%); padding: 6px 14px; border-radius: 999px; font-size: 12.5px; color: #fff; background: rgba(8, 12, 24, .45); white-space: nowrap; }
+  #photo-count { position: fixed; inset: 0; z-index: 21; display: grid; place-items: center; pointer-events: none; font-family: var(--display); font-size: 130px; font-weight: 600; color: #fff; text-shadow: 0 4px 30px rgba(0, 0, 0, .45); }
+  #photo-count.tick { animation: tickPop .8s ease both; }
+  @keyframes tickPop { from { transform: scale(1.5); opacity: 0; } 30% { transform: scale(1); opacity: 1; } to { opacity: .2; } }
+  #photo-flash { position: fixed; inset: 0; z-index: 37; background: #fff; opacity: 0; pointer-events: none; }
+  #photo-flash.go { animation: flash .5s ease; }
+  @keyframes flash { from { opacity: .95; } }
+  .polaroid { position: fixed; inset: 0; z-index: 36; display: grid; place-items: center; padding: 18px; background: rgba(14, 20, 36, .5); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); animation: fade .3s ease; }
+  .pola-box { display: flex; flex-direction: column; align-items: center; gap: 16px; max-width: min(520px, 100%); max-height: calc(100dvh - 36px); }
+  #pola-img { display: block; max-width: 100%; max-height: calc(100dvh - 130px); box-shadow: 0 18px 50px rgba(5, 8, 18, .5); transform: rotate(-1deg); animation: dropIn .5s cubic-bezier(.2, .9, .3, 1.15); }
+  @keyframes dropIn { from { transform: rotate(4deg) translateY(-30px) scale(.9); opacity: 0; } }
+  .pola-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  .pola-actions .btn { height: 40px; padding: 0 16px; font-size: 14px; }
+  /* 日誌：小事、信件、相簿 */
+  .log-tabs { display: flex; }
+  .log-tabs button { flex: 1; min-width: 0; padding-left: 0; padding-right: 0; white-space: nowrap; }
+  .log-extra { flex: 1; overflow-y: auto; padding: 4px 20px 22px; -webkit-overflow-scrolling: touch; }
+  .lx-lead { display: flex; justify-content: space-between; gap: 10px; margin: 8px 0 12px; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
+  .lx-lead b { flex: none; color: var(--gold); }
+  .lx-list, .lx-fish, .lx-letters, .lx-album { list-style: none; margin: 0; padding: 0; }
+  .lx-list li { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+  .lx-list i { flex: none; width: 15px; height: 15px; margin-top: 2px; border-radius: 50%; border: 1.5px solid var(--line-2); }
+  .lx-list li.on i { background: var(--gold); border-color: var(--gold); box-shadow: inset 0 0 0 3px var(--paper); }
+  .lx-list b { font-weight: 600; } .lx-list li:not(.on) b { color: var(--ink-3); }
+  .lx-list small { display: block; font-size: 12px; color: var(--ink-3); margin-top: 1px; }
+  .lx-fish { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 8px; }
+  .lx-fish li { padding: 7px 9px; border-radius: 10px; background: var(--paper-2); font-size: 12.5px; line-height: 1.3; }
+  .lx-fish i { display: inline-block; width: 17px; height: 9px; margin-right: 6px; border-radius: 60% 40% 40% 60%; background: var(--c, #ccc); }
+  .lx-fish .off { opacity: .55; } .lx-fish .off i { background: var(--paper-3); }
+  .lx-fish small { display: block; color: var(--ink-3); font-size: 11.5px; margin-top: 2px; }
+  .lx-letters button { display: block; width: 100%; text-align: left; padding: 10px 2px; background: none; border: 0; border-bottom: 1px solid var(--line); }
+  .lx-letters small { display: block; font-size: 12px; color: var(--ink-3); }
+  .lx-letters span { display: block; font-size: 14px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lx-album { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 10px; }
+  .lx-album button { display: block; width: 100%; padding: 0; border: 0; background: none; }
+  .lx-album img { display: block; width: 100%; box-shadow: 0 3px 10px rgba(15, 22, 42, .2); }
+
   /* ---------- 中尺寸：顯示切換移到清單底部 ---------- */
-  @media (max-width: 1240px) {
+  @media (max-width: 1560px) {   /* 按鈕列放不下時先收文字，不要壓到右邊清單 */
+    .tb:not(.mob-only) { width: 46px; padding: 0; justify-content: center; }
+    .tb:not(.mob-only) span { display: none; }
+  }
+  @media (max-width: 1420px) {
     .seg2 button span { display: none; }
     .seg2 button { height: 40px; padding: 0 10px; }
   }
-  @media (max-width: 1120px) {
+  @media (max-width: 1500px) and (min-width: 821px) { .hint { bottom: calc(84px + var(--sb)); } }   /* 畫面不夠寬：提示放到快捷列上面，不互相蓋住 */
+  @media (max-width: 1380px) {
     .hud .seg2 { display: none; }
     .side-foot { display: block; }
   }
-  @media (max-width: 980px) and (min-width: 821px) {
+  @media (max-width: 1130px) and (min-width: 821px) {
     .hud { display: none; }
   }
 
@@ -365,6 +447,12 @@
     .dock button { flex-direction: column; justify-content: center; height: 58px; padding: 5px 9px 4px; gap: 3px; font-size: 10.5px; min-width: 64px; border-radius: 14px; }
     .dock button i { width: 30px; height: 30px; }
     .hint { left: 12px; top: calc(66px + var(--st)); bottom: auto; max-width: calc(100vw - 132px); font-size: 12px; padding: 6px 13px 6px 6px; }
+    .greet, body.side-closed .greet { left: 12px; right: 74px; top: calc(112px + var(--st)); transform: none; max-width: none; padding: 10px 14px 11px; animation: fade .4s ease; }
+    .greet b { font-size: 14px; } .greet span { font-size: 12.5px; }
+    .skip-meter { left: 50%; bottom: calc(208px + var(--sb)); }
+    .tb.help { display: none; }
+    .ph-tip { top: calc(14px + var(--st)); }
+    .dock button { min-width: 0 !important; flex: 1 1 0; }
     .hint .halo { width: 22px; height: 22px; }
     body.sheet-open .hint { display: none; }
     .ride-help { left: 12px; top: calc(66px + var(--st)); bottom: auto; max-width: calc(100vw - 132px); padding: 10px 14px 13px 10px; border-radius: 16px; transform: translateY(-8px); }
@@ -406,6 +494,7 @@
       <button data-time="390" title="清晨" aria-label="清晨"><svg class="i" viewBox="0 0 24 24"><path d="M3 18h18M7.5 18a4.5 4.5 0 0 1 9 0M12 9v2.4M6.4 11.5l1.6 1.4M17.6 11.5 16 12.9M9.6 5.6 12 3.2l2.4 2.4"/></svg></button>
       <button data-time="720" title="白天" aria-label="白天"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.6"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/></svg></button>
       <button data-time="1070" title="黃昏" aria-label="黃昏"><svg class="i" viewBox="0 0 24 24"><path d="M3 18h18M7.5 18a4.5 4.5 0 0 1 9 0M12 9v2.4M6.4 11.5l1.6 1.4M17.6 11.5 16 12.9M9.6 3.4 12 5.8l2.4-2.4"/></svg></button>
+      <button data-wx aria-pressed="false" title="天氣" aria-label="天氣"><svg class="i" viewBox="0 0 24 24"><path d="M7 15.5a3.8 3.8 0 0 1 .4-7.6 5 5 0 0 1 9.6 1 3.3 3.3 0 0 1-.4 6.6z"/><path d="M9 18l-.8 2M13 18l-.8 2M17 18l-.8 2"/></svg></button>
       <button data-time="1290" title="夜晚" aria-label="夜晚"><svg class="i" viewBox="0 0 24 24"><path d="M18.5 14.6A7.5 7.5 0 0 1 9.4 5.5a7.5 7.5 0 1 0 9.1 9.1z"/><path d="M17 4.2v2.6M15.7 5.5h2.6"/></svg></button>
     </div>
     <div class="seg seg2 panel" role="group" aria-label="顯示選項">
@@ -420,6 +509,7 @@
     <button class="tb" id="btn-home" title="回到全景"><svg class="i" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span>全景</span></button>
     <button class="tb" id="btn-index" aria-pressed="true"><svg class="i" viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h9"/></svg><span>清單</span></button>
     <button class="tb mob-only" id="btn-time"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/></svg><span id="btn-time-label">自動</span></button>
+    <button class="tb" id="btn-photo" title="拍照"><svg class="i" viewBox="0 0 24 24"><path d="M4 8.5h3.4l1.5-2.4h6.2l1.5 2.4H20a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.4" r="3.4"/></svg><span>拍照</span></button>
     <button class="tb" id="btn-sound" aria-pressed="true" title="關掉聲音"><svg class="i" viewBox="0 0 24 24"><path d="M4 9.5h3.2L11.5 6v12l-4.3-3.5H4z"/><path d="M15 9.2a4 4 0 0 1 0 5.6M17.6 6.6a7.6 7.6 0 0 1 0 10.8"/></svg><span>聲音</span></button>
     <button class="tb help" id="btn-help" aria-label="操作說明"><b>?</b><span>說明</span></button>
   </nav>
@@ -443,6 +533,8 @@
       <button data-toggle="freeze" aria-pressed="false">暫停</button>
       <button data-toggle="bird" aria-pressed="false">鳥瞰</button>
       <button data-toggle="log" aria-pressed="false">日誌</button>
+      <button data-wx aria-pressed="false"><span>天氣</span></button>
+      <button id="btn-help2" class="mob-only" type="button">說明</button>
     </div>
   </div>
 </aside>
@@ -462,11 +554,15 @@
     <button class="close" id="log-close" aria-label="關閉日誌">×</button>
   </div>
   <div class="log-tabs" role="tablist">
-    <button data-logtab="overview" role="tab">島嶼概況</button>
+    <button data-logtab="overview" role="tab">概況</button>
     <button data-logtab="log" class="active" role="tab">日誌</button>
+    <button data-logtab="little" role="tab">小事</button>
+    <button data-logtab="letters" role="tab">信件</button>
+    <button data-logtab="album" role="tab">相簿</button>
   </div>
   <div class="log-overview" id="log-overview" hidden></div>
   <ol class="log-list" id="log-list"></ol>
+  <div class="log-extra" id="log-extra" hidden></div>
 </aside>
 
 <nav class="dock panel" id="dock" aria-label="快速前往"></nav>
@@ -504,9 +600,44 @@
 </div>
 <div class="catch-card panel" id="catch-card" hidden role="status" aria-live="polite">
   <svg class="cf" viewBox="0 0 48 24" aria-hidden="true"><path d="M3 12c6-8 20-10 30-4l9-6v20l-9-6c-10 6-24 4-30-4z"/><circle cx="12" cy="10" r="1.6"/></svg>
-  <div><b>釣到了！</b><span id="catch-text"></span><small>花捲聞到魚味了，會跑過來討</small></div>
+  <div><b id="catch-title">釣到了！</b><span id="catch-text"></span><small>花捲聞到魚味了，會跑過來討</small></div>
 </div>
 <div id="joystick" aria-hidden="true"><div id="stick"></div></div>
+<div class="greet panel" id="greet" hidden role="status"><b id="greet-a"></b><span id="greet-b"></span></div>
+<div class="skip-meter panel" id="skip-meter" hidden aria-hidden="true"><i class="zone"></i><i id="skip-needle"></i></div>
+<div class="sit-hud" id="sit-hud" hidden><span id="sit-clock">--:--</span><button class="btn" id="sit-up" type="button">站起來</button></div>
+<button class="sit-wish" id="sit-wish" type="button" hidden>流星！點這裡許願</button>
+<div class="letter" id="letter" hidden role="dialog" aria-modal="true" aria-label="瓶中信">
+  <div class="letter-paper">
+    <div class="letter-date" id="letter-date"></div>
+    <p id="letter-text"></p>
+    <div class="letter-from" id="letter-from"></div>
+    <p class="letter-cap" id="letter-cap">瓶蓋留下來了，寄居蟹可能會要。</p>
+    <button class="btn" id="letter-ok" type="button">收好</button>
+  </div>
+</div>
+<div id="photo-ui" hidden>
+  <div class="ph-frame"><i></i><i></i><i></i><i></i></div>
+  <div class="ph-bar">
+    <button class="btn" id="ph-close" type="button">取消</button>
+    <button class="ph-shot" id="ph-shot" type="button" aria-label="拍照"></button>
+    <button class="btn" id="ph-timer" type="button" title="倒數 5 秒，大家跑過來站好">倒數</button>
+  </div>
+  <div class="ph-tip">拖曳取景・滾輪或兩指縮放</div>
+</div>
+<div id="photo-count" hidden>3</div>
+<div id="photo-flash"></div>
+<div class="polaroid" id="polaroid" hidden role="dialog" aria-modal="true" aria-label="照片">
+  <div class="pola-box">
+    <img id="pola-img" alt="">
+    <div class="pola-actions">
+      <button class="btn primary" id="pola-share" type="button" hidden>分享</button>
+      <button class="btn" id="pola-save" type="button" hidden>存檔</button>
+      <button class="btn" id="pola-again" type="button">再拍一張</button>
+      <button class="btn" id="pola-close" type="button">關閉</button>
+    </div>
+  </div>
+</div>
 
 <div class="intro" id="intro" hidden>
   <div class="intro-box" role="dialog" aria-modal="true" aria-labelledby="intro-title">
@@ -550,6 +681,6 @@
   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="./island.js?v=2.15.2"></script>
+<script type="module" src="./island.js?v=2.16.2"></script>
 </body>
 </html>
