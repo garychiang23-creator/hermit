@@ -263,6 +263,7 @@
   body.card-open .dock { left: calc(392px + (100% - 392px - var(--side-w)) / 2); }
   body.card-open.side-closed .dock { left: calc(392px + (100% - 392px) / 2); }
   body.log-open .dock { left: calc((100% - 346px) / 2); }
+  @media (min-width: 821px) and (max-width: 1560px) { body.card-open:not(.side-closed) .dock button span { display: none; } body.card-open:not(.side-closed) .dock button { padding: 0 7px; } }   /* 卡片和清單都開著時中間放不下六個字：只留圖示 */
   .dock button { border: 0; background: transparent; display: flex; align-items: center; gap: 9px; height: 46px; padding: 0 14px 0 7px; border-radius: 14px; font-size: 13.5px; font-weight: 600; white-space: nowrap; }
   .dock button i { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: var(--cs); color: var(--c); }
   .dock button i svg.i { width: 18px; height: 18px; }
@@ -323,6 +324,71 @@
   body.side-closed .skip-meter { left: 50%; }
   #skip-needle { position: absolute; top: -5px; bottom: -5px; width: 4px; margin-left: -2px; border-radius: 3px; background: var(--ink); box-shadow: 0 0 0 2px rgba(255, 255, 255, .85); }
   .skip-meter .zone { position: absolute; top: 2px; bottom: 2px; left: 47.6%; width: 4.8%; border-radius: 3px; border: 1.5px solid rgba(255, 255, 255, .95); }
+  /* 擋火：上面是計分列，島的介面全部退下去；畫面只留罩子、火和巨獸 */
+  body.minigame .topbar, body.minigame .dock, body.minigame .hint, body.minigame #joystick, body.minigame #labels, body.minigame .greet { opacity: 0; pointer-events: none; }
+  body.minigame .topbar *, body.minigame .dock *, body.minigame .pin { pointer-events: none !important; }
+  body.golfing canvas { touch-action: none; cursor: grab; }
+  body.guarding canvas { touch-action: none; cursor: ew-resize; }
+  .guard-hud { position: fixed; z-index: 13; top: calc(14px + var(--st)); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 16px; padding: 7px 8px 7px 18px; border-radius: 999px; white-space: nowrap; }
+  .gd-col { display: grid; gap: 4px; justify-items: center; }
+  .gd-col small { font-size: 11px; font-weight: 600; color: var(--ink-3); }
+  .gd-pips { display: flex; gap: 3px; height: 14px; align-items: flex-end; }
+  #gd-fins i { width: 10px; height: 14px; background: #4a5362; clip-path: polygon(50% 0, 100% 100%, 0 100%); transition: opacity .25s, transform .25s; }
+  #gd-life i { width: 13px; height: 14px; background: #2f9fe0; clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); transition: opacity .25s, background .25s; }
+  .gd-pips i.off { opacity: .16; transform: translateY(2px); }
+  #gd-fins i.hurt { background: #e0503f; }
+  #gd-life.low i:not(.off) { background: #e0503f; }
+  .gd-mid { display: grid; justify-items: center; min-width: 74px; }
+  #gd-score { font-family: var(--display); font-weight: 500; font-size: 19px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  #gd-combo { font-size: 11px; font-weight: 600; color: #b8841f; min-height: 13px; line-height: 1.15; }
+  .guard-hud .btn { height: 38px; padding: 0 13px; font-size: 13.5px; }
+  .guard-hud kbd { font: 600 10.5px var(--ui); color: var(--ink-3); border: 1px solid var(--line-2); border-radius: 5px; padding: 1px 4px; margin-left: 4px; }
+  body.touch .guard-hud kbd { display: none; }
+  .gf-view { display: none; }
+  body.golfing .gf-view { display: inline-flex; align-items: center; }
+  .gd-help { position: fixed; z-index: 13; left: 50%; bottom: calc(22px + var(--sb)); transform: translateX(-50%); padding: 11px 18px; border-radius: 16px; font-size: 14px; line-height: 1.55; text-align: center; max-width: min(460px, calc(100vw - 32px)); width: max-content; }
+  .gd-help b { color: #b8841f; }
+  .gd-help .t { display: block; }
+  .gd-banner { position: fixed; z-index: 12; left: 50%; top: 42%; transform: translate(-50%, -50%); font-family: var(--display); font-size: clamp(24px, 6vw, 40px); font-weight: 600; color: #fff; text-shadow: 0 2px 14px rgba(8, 26, 54, .75), 0 0 3px rgba(8, 26, 54, .6); pointer-events: none; opacity: 0; white-space: nowrap; }
+  .gd-banner.on { animation: gdBan 1.5s ease both; }
+  @keyframes gdBan { 0% { opacity: 0; transform: translate(-50%, -40%) scale(.92); } 14% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 76% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -56%); } }
+  .gd-pop { position: fixed; z-index: 12; transform: translate(-50%, -50%); font-weight: 800; font-size: 15px; color: #fff; text-shadow: 0 1px 5px rgba(8, 26, 54, .85); pointer-events: none; animation: gdPop .85s ease-out forwards; white-space: nowrap; }
+  .gd-pop.gold { color: #ffe08a; font-size: 18px; }
+  .gd-pop.bad { color: #ffb4a8; font-size: 17px; }
+  @keyframes gdPop { 0% { opacity: 0; margin-top: 6px; } 15% { opacity: 1; margin-top: 0; } 70% { opacity: 1; } 100% { opacity: 0; margin-top: -30px; } }
+  .gd-end { position: fixed; z-index: 14; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(380px, calc(100vw - 32px)); padding: 20px 20px 18px; border-radius: 22px; text-align: center; }
+  .gd-end h3 { margin: 0; font-family: var(--display); font-weight: 500; font-size: 26px; }
+  .gd-end p { margin: 6px 0 14px; font-size: 14px; color: var(--ink-2); line-height: 1.5; }
+  .gd-end .stats { grid-template-columns: repeat(2, 1fr); text-align: left; }
+  .gd-end .gd-btns { display: flex; gap: 8px; margin-top: 14px; }
+  .gd-end .gd-btns .btn { flex: 1; height: 44px; justify-content: center; }
+  .gd-new { color: #b8841f; font-weight: 700; }
+  @media (max-width: 480px) { .guard-hud { gap: 10px; padding: 6px 6px 6px 13px; } .gd-mid { min-width: 56px; } #gd-fins i { width: 8px; height: 12px; } #gd-life i { width: 10px; height: 11px; } .gd-pips { height: 12px; gap: 2px; } #gd-score { font-size: 16px; } .guard-hud .btn { height: 34px; padding: 0 10px; font-size: 13px; } }
+  /* 全島九洞 */
+  .golf-hud { gap: 14px; padding: 6px 8px 6px 16px; }
+  .golf-hud .gd-col { justify-items: start; gap: 1px; }
+  .golf-hud .gd-col.c { justify-items: center; }
+  .golf-hud b { font-family: var(--display); font-weight: 500; font-size: 16px; font-variant-numeric: tabular-nums; line-height: 1.15; }
+  #gf-hole { color: var(--ink); font-size: 13px; }
+  #gf-wind-box { display: inline-flex; align-items: center; gap: 3px; font-size: 13.5px; font-weight: 600; line-height: 1.2; }
+  #gf-arrow { display: inline-block; width: 16px; height: 16px; }
+  .gf-view { position: fixed; z-index: 13; right: 14px; bottom: calc(18px + var(--sb)); height: 40px; padding: 0 14px; font-size: 13.5px; }
+  .gf-view[aria-pressed=true] { background: var(--ink); color: #fff; }
+  .gf-band { position: fixed; z-index: 12; height: 3px; margin-top: -1.5px; border-radius: 2px; background: rgba(255, 255, 255, .5); transform-origin: 0 50%; pointer-events: none; }
+  .gf-band::before { content: ''; position: absolute; left: -7px; top: -5.5px; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; box-sizing: border-box; box-shadow: 0 0 6px rgba(8, 26, 54, .5); }
+  .gf-power { position: fixed; z-index: 13; left: 50%; bottom: calc(22px + var(--sb)); transform: translateX(-50%); width: min(280px, calc(100vw - 150px)); padding: 8px 12px 9px; border-radius: 14px; }
+  .gf-power small { display: block; text-align: center; font-size: 12px; font-weight: 600; color: var(--ink-2); margin-bottom: 4px; }
+  .gf-power i { display: block; height: 8px; border-radius: 4px; overflow: hidden; background: rgba(22, 33, 58, .1); }
+  .gf-power i b { display: block; height: 100%; background: linear-gradient(90deg, #3f9a4e, #e8b52c 60%, #e0503f); transform-origin: left; transform: scaleX(0); }
+  .gf-card { width: min(440px, calc(100vw - 24px)); }
+  .gf-card table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 14px; }
+  .gf-card th { font-size: 11.5px; font-weight: 600; color: var(--ink-3); text-align: left; padding: 5px 0; white-space: nowrap; }
+  .gf-card td { text-align: center; padding: 5px 0; border-left: 1px solid var(--line); }
+  .gf-card tr + tr td, .gf-card tr + tr th { border-top: 1px solid var(--line); }
+  .gf-card td.under { color: #2f8a42; font-weight: 700; }
+  .gf-card td.over { color: #c5533f; }
+  #gf-help { top: calc(76px + var(--st)); bottom: auto; }   /* 說明放上面：下面是隱士和球 */
+  @media (max-width: 480px) { .golf-hud { gap: 9px; padding: 5px 6px 5px 12px; max-width: calc(100vw - 16px); } #gf-hole { font-size: 12px; } .gf-view { right: 10px; height: 36px; padding: 0 11px; font-size: 12.5px; } }
   /* 看海、拍照：介面全部退下去 */
   .topbar, .dock, .hint, #joystick, #labels, .greet { transition: opacity .6s ease; }
   body.sitting .topbar, body.sitting .dock, body.sitting .hint, body.sitting #joystick, body.sitting #labels, body.sitting .greet,
@@ -581,6 +647,38 @@
   <button class="btn" id="rh-view" type="button" title="換鏡頭：遠景／背後／正面／駕駛艙（也可以拖曳畫面轉、滾輪或兩指縮放）"><span>鏡頭</span><kbd>C</kbd></button>
   <button class="btn primary" id="rh-off" type="button">下來<kbd>Esc</kbd></button>
 </div>
+<div class="guard-hud panel" id="guard-hud" hidden>
+  <div class="gd-col"><small>巨獸背鰭</small><div class="gd-pips" id="gd-fins"></div></div>
+  <div class="gd-mid"><b id="gd-score">0</b><span id="gd-combo"></span></div>
+  <div class="gd-col"><small>島的能量</small><div class="gd-pips" id="gd-life"></div></div>
+  <button class="btn" id="gd-quit" type="button">離開<kbd>Esc</kbd></button>
+</div>
+<div class="guard-hud golf-hud panel" id="golf-hud" hidden>
+  <div class="gd-col"><small id="gf-hole"></small><small id="gf-par"></small></div>
+  <div class="gd-col c"><small>這洞</small><b id="gf-now">0</b></div>
+  <div class="gd-col c"><small>總計</small><b id="gf-total">平</b></div>
+  <div class="gd-col c"><small>風</small><span id="gf-wind-box"><svg id="gf-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V5M6 11l6-6 6 6"/></svg><span id="gf-wind">無</span></span></div>
+  <button class="btn" id="gf-quit" type="button">離開<kbd>Esc</kbd></button>
+</div>
+<button class="btn gf-view panel" id="gf-view" type="button" aria-pressed="false">看球道</button>
+<div class="gf-band" id="gf-band" hidden></div>
+<div class="gf-power panel" id="gf-power" hidden><small id="gf-tag">飛起來</small><i><b id="gf-fill"></b></i></div>
+<div class="gd-help panel" id="gf-help" role="note" hidden><span class="t" id="gf-help-1"></span><span class="t">左右微調方向，拉回原點放開就取消，<b>靠近洞會自動貼地滾</b></span></div>
+<div class="gd-end gf-card panel" id="gf-card" role="dialog" aria-label="九洞成績" hidden>
+  <h3 id="gfc-title"></h3>
+  <p id="gfc-line"></p>
+  <table id="gfc-table"></table>
+  <div class="gd-btns"><button class="btn primary" id="gfc-again" type="button">再打一輪</button><button class="btn" id="gfc-home" type="button">回島上</button></div>
+</div>
+<div class="gd-help panel" id="gd-help" role="note" hidden><span class="t" id="gd-help-1"></span><span class="t">用<b>中間的金色段</b>接，火球才彈得回去</span></div>
+<div class="gd-banner" id="gd-banner" aria-live="polite"></div>
+<div id="gd-pops"></div>
+<div class="gd-end panel" id="gd-end" role="dialog" aria-label="這一局的結果" hidden>
+  <h3 id="gde-title"></h3>
+  <p id="gde-line"></p>
+  <div class="stats" id="gde-stats"></div>
+  <div class="gd-btns"><button class="btn primary" id="gde-again" type="button">再來一局</button><button class="btn" id="gde-home" type="button">回島上</button></div>
+</div>
 <div class="ride-help panel" id="ride-help" role="note">
   <b class="rhp-title">操作說明</b>
   <div class="rhp-rows">
@@ -681,6 +779,6 @@
   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="./island.js?v=2.16.2"></script>
+<script type="module" src="./island.js?v=2.21"></script>
 </body>
 </html>
