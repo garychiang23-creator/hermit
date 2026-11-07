@@ -4567,7 +4567,7 @@ $('#btn-back').addEventListener('click', closeGame);
 
 /* ---------- 導覽說明 ---------- */
 const INTRO = [
-  ['三個遊戲，一座島', '小蜜蜂、Blocks Pro、迷宮球各有一台大型機台，遊戲會從螢幕裡溢出來。點機台或清單看介紹，按「開始玩」就進遊戲。島上住著柴犬阿滿、三花貓花捲、方塊小傢伙柑仔丁和幾隻寄居蟹，海裡有魚和海豚。'],
+  ['五個遊戲，一座島', '小蜜蜂、Blocks Pro、迷宮球各有一台大型機台，遊戲會從螢幕裡溢出來。點機台或清單看介紹，按「開始玩」就進遊戲。島上還有兩個小遊戲：在控制台幫島擋巨獸的火，或從碼頭一路打九洞，最後打進巨獸的嘴裡。島上住著柴犬阿滿、三花貓花捲、方塊小傢伙柑仔丁和幾隻寄居蟹，海裡有魚和海豚。'],
   ['分身會替你走過去', isTouch ? '點地面，分身就走到那裡；也可以用左下角的搖桿。單指拖曳轉視角，雙指縮放。' : '點地面，分身就走到那裡；方向鍵或 WASD 也能走。拖曳轉視角，滾輪縮放。'],
   ['島會記得你的紀錄', '成績越好，溢出來的越多：小蜜蜂分數越高，飛出機台的蜜蜂越多；Blocks 的方塊山跟著分數長高；迷宮球每通過一章，地上的迷宮就長大一圈。'],
   ['三把鑰匙', '銅鑰匙看小蜜蜂，玉鑰匙看 Blocks Pro，水晶鑰匙藏在島上的暗處。三把到齊，隱嶼之門就會出現。'],
@@ -8540,7 +8540,7 @@ function gdArrive(B) {   // 火球飛到那一圈：看罩子有沒有在那裡
   gdHud();
 }
 function gdStrike(B) {   // 彈回去打到巨獸：打掉一片背鰭
-  const G = GD, K = KJ, i = GD_FINS - G.fins, idx = GD_FINS - 1 - i, m = kj.fins[idx], need = GD_NEED[gdLevel()];   // 從肩膀往尾巴掉：肩膀那幾片鏡頭看得最清楚
+  const G = GD, K = KJ, i = GD_FINS - G.fins, idx = GD_FINS - 1 - i, m = kj.fins[idx], need = GD_NEED[gdLevel()];   // 從肩膀往尾巴掉
   B.on = false; B.s.visible = false;
   K.gfl = 1; K.gfs = Math.random() < .5 ? -1 : 1; K.gspit = 0; K.ff[idx] = 1;
   if (gdLevel() === 3 && !B.big) {   // 最後一片：只有把大火球彈回去才打得掉
@@ -8566,8 +8566,9 @@ function gdStrike(B) {   // 彈回去打到巨獸：打掉一片背鰭
     d.position.copy(c).negate(); g.add(d);
     g.position.copy(c).applyMatrix4(m.matrixWorld); m.getWorldQuaternion(g.quaternion); m.getWorldScale(g.scale);
     scene.add(g);
-    const r = Math.hypot(K.x, K.z) || 1, ang = (Math.random() - .5) * 1.4;
-    G.fallen.push({ g, x: K.x / r * 7 + Math.cos(ang) * 5, y: 15 + Math.random() * 5, z: K.z / r * 7 + Math.sin(ang) * 5, rx: 3 + Math.random() * 4, rz: 3 + Math.random() * 4 });
+    const r = Math.hypot(K.x, K.z) || 1, s = (Math.random() < .5 ? -1 : 1) * (8 + Math.random() * 3);   // 鏡頭在島這邊看巨獸正面：往後飛會被身體擋住，所以往上、往旁邊、往島這邊翻過來
+    G.fallen.push({ g, x: -K.x / r * 6 - K.z / r * s, y: 24 + Math.random() * 4, z: -K.z / r * 6 + K.x / r * s, rx: 4 + Math.random() * 4, rz: 4 + Math.random() * 4 });
+    g.scale.multiplyScalar(1.35);   // 飛出來的那片放大一點，遠遠也看得出是背鰭
     m.visible = false;
     kjBurst(g.position.x, g.position.y, g.position.z, 40, 7, 8);
   }
@@ -8728,14 +8729,15 @@ const gfBall = (() => {
   const trail = [...Array(44)].map(() => { const q = new THREE.Sprite(new THREE.SpriteMaterial({ map: gfTrailT, transparent: true, depthWrite: false, depthTest: false })); q.visible = false; q.renderOrder = 4; scene.add(q); return { q, life: 0 }; });
   return { m, halo, shadow, trail, ti: 0, tt: 0, p: m.position, v: new THREE.Vector3() };
 })();
-const gfForce = (() => {   // 隔空的那道綠光：手到球一條線、球外面一團光、放開時地上一圈
-  const beam = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 6).translate(0, .5, 0), new THREE.MeshBasicMaterial({ color: 0x7dffa0, transparent: true, opacity: 0, depthWrite: false, toneMapped: false }));
-  beam.visible = false; beam.renderOrder = 4; scene.add(beam);
+const gfMoteT = gdGlow([[0, '#fff'], [.28, 'rgba(226,255,234,1)'], [.55, 'rgba(70,214,120,.75)'], [1, 'rgba(30,170,90,0)']]);   // 白芯、綠邊：草地上也看得出來
+const gfForce = (() => {   // 隔空的力：一串光點從球流向手心、手心一團光、球外面一圈光、放開時地上一圈
+  const mote = () => { const q = new THREE.Sprite(new THREE.SpriteMaterial({ map: gfMoteT, transparent: true, opacity: 0, depthWrite: false })); q.visible = false; q.renderOrder = 4; scene.add(q); return q; };
+  const motes = [...Array(16)].map(mote), palm = mote();
   const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: gfRingT, transparent: true, opacity: 0, depthWrite: false, depthTest: false }));
   glow.visible = false; glow.renderOrder = 4; scene.add(glow);
   const ring = new THREE.Mesh(new THREE.RingGeometry(.82, 1, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x9dffb8, transparent: true, opacity: 0, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 }));
   ring.visible = false; ring.renderOrder = 3; scene.add(ring);
-  return { beam, glow, ring, ringT: 0, step: 0 };
+  return { motes, palm, glow, ring, ringT: 0, step: 0, side: 0, flow: 0, arm: [0, 0, 0, 0] };
 })();
 const gfFlag = (() => {
   const g = new THREE.Group(), red = new THREE.MeshBasicMaterial({ color: 0xe5483a, side: THREE.DoubleSide });
@@ -8823,23 +8825,42 @@ function gfLeap(dt) {   // 球停了：隱士一躍跳到球旁邊
 }
 function gfPose(dt, t) {   // 隔空的動作：左手伸向球，往下拉時身體往後仰、球被拉著往後退；放開時往前一推
   const G = GF, p = G.phase === 'water' ? .55 : G.pow, th = G.thrust = Math.max(0, G.thrust - dt * 2.4), aiming = G.phase === 'aim' || G.phase === 'swing' || G.phase === 'water', on = aiming || th > 0;
+  const F = gfForce, b = gfBall;
   if (on) {
-    const k = aiming ? 1 : th;
-    AV.armL.rotation.x = lerp(AV.armL.rotation.x, -(1.05 + p * .4 + th * .5), Math.min(1, dt * 14));
-    AV.armR.rotation.x = lerp(AV.armR.rotation.x, .1 + p * .55, Math.min(1, dt * 10));
-    AV.body.rotation.x = lerp(AV.body.rotation.x, (-.2 * p + .3 * th) * k, Math.min(1, dt * 14));
-  } else AV.body.rotation.x = lerp(AV.body.rotation.x, 0, Math.min(1, dt * 8));
-  const F = gfForce, b = gfBall, lifting = G.phase === 'water' && G.t > .6, show = (aiming && (p > .02 || G.phase === 'swing')) || lifting;
-  F.beam.visible = F.glow.visible = show;
+    const k = aiming ? 1 : th, e = Math.min(1, dt * 14);
+    avatar.updateMatrixWorld(true);
+    _fA.copy(b.p); AV.body.worldToLocal(_fA);
+    if (Math.abs(_fA.x) > .2 || !F.side) F.side = _fA.x < 0 ? -1 : 1;   // 用靠球那一邊的手：另一邊的手會被身體和頭髮擋住，光就像從頭裡長出來
+    _fA.sub((F.side < 0 ? AV.armL : AV.armR).position).normalize();   // 肩膀指向球（手臂原本往下垂）
+    const ax = Math.atan2(-_fA.z, -_fA.y) - .12 - th * .25, az = Math.asin(clamp(_fA.x, -1, 1)), A = F.arm;
+    for (const [i, me] of [[0, F.side < 0], [1, F.side > 0]]) {   // 角度自己記著再整個設上去：走路動作每格都會把手臂歸零，只用 lerp 的話 60fps 只抬得起四分之一
+      A[i * 2] = lerp(A[i * 2], me ? ax : .1 + p * .55, e); A[i * 2 + 1] = lerp(A[i * 2 + 1], me ? az : 0, e);
+    }
+    AV.armL.rotation.x = A[0]; AV.armL.rotation.z = A[1]; AV.armR.rotation.x = A[2]; AV.armR.rotation.z = A[3];
+    AV.body.rotation.x = lerp(AV.body.rotation.x, (-.2 * p + .3 * th) * k, e);
+  } else {
+    AV.body.rotation.x = lerp(AV.body.rotation.x, 0, Math.min(1, dt * 8)); F.side = 0;
+    const A = F.arm; A[0] = AV.armL.rotation.x; A[2] = AV.armR.rotation.x;   // 放手後交還給走路動作；側舉的角度慢慢收回
+    if (A[1] || A[3]) { A[1] = Math.abs(A[1]) < .01 ? 0 : lerp(A[1], 0, Math.min(1, dt * 8)); A[3] = Math.abs(A[3]) < .01 ? 0 : lerp(A[3], 0, Math.min(1, dt * 8)); AV.armL.rotation.z = A[1]; AV.armR.rotation.z = A[3]; }
+  }
+  const lifting = G.phase === 'water' && G.t > .6, show = (aiming && (p > .02 || G.phase === 'swing')) || lifting;
+  F.glow.visible = F.palm.visible = show;
+  for (const q of F.motes) q.visible = show;
   if (show) {
     avatar.updateMatrixWorld(true);
-    _fA.set(0, -.45, 0).applyMatrix4(AV.armL.matrixWorld);
+    _fA.set(0, -.5, 0).applyMatrix4((F.side < 0 ? AV.armL : AV.armR).matrixWorld);   // 手心
     _fB.copy(b.p).sub(_fA);
-    const L = _fB.length() || .001, w = .03 + .05 * p + .01 * Math.sin(t * 40);
-    F.beam.position.copy(_fA); F.beam.scale.set(w, L, w);
-    F.beam.quaternion.setFromUnitVectors(_fC.set(0, 1, 0), _fB.divideScalar(L));
-    F.beam.material.opacity = .55 + .4 * p;
-    F.glow.position.copy(b.p); F.glow.scale.setScalar(1.3 + p * 1 + .08 * Math.sin(t * 26)); F.glow.material.opacity = .7 + .3 * p;
+    const L = _fB.length() || .001, push = G.phase === 'swing', n = F.motes.length;
+    F.flow = (F.flow + dt * (push ? -3.2 : .5 + 1.3 * p)) % 1;   // 拉的時候光點往手心流；放開時倒過來往球推
+    _fC.set(-_fB.z, 0, _fB.x).normalize();   // 水平的側向：光點左右輕輕擺
+    for (let i = 0; i < n; i++) {
+      const q = F.motes[i], u = ((i / n + F.flow) % 1 + 1) % 1, s = Math.sin(Math.PI * u), wob = Math.sin(t * 5 + i * 2.3) * .05 * s;
+      q.position.copy(b.p).addScaledVector(_fB, -u).addScaledVector(_fC, wob); q.position.y += s * L * .12;   // 中間微微拱起
+      q.scale.setScalar((.13 + .09 * p) * (.55 + .45 * s));
+      q.material.opacity = s * (.55 + .4 * p);
+    }
+    F.palm.position.copy(_fA); F.palm.scale.setScalar(.34 + .2 * p + .03 * Math.sin(t * 7)); F.palm.material.opacity = .7 + .25 * p;
+    F.glow.position.copy(b.p); F.glow.scale.setScalar(1.3 + p * .8 + .05 * Math.sin(t * 7)); F.glow.material.opacity = .55 + .3 * p;
   }
   if (F.ringT > 0) { F.ringT = Math.max(0, F.ringT - dt / .45); const u = 1 - F.ringT; F.ring.scale.setScalar(.5 + u * 3.4); F.ring.material.opacity = F.ringT * .9; }
   F.ring.visible = F.ringT > 0;
@@ -8903,8 +8924,8 @@ function gfClose() {
   G.phase = null; G.drag = null;
   gfBall.m.visible = gfBall.halo.visible = gfBall.shadow.visible = gfFlag.g.visible = gfAim.dots.visible = gfAim.ring.visible = false;
   for (const T of gfBall.trail) { T.life = 0; T.q.visible = false; }
-  Object.assign(gfForce, { ringT: 0 }); gfForce.beam.visible = gfForce.glow.visible = gfForce.ring.visible = false;
-  AV.body.rotation.x = 0; AV.armL.rotation.x = 0; AV.armR.rotation.x = 0;
+  Object.assign(gfForce, { ringT: 0, side: 0, arm: [0, 0, 0, 0] }); gfForce.glow.visible = gfForce.palm.visible = gfForce.ring.visible = false; for (const q of gfForce.motes) q.visible = false;
+  AV.body.rotation.x = 0; AV.armL.rotation.set(0, 0, 0); AV.armR.rotation.set(0, 0, 0);
   if (K.mode === 'guard') { K.mode = 'walk'; K.t = 150; kjPlan(); }
   Object.assign(K, { gspit: 0, gfl: 0, gw: 0, gkr: GD_KR, rcd: 8 });
   GFUI.hud.hidden = GFUI.help.hidden = GFUI.power.hidden = GFUI.card.hidden = true;
@@ -9323,7 +9344,7 @@ addEventListener('resize', () => {
 /* ---------- 登島：一打開就是島，鏡頭從海上飛向島（碰一下就停），分身從飛船走上岸 ---------- */
 for (const id of [...GAMES.map(g => g.id), 'pier', 'beach', 'guard', 'golf']) {
   const P = PLACE[id];
-  const y = CAB[id] ? CAB[id].F.y + 6.0 : 2.5;
+  const y = CAB[id] ? CAB[id].F.y + 6.0 : id === 'guard' ? 5.6 : 2.5;   // 擋火的控制台跟長椅很近：名牌抬高，手機上才不會跟「看海」疊在一起
   addPin(id, `<span class="no">${P.no}</span>${esc(id === 'beach' ? '看海' : P.name)}`, P.color, [P.at[0], y, P.at[1]], () => selectPlace(id));
 }
 camera.fov = innerWidth / innerHeight < .85 ? 48 : 38;
