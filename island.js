@@ -3544,7 +3544,7 @@ function kjRoarCam() {   // 鏡頭：原本就看得到牠和火會打到的地�
   flyTo({ pos, target: tgt }, 1.5);
 }
 /* 走到哪：繞著島挑下一個地方（鏡頭看得到的優先）。淺水區用走的，深水區用游的；中間會先站著看看四周 */
-const KJ = { x: Math.cos(-1.76) * 50, z: Math.sin(-1.76) * 50, h: .19, v: 0, vT: 0, mode: 'walk', u: 0, t: 0, ga: 0, gr: 52, dir: 1, deep: false, ph: 0, sw: 0, sp: 0, sd: 0, ly: 0, lp: 0, lyT: 0, lpT: 0, lookT: 3, tapT: 0, tl: 0, top: 21, cx: 0, cz: 0, wake: 0, so: .6, dp: 0, spl: false, tw: 9, rt: -1, rt0: -1, rtw: 0, hv: 0, rsw: 10, rq: 0, rcd: 0, rsp: 60, rcam: false, rFree: false, rGold: false, rIsle: false, chg: 0, bump: 0, fg: 0, rc: [0, 0], imp: false, boot: -1, hu: 0, fv: 30, ff: [0, 0, 0, 0, 0, 0, 0, 0, 0], mk: 0, gw: 0, gs: 0, gspit: 0, gfl: 0, gfs: 1, gko: 0, gkr: 54 };   // chg：合體大招蓄力（0～1）；bump：你落在牠頭上的那一下；fg：背鰭金光；rc：放煙火時兩隻手的後座力；rt：這次吼了幾秒；rq：點牠後過多久吼；rcd：吼完多久內不再吼；rsp：多久之後才會自己吼
+const KJ = { x: Math.cos(-1.76) * 50, z: Math.sin(-1.76) * 50, h: .19, v: 0, vT: 0, va: 0, ve: 0, gwr: 0, mode: 'walk', u: 0, t: 0, ga: 0, gr: 52, dir: 1, deep: false, ph: 0, sw: 0, sp: 0, sd: 0, ly: 0, lp: 0, lyT: 0, lpT: 0, lookT: 3, tapT: 0, tl: 0, top: 21, cx: 0, cz: 0, wake: 0, so: .6, dp: 0, spl: false, tw: 9, rt: -1, rt0: -1, rtw: 0, hv: 0, rsw: 10, rq: 0, rcd: 0, rsp: 60, rcam: false, rFree: false, rGold: false, rIsle: false, chg: 0, bump: 0, fg: 0, rc: [0, 0], imp: false, boot: -1, hu: 0, fv: 30, ff: [0, 0, 0, 0, 0, 0, 0, 0, 0], mk: 0, gw: 0, gs: 0, gspit: 0, gfl: 0, gfs: 1, gko: 0, gkr: 54 };   // chg：合體大招蓄力（0～1）；bump：你落在牠頭上的那一下；fg：背鰭金光；rc：放煙火時兩隻手的後座力；rt：這次吼了幾秒；rq：點牠後過多久吼；rcd：吼完多久內不再吼；rsp：多久之後才會自己吼
 const GF = { lift: 0, camK: 1, phase: null, i: 0, t: 0, strokes: 0, score: [], ang: 0, pow: 0, thrust: 0, wx: 0, wz: 0, wl: 0, cup: new THREE.Vector3(), last: new THREE.Vector3(), sea: new THREE.Vector3(), lie: new THREE.Vector3(), sw: new THREE.Vector3() };   // 高爾夫的狀態（遊戲本體在 tick 前面）
 const GD = { phase: null, t: 0, sec: 0, red: 0 }, GD_KR = 54, _gLook = new THREE.Vector3(0, 6, 0);   // 擋火的狀態（遊戲本體在 tick 前面那一段）；GD_KR＝這時巨獸站離島中心多遠；_gLook＝牠下一發要打的地方
 let kjReady = false;   // 載入時就會先算一次姿勢，那時聲音、飛船都還沒建好，先別碰
@@ -3564,11 +3564,11 @@ function kjPlan() {
   if (!wet && !deep && K.rsp <= 0 && K.rcd <= 0 && kjReady && !flight.phase && !GD.phase && !GF.phase && kjView(K.x, K.z) && rnd() < .5) kjRoar();
   else if (!wet && !deep && rnd() < .35) { K.mode = 'stand'; K.t = 5 + rnd() * 6; K.so = (rnd() < .5 ? -1 : 1) * (.45 + rnd() * .4); }
 }
-function kjRideMode(K, r, inp) {   // 你騎著：有推就走、沒推就站（蓄力時站著不動）；往外走到淺水區邊上撲進水裡游，游回淺水區站起來
+function kjRideMode(K, r, inp) {   // 你騎著：有推就走、沒推就站（蓄力時也能慢慢走、轉身瞄準）；往外走到淺水區邊上撲進水裡游，往淺水區推才站起來
   const out = Math.cos(K.h - Math.atan2(K.x, K.z));   // >0＝正往外海走
-  if (K.mode === 'swim') { if (r < KJ_SHELF + 1 && out < 0) { K.mode = 'rise'; K.u = 0; } return; }
+  if (K.mode === 'swim') { if (r < KJ_SHELF + 1 && out < 0 && inp.y > .2) { K.mode = 'rise'; K.u = 0; } return; }   // 沒推就繼續浮著（不會一轉向島就自己站起來、往前衝一大段）
   if (K.chg <= 0 && r > KJ_SHELF - 1.5 && inp.y > .3 && out > .2) { K.mode = 'dive'; K.u = 0; K.spl = false; return; }
-  K.mode = K.chg <= 0 && (Math.abs(inp.y) > .12 || Math.abs(inp.x) > .12) ? 'walk' : 'stand';
+  K.mode = Math.abs(inp.y) > .12 || Math.abs(inp.x) > .12 ? 'walk' : 'stand';
 }
 function kjFloor(x, z) {   // 開飛船經過巨獸時至少要飛多高（離牠遠＝0），比照飛到遠島上空自動拉高
   const K = KJ, d = Math.min(Math.hypot(x - K.x, z - K.z), Math.hypot(x - K.cx, z - K.cz));
@@ -3576,14 +3576,14 @@ function kjFloor(x, z) {   // 開飛船經過巨獸時至少要飛多高（離�
 }
 function updateKaiju(dt, t) {
   const K = KJ, R = kj, a = Math.atan2(K.z, K.x), r = Math.hypot(K.x, K.z), u0 = K.u;
-  const rd = kjReady && ride.ctl, wait = kjReady && !ride.ctl && ['charge', 'fly', 'hover'].includes(ride.phase), inp = rd ? pilotInput() : null;   // rd：你騎在牠頭上、牠聽你的；wait：你正飛過來，牠停下來等你
+  const rd = kjReady && ride.ctl, wait = kjReady && !ride.ctl && ['charge', 'fly', 'hover'].includes(ride.phase), inp = rd ? rideInput() : null;   // rd：你騎在牠頭上、牠聽你的；wait：你正飛過來，牠停下來等你
   K.rcd -= dt; K.rsp -= dt;
   if (K.rq > 0 && (K.rq -= dt) <= 0 && !rd && !wait) kjRoar(true);   // 點牠：先轉頭看你，過一下才轉過去對著島吼
   if (K.mode === 'guard') { /* 擋火：走到哪、什麼時候噴，都由 updateGuard 決定 */ }
   else if (K.mode === 'stand') { if (rd) kjRideMode(K, r, inp); else if (!wait && (K.t -= dt) <= 0) { K.mode = 'walk'; K.t = 150; } }   // 站完照原本挑好的目的地走；騎著＝聽你的
   else if (K.mode === 'roar') { K.rt0 = K.rt; if (K.rt >= 0 && (K.rt += dt * (K.rFree && (K.rt < 1.3 || K.rt > 4.5) ? 2.4 : 1)) >= KJ_ROAR) { K.mode = rd ? 'stand' : 'walk'; K.t = 150; K.rcd = rd ? 0 : 6; K.rFree = K.rGold = false; } }
-  else if (K.mode === 'dive') { if ((K.u += dt / 3.4) >= 1) K.mode = 'swim'; }
-  else if (K.mode === 'rise') { if ((K.u += dt / 4) >= 1) { K.mode = 'shake'; K.u = 0; } }
+  else if (K.mode === 'dive') { if ((K.u += dt / (rd ? 2.8 : 3.4)) >= 1) K.mode = 'swim'; }   // 你騎著：撲水、站起來快一點（中間不能完全照你的意思走）
+  else if (K.mode === 'rise') { if ((K.u += dt / (rd ? 3 : 4)) >= 1) { K.mode = 'shake'; K.u = 0; } }
   else if (K.mode === 'shake') { if ((K.u += dt / 1.8) >= 1) K.mode = rd || wait ? 'stand' : 'walk'; }   // 站起來先甩水，甩完才走
   else if (K.mode === 'stomp' || K.mode === 'works') { if ((K.u += dt / KJ_ACT[K.mode]) >= 1) { K.mode = 'stand'; K.t = 3; } }   // 騎著時的招式：跺腳、放煙火
   else if (rd) kjRideMode(K, r, inp);
@@ -3596,8 +3596,9 @@ function updateKaiju(dt, t) {
     else if (K.mode === 'swim' && !K.deep && r < KJ_SHELF + 1) { K.mode = 'rise'; K.u = 0; }   // 游回淺水區：站起來
   }
   const wet = K.mode === 'swim' || K.mode === 'dive';
-  if (rd) {   // 你騎著：左右轉向、前後走（倒退慢一點）；吼的時候慢慢轉著瞄準；蓄力、跺腳、放煙火、撲水、浮上來的時候不轉
-    const tr = K.mode === 'swim' ? 1.0 : (K.mode === 'walk' || K.mode === 'stand') && K.chg <= 0 ? .75 : K.mode === 'roar' ? .3 : 0;
+  if (rd) {   // 你騎著：左右轉向、前後走（倒退慢一點）；噴火、蓄力時也能慢慢走、轉身瞄準；撲進水裡、站起來到一半就能轉；跺腳、放煙火的時候不轉
+    const m = K.mode, run = inp.y >= 0 ? inp.y * 3.2 : inp.y * 1.3;   // run：照你推的走多快
+    const tr = m === 'swim' ? 1.0 : m === 'walk' || m === 'stand' || m === 'shake' ? (K.chg > 0 ? .5 : .75) : m === 'roar' ? .45 : m === 'dive' ? smooth((K.u - .45) / .3) : m === 'rise' ? .75 * smooth((K.u - .3) / .35) : 0;
     let want = -inp.x * tr;
     if (K.mode === 'roar' && K.rFree) {   // 噴火時你瞄的地方在頭轉不到的角度：身體跟著轉過去
       aimTarget(_kD);
@@ -3607,7 +3608,12 @@ function updateKaiju(dt, t) {
     if (K.mode === 'works' && fw.show) want = clamp(Math.atan2(Math.sin(fw.show.h - K.h), Math.cos(fw.show.h - K.h)) * 1.8, -.7, .7);   // 放煙火：轉過去面向鏡頭和島
     K.hv = lerp(K.hv, want, Math.min(1, dt * 5));
     K.h = Math.atan2(Math.sin(K.h + K.hv * dt), Math.cos(K.h + K.hv * dt));
-    K.vT = K.mode === 'walk' ? (inp.y >= 0 ? inp.y * 3.2 : inp.y * 1.3) : K.mode === 'swim' ? Math.max(0, inp.y) * 7.5 : K.mode === 'dive' ? lerp(2.4, 6, K.u) : K.mode === 'rise' ? lerp(3, .8, K.u) : 0;
+    K.vT = m === 'walk' || m === 'shake' ? run * (K.chg > 0 ? .35 : 1)   // 甩水時也能走（不用等甩完）；蓄力時慢慢走
+      : m === 'roar' ? (K.rFree ? run * .45 : 0)   // 邊走邊噴火（原本一噴就整個停住 4 秒多）
+      : m === 'swim' ? Math.max(0, inp.y) * 7.5
+      : m === 'dive' ? lerp(lerp(2.4, 6, K.u), Math.max(0, inp.y) * 7.5, smooth((K.u - .55) / .35))   // 撲進水裡之後：速度交給你
+      : m === 'rise' ? Math.max(lerp(3, .8, K.u) * lerp(.3, 1, clamp(inp.y, 0, 1)) * lerp(1, clamp(inp.y, 0, 1), smooth((K.u - .25) / .35)), run * smooth((K.u - .55) / .45))   // 站起來：放開就慢慢停在那裡（原本不管你按不按都往前衝一大段），一直推就接著走
+      : 0;
   } else {
   // 轉向：繞著島往目的地走（不穿過島），游泳轉得比較快；站著時慢慢轉過來面向島；太靠近鏡頭就讓開
   let hd;
@@ -3642,8 +3648,22 @@ function updateKaiju(dt, t) {
   K.vT = K.mode === 'walk' ? 2.4 : K.mode === 'swim' ? 6 : K.mode === 'dive' ? lerp(2.4, 6, K.u) : K.mode === 'rise' ? lerp(3, .8, K.u) : 0;   // 站起來時先煞住，不然會衝進淺水區太裡面
   if (K.mode === 'walk' || K.mode === 'swim') K.vT *= 1 - .75 * smooth((Math.abs(hdiff) - .6) / 1.4);   // 要大轉彎就先放慢，轉的圈才小（不然會一路衝到邊界）
   }
-  K.v += clamp(K.vT - K.v, -(K.mode === 'rise' ? 2 : K.mode === 'roar' ? 2.5 : rd ? 2.6 : 1.2) * dt, (rd ? 1.7 : .9) * dt);   // 你騎著：起步、煞車都快一點，不然按了半天才動
-  K.x += Math.sin(K.h) * K.v * dt; K.z += Math.cos(K.h) * K.v * dt;
+  const r0 = Math.hypot(K.x, K.z) || 1, ux = K.x / r0, uz = K.z / r0, fx = Math.sin(K.h), fz = Math.cos(K.h);
+  const room = s => { const out = clamp(fx * ux + fz * uz, -1, 1) * s; return [out, out < 0 ? smooth((r0 - KJ_MIN + 1) / 5) : smooth((KJ_MAX + 1 - r0) / 6)]; };   // 往 s（1 前進、-1 倒退）走：往外多少、離那邊的邊界還有多少空間（0＝到了）
+  if (rd) {   // 你騎著：加速用臨界阻尼的彈簧追——起步不頓、0.25 秒走到一半、0.65 秒到九成（原本等速加速 1.7 秒，前半秒幾乎不動）
+    const [c1, m1] = room(Math.sign(K.vT)), vT = K.vT * Math.sqrt(Math.max(0, 1 - c1 * c1 * (1 - m1 * m1)));   // 走向島邊／外海邊界：能走的只剩沿著邊的那一份（原本撞上看不見的牆、腳還一直原地踏步）
+    if ((vT - K.v) * K.va < 0) K.va *= Math.exp(-25 * dt);   // 一放開（或換方向）：還在加速的那股勁很快收掉
+    if (Math.abs(vT) > Math.abs(K.v) && vT * K.v >= 0) K.va += (36 * (vT - K.v) - 12 * K.va) * dt;
+    else { const q = K.mode === 'stomp' || K.mode === 'works', g = q || K.mode === 'rise' ? 10 : 6; K.va += (clamp((vT - K.v) / (q ? .12 : .33), -g, g) - K.va) * (1 - Math.exp(-(q ? 30 : 18) * dt)); }   // 放開、減速：一放開就開始慢下來（煞車力道 0.1 秒內加上去，不會頓一下）、滑一小段停住；跺腳、放煙火時很快站穩
+    K.v += K.va * dt;
+  } else { K.va = 0; K.v += clamp(K.vT - K.v, -(K.mode === 'rise' ? 2 : K.mode === 'roar' ? 2.5 : 1.2) * dt, .9 * dt); }
+  let mx = fx, mz = fz;
+  if (rd) {   // 靠近邊界：往邊界那個方向的分量收掉，沿著邊滑過去（速度上面已經照比例放慢）
+    const m2 = room(Math.sign(K.v))[1];
+    if (m2 < 1) { const rad = mx * ux + mz * uz; mx -= ux * rad * (1 - m2); mz -= uz * rad * (1 - m2); const l = Math.hypot(mx, mz); if (l > 1e-6) { mx /= l; mz /= l; } else mx = mz = 0; }
+  }
+  K.ve = K.v * (mx || mz ? 1 : 0);   // 實際走多快：腳步、水花跟著這個
+  K.x += mx * K.v * dt; K.z += mz * K.v * dt;
   if (K.mode === 'guard') {   // 擋火：面向島橫著走（腳在水裡看不到）；gw＝每秒繞島幾弧度
     const ga = Math.atan2(K.z, K.x) + K.gw * dt, r1 = Math.hypot(K.x, K.z), gr = approach(r1, K.gkr, 6 * dt);
     K.x = Math.cos(ga) * gr; K.z = Math.sin(ga) * gr; K.gs = Math.abs(K.gw) * gr + Math.abs(gr - r1) / Math.max(dt, .001);
@@ -3655,11 +3675,14 @@ function updateKaiju(dt, t) {
   if (K.mode === 'dive') { const u = K.u; sp = smooth((u - .2) / .38); sd = smooth((u - .36) / .44); hop = Math.sin(Math.PI * clamp((u - .17) / .36, 0, 1)); crouch = smooth(u / .14) * (1 - smooth((u - .14) / .07)); }
   else if (K.mode === 'rise') { sp = 1 - smooth((K.u - .1) / .7); sd = 1 - smooth(K.u / .75); }
   else sp = sd = K.mode === 'swim' ? 1 : 0;
+  if (rd && K.gwr < .004) K.ph = (Math.round(K.ph / Math.PI - .5) + .5) * Math.PI;   // 你騎著、停著不動（腳併攏、看不出步伐）：把步伐擺到「身體不歪」的那一格，起步時從正中間開始搖（不然可能一起步就整隻往旁邊一甩，駕駛艙被甩兩格）
   const ph0 = K.ph, sk = K.mode === 'shake' ? smooth(K.u / .12) * (1 - smooth((K.u - .45) / .55)) : 0;   // sk：甩水的力道
   K.sp = sp; K.sd = sd;
-  K.ph += (K.v + K.gs) * dt / (3.6 * KJ_S) * TAU * (1 - sp) + (K.mode === 'roar' || rd ? Math.abs(K.hv) * dt * 2.6 : 0);   // 短腿小步：一步不到 2，兩步一個循環；吼之前轉身時原地踏步
+  K.ph += (K.ve + K.gs) * dt / (3.6 * KJ_S) * TAU * (1 - sp) + (K.mode === 'roar' || rd ? Math.abs(K.hv) * dt * 2.6 : 0);   // 短腿小步：一步不到 2，兩步一個循環；吼之前轉身時原地踏步
   K.sw += dt * (1.2 + K.v * .22) * Math.max(sp, .001);   // 游泳時尾巴左右擺的節奏
-  const gw = Math.max(smooth(Math.abs(K.v) / 1.2) * (1 - sp), smooth(K.gs / 1.2) * .8, K.mode === 'roar' || rd ? smooth(Math.abs(K.hv) / .45) * .85 : 0), ph = K.ph, sn = Math.sin(ph), cs = Math.cos(ph), sw = K.sw, sh = Math.sin(t * 19);
+  const gw0 = Math.max(smooth(Math.abs(K.ve) / 1.2) * (1 - sp), smooth(K.gs / 1.2) * .8, K.mode === 'roar' || rd ? smooth(Math.abs(K.hv) / .45) * .85 : 0);
+  K.gwr = rd ? K.gwr + (gw0 - K.gwr) * (1 - Math.exp(-8 * dt)) : gw0;   // 你騎著：走路的擺動（左右搖、一步一沉）跟著速度慢一拍加上去——起步很快，擺動一下子全加上去的話駕駛艙會被甩一下
+  const gw = K.gwr, ph = K.ph, sn = Math.sin(ph), cs = Math.cos(ph), sw = K.sw, sh = Math.sin(t * 19);
   // 吼：0～1.1 秒往後仰、張嘴、眼睛變藍、嘴裡蓄藍光；1.1 秒往前一探，1.3～4.5 秒噴火（頭慢慢左右掃）；之後閉嘴、眼睛變回紅色
   const T = K.mode === 'roar' ? K.rt : -1, T0 = K.mode === 'roar' ? K.rt0 : -1;
   const rA = T < 0 ? 0 : smooth(T / 1.1) * (1 - smooth((T - 1.1) / .25)), rB = T < 0 ? 0 : smooth((T - 1.1) / .25) * (1 - smooth((T - 4.5) / .8)), rW = rA + rB;
@@ -3849,7 +3872,7 @@ function updateKaiju(dt, t) {
   if (!tf) kjFoam[2].visible = false;
   R.head.getWorldPosition(_kA); R.tip.getWorldPosition(_kB);
   K.top = Math.max(_kB.y + .6, 3); K.cx = _kA.x; K.cz = _kA.z;   // 頭頂（含頭上的冠）
-  if (sd > .8 && K.v > 1.5) {   // 游泳：背鰭最前面推出浪、背鰭劃過水面濺起小水花
+  if (sd > .8 && K.ve > 1.5) {   // 游泳：背鰭最前面推出浪、背鰭劃過水面濺起小水花
     if ((K.wake -= dt) <= 0) {
       K.wake = .55;
       _kC.copy(R.bow).applyMatrix4(R.waist.matrixWorld);
@@ -5095,6 +5118,12 @@ function pilotInput() {   // 鍵盤、左下搖桿、拖曳畫面三種都能開
   const ky = (keysDown.w || keysDown.arrowup ? 1 : 0) - (keysDown.s || keysDown.arrowdown ? 1 : 0);
   return { x: clamp(kx + joy.x + steer.x, -1, 1), y: clamp(ky - joy.y - steer.y, -1, 1), boost: !!(keysDown[' '] || flight.boostBtn) };
 }
+function rideInput() {   // 開巨獸用：左下搖桿中間留一小圈不算（手指放上去不會偷偷轉彎），轉彎前段細、推到底才全速；鍵盤照舊
+  const kx = (keysDown.d || keysDown.arrowright ? 1 : 0) - (keysDown.a || keysDown.arrowleft ? 1 : 0);
+  const ky = (keysDown.w || keysDown.arrowup ? 1 : 0) - (keysDown.s || keysDown.arrowdown ? 1 : 0);
+  const m = Math.hypot(joy.x, joy.y), k = m > .14 ? (m - .14) / .86 / m : 0, jx = joy.x * k, jy = joy.y * k;
+  return { x: clamp(kx + Math.sign(jx) * Math.pow(Math.abs(jx), 1.6), -1, 1), y: clamp(ky - jy, -1, 1) };
+}
 function endFlight() {
   const F = flight;
   Object.assign(F, { phase: null, walking: false });
@@ -5494,6 +5523,7 @@ function startRide() {   // 飛上去：先在原地蓄力變身
   for (const k in keysDown) keysDown[k] = false;
   state.flying = true;
   body.classList.add('flying', 'autopilot', 'riding');
+  oc.cy = 0; oc.pv.set(camera.position.x, 0, camera.position.z);
   const K = KJ;
   K.rq = 0;
   if (K.mode === 'roar' && K.rt < 0) { K.mode = 'stand'; K.t = 3; K.hv = 0; }   // 正要轉身去吼：先不吼了，等你
@@ -5607,7 +5637,7 @@ function rideFireAt(nx, ny) {   // 點畫面：往點的地方噴火（正在噴
 }
 function rideStomp() {
   if (ride.phase !== 'ride' || !rideFree()) return;
-  Object.assign(KJ, { mode: 'stomp', u: 0, imp: false, v: 0 });
+  Object.assign(KJ, { mode: 'stomp', u: 0, imp: false });   // 走著跺腳：很快煞住再抬腳（原本速度直接歸零，一按就整隻瞬間定住）
   ride.stompT = 0;
 }
 function rideStompHit(x, z) {   // 跺腳踩到水的那一刻（巨獸那邊呼叫）
@@ -5618,7 +5648,7 @@ function rideStompHit(x, z) {   // 跺腳踩到水的那一刻（巨獸那邊呼
 }
 function rideWorks() {
   if (ride.phase !== 'ride' || !rideFree()) return;
-  Object.assign(KJ, { mode: 'works', u: 0, v: 0 });
+  Object.assign(KJ, { mode: 'works', u: 0 });
   KJ.rc[0] = KJ.rc[1] = 0;
   startShow();
 }
@@ -5923,7 +5953,7 @@ function updateRide(dt, t) {
   }
   A.sz = lerp(A.sz, seated ? .7 : 1, Math.min(1, dt * 6));   // 坐在駕駛艙裡：火焰小一點，大部分包在玻璃裡
   let PO = POSE[pose];
-  if (pose === 'sit') { const push = Math.abs(K.v) > .3 ? .22 : 0; PO = { ...PO, aLx: PO.aLx + K.hv * .5 - push, aRx: PO.aRx - K.hv * .5 - push, b: push * .4 }; }   // 兩根操縱桿：轉彎時一前一後、往前走時一起往前推
+  if (pose === 'sit') { const push = .22 * smooth(Math.abs(K.v) / 1.2); PO = { ...PO, aLx: PO.aLx + K.hv * .5 - push, aRx: PO.aRx - K.hv * .5 - push, b: push * .4 }; }   // 兩根操縱桿：轉彎時一前一後、往前走時一起往前推
   if (P === 'ride' && pose === 'cheer') AV.body.position.y = Math.abs(Math.sin(t * 7)) * .1;
   if (pose === 'sitCharge' || pose === 'sitBeam' || pose === 'charge') AV.body.position.x = Math.sin(t * 61) * .015; else AV.body.position.x = 0;   // 發抖
   poseTo(PO, dt, P === 'land' && ride.t < .2 ? 30 : 10);
@@ -5944,16 +5974,18 @@ function dogGreets() {   // 你單膝落地：阿滿跑過來
 
 /* 開巨獸的鏡頭：一台彈簧鏡頭（位置用「繞著某一點的角度＋距離」），換構圖都慢慢滑過去、轉速有上限；不升進雲裡、不沉到水下
    坐進駕駛艙之後繞著巨獸轉：拖曳畫面轉角度、滾輪／兩指縮放，「鏡頭」鍵換遠景／側面／正面／駕駛艙；跺腳、放煙火時自己找角度（一拖就交回給你） */
-const CLOUDS = clouds.children.map(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { x: (b.min.x + b.max.x) / 2, z: (b.min.z + b.max.z) / 2, r: Math.max(b.max.x - b.min.x, b.max.z - b.min.z) / 2, y: b.min.y }; });
-function cloudCeil(x, z) {   // 這裡往上多高會撞進雲裡（離每一朵雲都遠＝60；燒掉的雲不算）
+const CLOUDS = clouds.children.map(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { x: (b.min.x + b.max.x) / 2, z: (b.min.z + b.max.z) / 2, r: Math.max(b.max.x - b.min.x, b.max.z - b.min.z) / 2, y: b.min.y, top: b.max.y }; });
+function cloudPush(x, z, y, below = 2.2, above = 1.6) {   // 鏡頭想在 y：會碰到雲就推到雲的下面或上面，看離哪邊近（在雲上面就留在上面，不會從高處一路被壓到雲底下；燒掉的雲不算）
   const th = clouds.rotation.y, cs = Math.cos(th), sn = Math.sin(th);
-  let c = 60;
+  let out = y;
   CLOUDS.forEach((C, i) => {
     if (CLOUD[i].s < .3) return;
-    const cx = C.x * cs + C.z * sn, cz = -C.x * sn + C.z * cs, d = Math.hypot(x - cx, z - cz);
-    c = Math.min(c, lerp(C.y - 1.2, 60, smooth((d - C.r) / 6)));
+    const cx = C.x * cs + C.z * sn, cz = -C.x * sn + C.z * cs, k = 1 - smooth((Math.hypot(x - cx, z - cz) - C.r) / 6);   // k：在這朵雲底下多深（雲外 6 以外＝0）
+    if (k <= 0) return;
+    const mid = (C.y + C.top) / 2, lo = lerp(mid, C.y - below, k), hi = lerp(mid, C.top + above, k);
+    if (out > lo && out < hi) out = out < mid ? lo : hi;
   });
-  return c;
+  return out;
 }
 const rcam = { az: 0, el: 0, d: 10, vaz: 0, vel: 0, vd: 0, yaw: 0, pit: 0, vyaw: 0, vpit: 0, ld: 15, dir: new THREE.Vector3(0, 0, -1) };
 const wrapA = a => Math.atan2(Math.sin(a), Math.cos(a));
@@ -5988,7 +6020,7 @@ const VIEWS = [   // rel：從牠的正前方轉多少（π＝正後方、負的
   { name: '正面', rel: .45, el: .1, d: 30, dM: 40, ly: 5 },   // 近一點從正前方看：臉和駕駛艙裡的你
   { name: '駕駛艙', fp: true },   // 坐在你的位子上往前看
 ];
-const oc = { v: 0, rel: -1.1, el: .2, d: 50, ly: 0, A: new THREE.Vector3(), L: new THREE.Vector3(), Lv: 0, mode: '', auto: null, snap: 0, fy: 0, fp: 0, pinch: 0, pd: 40 };   // 鏡頭現在用哪個構圖、你拖過的角度和距離；auto：自己找的構圖（stomp／show）
+const oc = { v: 0, rel: -1.1, el: .2, d: 50, ly: 0, A: new THREE.Vector3(), L: new THREE.Vector3(), Lv: 0, mode: '', auto: null, snap: 0, fy: 0, fp: 0, pinch: 0, pd: 40, cy: 0, pv: new THREE.Vector3() };   // 鏡頭現在用哪個構圖、你拖過的角度和距離；auto：自己找的構圖（stomp／show）；cy：為了讓開雲、鏡頭現在上下挪了多少（慢慢跟）；pv：上一格鏡頭在哪（算往哪飛）
 function rideView(i = (oc.v + 1) % VIEWS.length, quiet = false) {   // 換鏡頭
   const V = VIEWS[i];
   oc.v = i; oc.fy = oc.fp = 0; oc.auto = null; ride.stompT = 0;
@@ -6069,6 +6101,7 @@ function rideCam(dt) {
       camera.position.copy(A).add(off);
       oc.L.copy(L); L.sub(camera.position);
       rcam.ld = L.length() || 1; rcam.yaw = Math.atan2(L.x, L.z); rcam.pit = Math.asin(clamp(L.y / rcam.ld, -1, 1));
+      oc.cy = cloudPush(camera.position.x, camera.position.z, camera.position.y) - camera.position.y; oc.pv.set(camera.position.x, 0, camera.position.z);   // 直接切過去：讓開雲的高度不用慢慢跟
     }
   }
   if (mode === 'kaiju') {   // 看的那一點在世界裡平滑地移過去（換構圖、煙火秀開始時不會一下子甩過去），方向一直對準它（繞著牠轉時不會轉丟）
@@ -6084,7 +6117,12 @@ function rideCam(dt) {
   if (mode !== 'pit') {
     const sb = !M && ui.side ? $('#sidebar').getBoundingClientRect() : null, cov = sb && sb.width > 0 ? clamp((innerWidth - sb.left) / innerWidth, 0, .5) : 0;   // 電腦右邊的清單蓋住多少：鏡頭往右平移，主角落在清單左邊那塊的中間
     if (cov) { const sh = cov * rcam.ld * camera.aspect * Math.tan(camera.fov * Math.PI / 360); camera.position.x += rcam.dir.z * sh * -1; camera.position.z += rcam.dir.x * sh; }
-    camera.position.y = clamp(camera.position.y, groundY(camera.position.x, camera.position.z) + 1.4, cloudCeil(camera.position.x, camera.position.z) - 1);
+    const px = camera.position.x, pz = camera.position.z, y0 = camera.position.y, mvx = px - oc.pv.x, mvz = pz - oc.pv.z, ml = Math.hypot(mvx, mvz);
+    let dy = cloudPush(px, pz, y0) - y0;   // 雲：鏡頭要上下挪多少才不會碰到
+    if (dt > 0 && ml < 6) { const k = Math.min(.45 / dt, 14 / (ml || 1)), d2 = cloudPush(px + mvx * k, pz + mvz * k, y0) - y0; if (Math.abs(d2) > Math.abs(dy) && d2 * dy >= 0) dy = d2; }   // 往前看半秒會經過哪裡：提早開始讓
+    oc.pv.set(px, 0, pz);
+    oc.cy += (dy - oc.cy) * (1 - Math.exp(-(Math.abs(dy) > Math.abs(oc.cy) ? 7 : 2.5) * dt));   // 慢慢讓開、慢慢回來（原本硬壓在雲底下：從雲邊經過畫面會一下子掉一截，拖高的鏡頭會從高處一路被壓下來）
+    camera.position.y = Math.max(groundY(px, pz) + 1.4, cloudPush(px, pz, y0 + oc.cy, 1, .6));   // 再怎麼慢也不會鑽進雲裡
   }
   if (ride.shake > 0) {   // 震一下：幾個不同頻率的晃動疊起來，慢慢停
     ride.shake = Math.max(0, ride.shake - dt * 1.8);
@@ -9383,4 +9421,4 @@ tick();
 body.classList.remove('booting');
 
 /* 除錯／測試用的唯讀入口 */
-window.sanasai = { scene, gfAimPose, gfPlaceAvatar, gfClear, gfSeen, terrainY, gfForce, terrain, KEEP, gfShot: gfShotV, GF, GF_HOLES, GF_S, startGolf, gfClose, gfAgain, gfHole, gfStep, gfRest, gfBall, gfLaunch, gfSwing, updateGolf, gfTrophy, gfSurf, gfH, OBST, baseHeight, groundY, islandR, SH, GD, GD_R, GD_W, GD_CORE, gdBalls, gdPad, gdLevel, startGuard, gdClose, gdAgain, updateGuard, gdPose, gdFire, gdPlan, gdArrive, gdRack, gdTrophies, future, warp, ARRIVE, grayPos: () => grayDot.position.toArray(), bfly: () => { const b = butterflies.list[0]; return [b.x, b.y, b.z]; }, renderer, setMin: v => { curMin = v; applyDay(v); }, ff(sec) { for (let i = 0, n = sec * 20; i < n; i++) { elapsed += .05; updateTime(.05); updateAvatar(.05); updateAmbient(.05, elapsed); updateLife(.05, elapsed); updateSit(.05, elapsed); updatePets(.05, elapsed); } }, sit, startSit, endSit, skip, startSkip, throwStone, swap, startSwap, shellBag: () => shellBag, addShell, picks, bottle, openBottle, spawnBottle, writeLetter, letters: () => letters, solarToday, moonPhase, WX, setWeather, little, discover, LITTLE, meteor, tears, blueTear, photo, enterPhoto, exitPhoto, takePhoto, callEveryone, perched, escort, idle, fountain, setFountainCoins, nightLights, tide, sandStamp, celebrate, greetLines, showGreet, curMinNow: () => curMin, night: () => night, FISH, fishPick, snapDay: () => [SEA_U.uLight.value.toArray(), SHORE_U.uBio.value], PLAZA, BENCH, OUT, ...{ fishdex: () => fishDex }, PLACE, GAMES, KEYS, CAB, keyState, state, ui, avatar, camera, controls, records: () => records, overflow: () => ({ bees: swarm && swarm.n, heap: heap && heap.layers, maze: mazeArea && mazeArea.n }), pets: () => ({ dog: dog.state, dogPos: dog.g.position.toArray().map(v => +v.toFixed(2)), cat: cat.awakeT > 0 || night > .6, crabs: crabs.map(c => +c.hide.toFixed(1)), blob: blob.state }), petTap, view: (pos, target) => { follow = false; fly = null; controls.enabled = true; camera.position.set(...pos); controls.target.set(...target); controls.update(); }, select: selectPlace, walkTo, overview, setTime, land, findPath, dolphins, pod, dolTrick, updateDolphins, updateSplashes, ship, AV, FAR_ISLES, snd, SFX, setSound, flight, startFlight, skipFlight, throwBall, fetchS, fishing, startFishing, reel, feedCat, carry, catGo, catJump, rings, landNow, swing, divers, spawnDiver, cat, dog, KJ, kj, updateKaiju, kjDepth, kjFloor, kjRipples, kjSpray, kjRoar, kjFlame, SH, shield, ride, aura, startRide, rideExit, rideRoarDown, rideRoarUp, rideStomp, rideWorks, rideFireAt, rideView, wave, fw, beamFx, seatWorld, cloudCeil, shieldHitT, updateRide, PIT, pit, oc, rcam, aim, aimPick, VIEWS, steam, CLOUD, cloudBurn, startShow, endShow, ridePointer, fishes, birds, crabs, blob, POSE, joy, keysDown, updatePets, updateAmbient };
+window.sanasai = { scene, gfAimPose, gfPlaceAvatar, gfClear, gfSeen, terrainY, gfForce, terrain, KEEP, gfShot: gfShotV, GF, GF_HOLES, GF_S, startGolf, gfClose, gfAgain, gfHole, gfStep, gfRest, gfBall, gfLaunch, gfSwing, updateGolf, gfTrophy, gfSurf, gfH, OBST, baseHeight, groundY, islandR, SH, GD, GD_R, GD_W, GD_CORE, gdBalls, gdPad, gdLevel, startGuard, gdClose, gdAgain, updateGuard, gdPose, gdFire, gdPlan, gdArrive, gdRack, gdTrophies, future, warp, ARRIVE, grayPos: () => grayDot.position.toArray(), bfly: () => { const b = butterflies.list[0]; return [b.x, b.y, b.z]; }, renderer, setMin: v => { curMin = v; applyDay(v); }, ff(sec) { for (let i = 0, n = sec * 20; i < n; i++) { elapsed += .05; updateTime(.05); updateAvatar(.05); updateAmbient(.05, elapsed); updateLife(.05, elapsed); updateSit(.05, elapsed); updatePets(.05, elapsed); } }, sit, startSit, endSit, skip, startSkip, throwStone, swap, startSwap, shellBag: () => shellBag, addShell, picks, bottle, openBottle, spawnBottle, writeLetter, letters: () => letters, solarToday, moonPhase, WX, setWeather, little, discover, LITTLE, meteor, tears, blueTear, photo, enterPhoto, exitPhoto, takePhoto, callEveryone, perched, escort, idle, fountain, setFountainCoins, nightLights, tide, sandStamp, celebrate, greetLines, showGreet, curMinNow: () => curMin, night: () => night, FISH, fishPick, snapDay: () => [SEA_U.uLight.value.toArray(), SHORE_U.uBio.value], PLAZA, BENCH, OUT, ...{ fishdex: () => fishDex }, PLACE, GAMES, KEYS, CAB, keyState, state, ui, avatar, camera, controls, records: () => records, overflow: () => ({ bees: swarm && swarm.n, heap: heap && heap.layers, maze: mazeArea && mazeArea.n }), pets: () => ({ dog: dog.state, dogPos: dog.g.position.toArray().map(v => +v.toFixed(2)), cat: cat.awakeT > 0 || night > .6, crabs: crabs.map(c => +c.hide.toFixed(1)), blob: blob.state }), petTap, view: (pos, target) => { follow = false; fly = null; controls.enabled = true; camera.position.set(...pos); controls.target.set(...target); controls.update(); }, select: selectPlace, walkTo, overview, setTime, land, findPath, dolphins, pod, dolTrick, updateDolphins, updateSplashes, ship, AV, FAR_ISLES, snd, SFX, setSound, flight, startFlight, skipFlight, throwBall, fetchS, fishing, startFishing, reel, feedCat, carry, catGo, catJump, rings, landNow, swing, divers, spawnDiver, cat, dog, KJ, kj, updateKaiju, kjDepth, kjFloor, kjRipples, kjSpray, kjRoar, kjFlame, SH, shield, ride, aura, startRide, rideExit, rideRoarDown, rideRoarUp, rideStomp, rideWorks, rideFireAt, rideView, wave, fw, beamFx, seatWorld, cloudPush, shieldHitT, updateRide, PIT, pit, oc, rcam, aim, aimPick, VIEWS, steam, CLOUD, cloudBurn, startShow, endShow, ridePointer, fishes, birds, crabs, blob, POSE, joy, keysDown, updatePets, updateAmbient };
