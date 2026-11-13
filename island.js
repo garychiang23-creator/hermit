@@ -133,7 +133,7 @@ const PLACE = {};
 GAMES.forEach((g, i) => { PLACE[g.id] = { id: g.id, no: pad2(i + 1), kind: 'game', name: g.name, en: g.en, color: g.color, at: g.at, door: g.door }; });
 PLACE.pier = { id: 'pier', no: pad2(GAMES.length + 1), kind: 'pier', name: '入口碼頭', en: 'PIER', color: '#1d7d8b', at: [0, 19.2], door: [0, 15.9] };
 PLACE.beach = { id: 'beach', no: pad2(GAMES.length + 2), kind: 'beach', name: '看海的長椅', en: 'BEACH', color: '#c98a3e', at: [0, 0], door: [0, 0] };   // 位置在地形算好後才知道
-PLACE.guard = { id: 'guard', no: pad2(GAMES.length + 3), kind: 'guard', name: '擋火', en: 'SHIELD', color: '#2f7fd6', at: [-8.6, 4.6], door: [-7.5, 5.5] };
+PLACE.guard = { id: 'guard', no: pad2(GAMES.length + 3), kind: 'guard', name: '擋火', en: 'SHIELD', color: '#2f7fd6', at: [-5.2, 6.2], door: [-4.0, 6.5] };   // 廣場西邊、面向廣場。不能放在長椅後面那條空地：那是坐下看海時鏡頭站的地方（原本在 [-8.6, 4.6]，全息圖正好擋在長椅前面）
 PLACE.golf = { id: 'golf', no: pad2(GAMES.length + 4), kind: 'golf', name: '全島九洞', en: 'GOLF', color: '#3f9a4e', at: [1.75, 15.5], door: [.5, 15.3] };
 PLACE.gate = { id: 'gate', no: pad2(GAMES.length + 5), kind: 'gate', name: '隱嶼之門', en: 'GATE', color: '#b8841f', at: [0, -11.4], door: [0, -9.8] };
 const CAB_VIEW = {   // 機台座標系：look＝看的點，dir＝鏡頭在哪一側，el＝仰角
@@ -144,8 +144,8 @@ const CAB_VIEW = {   // 機台座標系：look＝看的點，dir＝鏡頭在哪�
 const VIEW = {
   pier: { dir: [.95, .75], dist: 15, look: .7 },
   gate: { dir: [.18, 1], dist: 21, look: 2.6 },
-  beach: { dir: [.92, -.36], dist: 15, look: .8 },
-  guard: { dir: [.7, 1], dist: 12, look: 1 },
+  beach: { dir: [.8, -.6], dist: 15, look: .8 },   // 從長椅右後方看出去：擋火的控制台在廣場那側，不要進畫面
+  guard: { dir: [1, .3], dist: 12, look: 1 },   // 從廣場這側看控制台的正面
   golf: { dir: [.9, .8], dist: 9, look: .8 },
 };
 
@@ -1561,7 +1561,38 @@ function addPin(id, html, color, [x, y, z], onClick, cls = '') {
   obj.center.set(.5, 1);
   obj.position.set(x, y, z);
   scene.add(obj);
-  return (pins[id] = { obj, el: b });
+  return (pins[id] = { obj, el: b, ox: 0, oy: 0, w: 0, h: 0 });
+}
+/* 名牌不要疊在一起：地點的名牌先放、近的先放，島民、瓶中信、「你」碰到了就往上讓（花捲睡在小蜜蜂機台頂上時，名牌原本整個被「01 小蜜蜂」蓋住）；
+   名牌的東西在畫面裡、名牌卻被畫面邊緣切掉時，往內挪。用投影算位置，不讀版面 */
+const _pp = new THREE.Vector3(), pinRank = id => PLACE[id] ? 0 : id.startsWith('key-') ? 1 : id === 'me' ? 2 : 3;
+let pinTick = 0;
+function declutterPins() {
+  if (++pinTick % 2) return;
+  const W = innerWidth, H = innerHeight, right = W - sideW(), list = [], placed = [], namesOff = body.classList.contains('names-off');
+  for (const id in pins) {
+    const p = pins[id], wrap = p.obj.element;
+    if (wrap.style.display === 'none' || !p.obj.parent || (namesOff && !p.el.classList.contains('active'))) continue;   // 名牌關掉時只留選到的那個
+    if (!p.w || pinTick % 60 === 0) { p.w = wrap.offsetWidth; p.h = wrap.offsetHeight; }
+    if (!p.w) continue;
+    p.obj.getWorldPosition(_pp).project(camera);
+    if (_pp.z < -1 || _pp.z > 1) continue;
+    const x = (_pp.x + 1) / 2 * W, y = (1 - _pp.y) / 2 * H;
+    list.push({ p, rank: pinRank(id), x, l: x - p.w / 2, r: x + p.w / 2, t: y - p.h, b: y - 6, d: _pp.z });   // 名牌底下那 6px 是留白，不算
+  }
+  list.sort((a, b) => a.rank - b.rank || a.d - b.d);
+  for (const L of list) {
+    let dx = 0, dy = 0;
+    if (L.x > 0 && L.x < right) dx = L.l < 8 ? 8 - L.l : L.r > right - 8 ? right - 8 - L.r : 0;
+    for (let k = 0; k < 5; k++) {   // 先放的（地點、近的）不動，後放的往上讓
+      const hit = placed.find(o => L.l + dx < o.r + 4 && L.r + dx > o.l - 4 && L.t + dy < o.b + 3 && L.b + dy > o.t - 3);
+      if (!hit) break;
+      dy = hit.t - 3 - L.b;
+    }
+    placed.push({ l: L.l + dx, r: L.r + dx, t: L.t + dy, b: L.b + dy });
+    const p = L.p, nx = Math.abs(dx - p.ox) < .5 ? dx : lerp(p.ox, dx, .35), ny = Math.abs(dy - p.oy) < .5 ? dy : lerp(p.oy, dy, .35);
+    if (nx !== p.ox || ny !== p.oy) { p.ox = nx; p.oy = ny; p.obj.element.style.translate = `${nx.toFixed(1)}px ${ny.toFixed(1)}px`; }
+  }
 }
 
 const GF_HOLES = [
@@ -3530,19 +3561,34 @@ function kjRoarCam() {   // 鏡頭：原本就看得到牠和火會打到的地�
   const K = KJ, r = Math.hypot(K.x, K.z) || 1, ux = K.x / r, uz = K.z / r, C = camera.position, m = isMobile();
   const H = _rcH.set(ux * SHIELD_R * .95, 8, uz * SHIELD_R * .95), M = _rcM.set(lerp(K.x, H.x, .65), 7, lerp(K.z, H.z, .65));   // 看的點偏向火打到罩子的地方：罩子和島才拍得進來
   const sb = !m && ui.side ? $('#sidebar').getBoundingClientRect() : null, cov = sb && sb.width > 0 ? clamp((innerWidth - sb.left) / innerWidth, 0, .5) : 0;   // 電腦右邊的清單開著時蓋住畫面的比例
-  const seen = P => { _rcA.copy(P).project(camera); return _rcA.x > -.8 && _rcA.x < .8 - 2 * cov && Math.abs(_rcA.y) < .8 && _rcA.z < 1; };
-  if (seen(_rcA.set(K.x, 10, K.z)) && seen(H) && C.distanceTo(M) < 130) return;
+  const kx = m ? .6 : .8;   // 牠本身有寬度：手機直的畫面窄，牠的中心要離邊遠一點，整隻才在畫面裡
+  const seen = (P, lim = .8) => { _rcA.copy(P).project(camera); return _rcA.x > -lim && _rcA.x < lim - 2 * cov && Math.abs(_rcA.y) < .8 && _rcA.z < 1; };
+  if (seen(_rcA.set(K.x, 10, K.z), kx) && seen(H) && C.distanceTo(M) < 130) return;
   const vx = C.x - M.x, vz = C.z - M.z, vl = Math.hypot(vx, vz) || 1, side = Math.sign(ux * vz - uz * vx) || 1;
   const th = clamp(Math.acos(clamp((vx * ux + vz * uz) / vl, -1, 1)), m ? .26 : .55, m ? .87 : 1.9);   // 鏡頭偏離「島→牠」這條線幾度：0＝在牠背後、π＝在島這側（看不到罩子）；手機是直的畫面，偏後面一點
-  const a = Math.atan2(uz, ux) + side * th, d = 70, el = clamp(Math.atan2(C.y - M.y, vl), .25, .6);
-  const pos = new THREE.Vector3(M.x + Math.cos(a) * d * Math.cos(el), M.y + d * Math.sin(el), M.z + Math.sin(a) * d * Math.cos(el)), tgt = M.clone();
-  if (cov) {   // 清單蓋住右邊：鏡頭和看的點一起往右平移，畫面內容才會落在清單左邊那塊的中間
-    const sh = cov * d * camera.aspect * Math.tan(camera.fov * Math.PI / 360), fx = -Math.cos(a), fz = -Math.sin(a);
-    pos.x -= fz * sh; pos.z += fx * sh; tgt.x -= fz * sh; tgt.z += fx * sh;
+  const el = clamp(Math.atan2(C.y - M.y, vl), .25, .6);
+  const put = (th, d) => {
+    const a = Math.atan2(uz, ux) + side * th, pos = new THREE.Vector3(M.x + Math.cos(a) * d * Math.cos(el), M.y + d * Math.sin(el), M.z + Math.sin(a) * d * Math.cos(el)), tgt = M.clone();
+    if (cov) {   // 清單蓋住右邊：鏡頭和看的點一起往右平移，畫面內容才會落在清單左邊那塊的中間
+      const sh = cov * d * camera.aspect * Math.tan(camera.fov * Math.PI / 360), fx = -Math.cos(a), fz = -Math.sin(a);
+      pos.x -= fz * sh; pos.z += fx * sh; tgt.x -= fz * sh; tgt.z += fx * sh;
+    }
+    return [pos, tgt];
+  };
+  let [pos, tgt] = put(th, 70);
+  if (m) {   // 手機直的畫面水平視角只有二十幾度：從島這側點牠時，偏到 .87 會把牠擺到畫面邊上、半隻出去 → 角度往牠背後收，不夠再拉遠，直到牠和罩子都在畫面裡
+    _rcCam.fov = camera.fov; _rcCam.aspect = camera.aspect; _rcCam.updateProjectionMatrix();
+    const inFrame = (P, lim) => { _rcP.copy(P).project(_rcCam); return Math.abs(_rcP.x) < lim && Math.abs(_rcP.y) < .85 && _rcP.z < 1; };
+    for (let i = 1; i <= 14; i++) {
+      _rcCam.position.copy(pos); _rcCam.lookAt(tgt); _rcCam.updateMatrixWorld();
+      if (inFrame(_rcA.set(K.x, 10, K.z), kx) && inFrame(_rcA.set(K.x, 18, K.z), kx) && inFrame(H, .8)) break;
+      [pos, tgt] = put(Math.max(.08, th - i * .07), 70 + Math.max(0, i - 7) * 7);
+    }
   }
   follow = false;
   flyTo({ pos, target: tgt }, 1.5);
 }
+const _rcCam = new THREE.PerspectiveCamera(), _rcP = new THREE.Vector3();
 /* 走到哪：繞著島挑下一個地方（鏡頭看得到的優先）。淺水區用走的，深水區用游的；中間會先站著看看四周 */
 const KJ = { x: Math.cos(-1.76) * 50, z: Math.sin(-1.76) * 50, h: .19, v: 0, vT: 0, va: 0, ve: 0, gwr: 0, mode: 'walk', u: 0, t: 0, ga: 0, gr: 52, dir: 1, deep: false, ph: 0, sw: 0, sp: 0, sd: 0, ly: 0, lp: 0, lyT: 0, lpT: 0, lookT: 3, tapT: 0, tl: 0, top: 21, cx: 0, cz: 0, wake: 0, so: .6, dp: 0, spl: false, tw: 9, rt: -1, rt0: -1, rtw: 0, hv: 0, rsw: 10, rq: 0, rcd: 0, rsp: 60, rcam: false, rFree: false, rGold: false, rIsle: false, chg: 0, bump: 0, fg: 0, rc: [0, 0], imp: false, boot: -1, hu: 0, fv: 30, ff: [0, 0, 0, 0, 0, 0, 0, 0, 0], mk: 0, gw: 0, gs: 0, gspit: 0, gfl: 0, gfs: 1, gko: 0, gkr: 54 };   // chg：合體大招蓄力（0～1）；bump：你落在牠頭上的那一下；fg：背鰭金光；rc：放煙火時兩隻手的後座力；rt：這次吼了幾秒；rq：點牠後過多久吼；rcd：吼完多久內不再吼；rsp：多久之後才會自己吼
 const GF = { lift: 0, camK: 1, phase: null, i: 0, t: 0, strokes: 0, score: [], ang: 0, pow: 0, thrust: 0, wx: 0, wz: 0, wl: 0, cup: new THREE.Vector3(), last: new THREE.Vector3(), sea: new THREE.Vector3(), lie: new THREE.Vector3(), sw: new THREE.Vector3() };   // 高爾夫的狀態（遊戲本體在 tick 前面）
@@ -3935,7 +3981,7 @@ function petTap(id, fromList = false) {
     bubble(D.g, '汪！', 1.25);
   } else if (id === 'cat') { if (fromList) { cat.awakeT = 3; bubble(cat.g, '喵', .75); } else catTap(); }
   else if (id === 'blob') { blob.hop = 0; blob.body.position.y = .25; bubble(blob.g, '♪', 1.0); }
-  else if (id.startsWith('crab')) { const c = crabs[+id.slice(4) || 0]; c.hide = 3; }
+  else if (id.startsWith('crab')) { const c = crabs[+id.slice(4) || 0]; c.hide = fromList ? 1.2 : 3; }   // 從清單點：縮一下就探出頭來，鏡頭才看得到牠
   else if (id.startsWith('dolphin')) {   // 點了就表演一招，另外兩隻有時跟著跳
     const d = dolphins[+id.slice(7) || 0];
     if (dolTrick(d, ['spin', 'flip', 'walk', 'jump'][(rnd() * 4) | 0]) || dolTrick(d, 'jump') || dolTrick(d, 'hop')) dolphins.forEach(o => { if (o !== d && rnd() < .5) o.jt = .3 + rnd() * .5; });
@@ -3948,18 +3994,43 @@ function focusPet(id) {
   if (isMobile()) { ui.side = false; syncLayout(); }
   closeCard();
   follow = false;
+  const aim = () => petAim(id), t = aim();   // 牠會走、會游：鏡頭飛過去的路上和到了以後，看的點都跟著牠
   if (id === 'kaiju') {   // 從島這側看過去、仰角壓低，拍得到全身（仰角不低於旋轉控制的下限，飛到後才不會跳一下）
-    const K = KJ, a = Math.atan2(-K.z, -K.x) + (Math.sin(K.h - Math.atan2(-K.x, -K.z)) > 0 ? -.6 : .6), d = (isMobile() ? 64 : 50) * (K.sd > .5 ? .85 : 1), lead = K.v * (K.sd > .5 ? 2.4 : 1.4);   // 游泳時只露出背鰭：靠近一點；游得快，對準牠前面一點，鏡頭飛到後牠才會游進畫面中間   // 斜斜地從牠前方那側看（正面左右對稱像雕像）
-    const t = new THREE.Vector3(K.x + Math.sin(K.h) * lead, K.sd > .5 ? 1 : 9.5, K.z + Math.cos(K.h) * lead);
-    flyTo({ pos: new THREE.Vector3(t.x + Math.cos(a) * d * .97, t.y + d * .235, t.z + Math.sin(a) * d * .97), target: t }, 1.4, () => petTap(id, true));
+    const K = KJ, a = Math.atan2(-K.z, -K.x) + (Math.sin(K.h - Math.atan2(-K.x, -K.z)) > 0 ? -.6 : .6), d = (isMobile() ? 64 : 50) * (K.sd > .5 ? .7 : 1);   // 游泳時只露出背鰭：靠近一點   // 斜斜地從牠前方那側看（正面左右對稱像雕像）
+    flyTo({ pos: new THREE.Vector3(t.x + Math.cos(a) * d * .97, t.y + d * .235, t.z + Math.sin(a) * d * .97), target: t }, 1.4, () => petTap(id, true), aim);
     return;
   }
+  const len = (isMobile() ? 1.3 : 1) * (id === 'dolphin' ? 16 : id === 'cat' ? 7 : id === 'crab' ? 3.3 : 10);
+  if (len < controls.minDistance) controls.minDistance = len - .05;   // 寄居蟹很小：這一次准鏡頭靠得比平常近，拉遠以後限制自己恢復（updateCamera）
+  let off = camera.position.clone().sub(controls.target).setLength(len);
+  const minY = id === 'crab' ? 1.6 : 4;
+  if (off.y < minY) off.y = minY;
+  if (id !== 'dolphin') off = clearView(t, off);
+  flyTo({ pos: t.clone().add(off), target: t }, 1.1, () => petTap(id, true), aim);
+}
+function petAim(id) {   // 鏡頭看的點，每一格重算
+  if (id === 'kaiju') {
+    const K = KJ, sw = K.sd > .5, lead = K.v * (sw ? 1 : .6);   // 對準牠前面一點，游的時候背鰭才在畫面中間
+    return new THREE.Vector3(K.x + Math.sin(K.h) * lead, sw ? 1 : 9.5, K.z + Math.cos(K.h) * lead);
+  }
+  if (id === 'dolphin') {   // 三隻結伴游：看牠們中間
+    const t = new THREE.Vector3();
+    for (const d of dolphins) { t.x += d.x + Math.sin(d.h) * d.v * .4; t.z += d.z + Math.cos(d.h) * d.v * .4; }
+    return t.multiplyScalar(1 / dolphins.length).setY(0);
+  }
   const t = petPos(id);
-  if (id === 'dolphin') { const d = dolphins[0]; t.set(d.x + Math.sin(d.h) * d.v * 1.1, 0, d.z + Math.cos(d.h) * d.v * 1.1); }   // 鏡頭飛到的時候牠已經游到前面
-  t.y += id === 'cat' ? .4 : .6;
-  const off = camera.position.clone().sub(controls.target).setLength((isMobile() ? 1.3 : 1) * (id === 'dolphin' ? 16 : id === 'cat' ? 7 : 10));
-  if (off.y < 4) off.y = 4;
-  flyTo({ pos: t.clone().add(off), target: t }, 1.1, () => petTap(id, true));
+  t.y += id === 'cat' ? .4 : id === 'crab' ? .2 : .6;
+  return t;
+}
+const _cv = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
+function clearView(t, off) {   // 鏡頭和島民之間有樹、拱門、機台擋著：繞著牠轉一點、再抬高一點，找看得到的角度
+  const o = new THREE.Vector3();
+  for (const lift of [0, .45]) for (const a of [0, .45, -.45, .9, -.9, 1.5, -1.5, 2.3, -2.3, Math.PI]) {
+    o.copy(off).applyAxisAngle(_up, a);
+    if (lift) o.y += Math.hypot(o.x, o.z) * lift;
+    if (gfSeen(_cv.copy(t).add(o), t)) return o;
+  }
+  return off;
 }
 function updatePets(dt, t) { updateDog(dt, t); updateCat(dt, t); updateCrabs(dt, t); updateBlob(dt, t); updateFish(dt); updateDolphins(dt, t); updateKaiju(dt, t); updateSplashes(dt); updateBall(dt); updateFishing(dt, t); updateDivers(dt, t); }
 
@@ -4050,10 +4121,12 @@ function updateTime(dt) {
 }
 
 /* ---------- 鏡頭 ---------- */
-let fly = null, follow = false, dragging = false;
-function flyTo({ pos, target }, dur = 1.1, done = null) {
-  if (reduced || dur <= 0) { camera.position.copy(pos); controls.target.copy(target); controls.update(); done && done(); return; }
-  fly = { p0: camera.position.clone(), t0: controls.target.clone(), p1: pos.clone(), t1: target.clone(), s: performance.now(), dur: dur * 1000, done };
+let fly = null, follow = false, dragging = false, track = null;   // track：飛到會動的島民之後，再跟著牠一陣子（一碰畫面就交回給你）
+function flyTo({ pos, target }, dur = 1.1, done = null, aim = null) {
+  track = null;
+  const off = aim ? pos.clone().sub(target) : null;   // aim：看的點會動，鏡頭跟著平移、角度不變
+  if (reduced || dur <= 0) { camera.position.copy(pos); controls.target.copy(target); controls.update(); if (aim) track = { aim, until: performance.now() + 6000 }; done && done(); return; }
+  fly = { p0: camera.position.clone(), t0: controls.target.clone(), p1: pos.clone(), t1: target.clone(), s: performance.now(), dur: dur * 1000, done, aim, off };
   controls.enabled = false;
 }
 function shiftView(pos, t, offX, offY, dist) {
@@ -4100,6 +4173,7 @@ function viewFor(id) {
 }
 function startFollow() {
   follow = true;
+  track = null;
   const off = camera.position.clone().sub(controls.target), dist = off.length();
   if (dist > 30 && !fly) {
     const t = avatar.position.clone(); t.y += .8;
@@ -4111,14 +4185,23 @@ function startFollow() {
 function updateCamera(dt) {
   if (fly) {
     const k = Math.min(1, (performance.now() - fly.s) / fly.dur), e = easeIO(k);
+    if (fly.aim) { fly.t1.copy(fly.aim()); fly.p1.copy(fly.t1).add(fly.off); }
     camera.position.lerpVectors(fly.p0, fly.p1, e);
     controls.target.lerpVectors(fly.t0, fly.t1, e);
-    if (k >= 1) { const cb = fly.done; fly = null; controls.enabled = true; cb && cb(); }
+    if (k >= 1) { const cb = fly.done; if (fly.aim) track = { aim: fly.aim, until: performance.now() + 6000 }; fly = null; controls.enabled = true; cb && cb(); }
   } else if (follow && !dragging) {
     const want = _p.set(avatar.position.x, avatar.position.y + .8, avatar.position.z).sub(controls.target).multiplyScalar(Math.min(1, dt * 2.6));
     controls.target.add(want);
     camera.position.add(want);
+  } else if (track && !dragging) {
+    if (performance.now() > track.until || flight.phase || ride.phase || sit.phase || GD.phase || GF.phase || state.photo) track = null;
+    else {
+      const want = _p.copy(track.aim()).sub(controls.target).multiplyScalar(Math.min(1, dt * 3));
+      controls.target.add(want);
+      camera.position.add(want);
+    }
   }
+  if (controls.minDistance < 6 && !fly && !track) controls.minDistance = Math.min(6, Math.max(controls.minDistance, camera.position.distanceTo(controls.target) - .05));   // 看完寄居蟹：拉遠多少、最近距離就跟著回到多少，不會一下子彈開
   if ((!flight.phase || ['board', 'touch', 'off'].includes(flight.phase)) && !ride.phase && !sit.phase && !GD.phase && !GF.phase) controls.update();   // 騎巨獸也是：鏡頭由跟著你的彈簧鏡頭接手   // 飛行中由飛船鏡頭接手：旋轉控制會限制仰角和距離，看不到往上衝的船和太空裡的島
 }
 
@@ -4263,7 +4346,7 @@ function renderDock() {
   const ids = [...GAMES.map(g => g.id), 'pier', 'beach', 'guard', 'golf', ...(gate.visible ? ['gate'] : [])];
   $('#dock').innerHTML = ids.map(id => {
     const P = PLACE[id], icon = ICON[id] ? id : 'play';
-    return `<button data-place="${id}" style="--c:${P.color};--cs:${tint(P.color)}"${state.selected === id ? ' class="active"' : ''}><i>${svg(icon)}</i><span>${esc(id === 'pier' ? '碼頭' : id === 'gate' ? '門' : id === 'beach' ? '看海' : id === 'golf' ? '高爾夫' : P.name)}</span></button>`;
+    return `<button data-place="${id}" title="${esc(P.name)}" aria-label="${esc(P.name)}" style="--c:${P.color};--cs:${tint(P.color)}"${state.selected === id ? ' class="active"' : ''}><i>${svg(icon)}</i><span>${esc(id === 'pier' ? '碼頭' : id === 'gate' ? '門' : id === 'beach' ? '看海' : id === 'golf' ? '高爾夫' : P.name)}</span></button>`;
   }).join('');
 }
 function stat(label, value, cls = '') { return `<div class="stat ${cls}"><small>${label}</small><b>${value}</b></div>`; }
@@ -4352,6 +4435,17 @@ function addLog(tag, text) {
   ls.set(LOG_KEY, JSON.stringify(logItems));
   if (ui.log) renderLog();
 }
+function islandRecords() {   // 日誌概況：五個遊戲裡有兩個在島上玩，加上開飛船、釣魚、打水漂
+  const line = (a, b) => `<div class="ov-line"><span>${a}</span><span>${b}</span></div>`;
+  const gb = num('sanasai_guard_best'), gw = num('sanasai_guard_wins');
+  const fb = num('sanasai_golf_best'), par = GF_HOLES.reduce((a, h) => a + h.par, 0), d = fb - par;
+  const fl = num('sanasai_flight_best'), fn = num('sanasai_fish_n'), sk = num('sanasai_skip_best');
+  return line('擋火', gb ? `最高 ${fmt(gb)}${gw ? `・贏 ${gw} 次` : ''}` : '—')
+    + line('全島九洞', fb ? `${fb} 桿（${d > 0 ? '+' + d : d === 0 ? '平標準桿' : d}）` : '—')
+    + line('開飛船穿三個光圈', fl ? fmtSec(fl) : '—')
+    + line('最大的魚', fn ? `${num('sanasai_fish_best')} 公分・共 ${fn} 條` : '—')
+    + line('打水漂', sk ? `${sk} 下` : '—');
+}
 function renderLog() {
   $$('[data-logtab]').forEach(b => b.classList.toggle('active', b.dataset.logtab === ui.logTab));
   $('#log-overview').hidden = ui.logTab !== 'overview';
@@ -4379,6 +4473,7 @@ function renderLog() {
       <div class="ov-line"><span>Blocks MARATHON</span><span>${r.blocks.marathon ? fmt(r.blocks.marathon) : '—'}</span></div>
       <div class="ov-line"><span>Blocks SPRINT 40</span><span>${r.blocks.sprint ? fmtTime(r.blocks.sprint) : '—'}</span></div>
       <div class="ov-line"><span>迷宮球</span><span>${r.maze.cleared ? `${r.maze.cleared} 關・★ ${r.maze.stars}` : '—'}</span></div>
+      <div class="sec">島上的紀錄</div>${islandRecords()}
       <div class="sec">從島上進遊戲</div>
       ${GAMES.map(g => `<div class="ov-line"><span>${esc(g.name)}</span><span>${plays[g.id] || 0} 次</span></div>`).join('')}`;
   }
@@ -4530,13 +4625,15 @@ function updateProximity() {
   if (nearStele && !steleRead) { steleRead = true; ls.set('sanasai_stele', '1'); renderAll(); }
   const D = dog, dogFree = night <= .85 && !['sleep', 'bed', 'fetch', 'bring'].includes(D.state);
   const catNear = !cat.perch && !cat.jump && dist(cat.g.position.x, cat.g.position.z) < 2.4 && cat.state !== 'toFish' && cat.state !== 'eat';
+  const passing = !!walk.path;   // 點地面、點清單走過去的路上不跳地點提示（登島時原本會連閃「登船」「釣魚」「高爾夫」三句），走到了再說；用方向鍵、搖桿走照舊邊走邊跳
   if (fishing.phase === 'wait') setHint('f:wait', isTouch ? '等魚上鉤：浮標沉下去再點畫面' : '等魚上鉤：浮標沉下去再點畫面或按空白鍵', 'lore', reel);
   else if (fishing.phase === 'bite') setHint('f:bite', '上鉤了！快點這裡', 'prompt', reel);
   else if (fishing.phase) setHint('f:' + fishing.phase, fishing.phase === 'cast' ? '拋竿中…' : '收線…', 'lore');
-  else if (state.nearGame) setHint('g:' + state.nearGame, isTouch ? `點這裡開始玩《${GAME[state.nearGame].name}》` : `按 Enter（或點這裡）開始玩《${GAME[state.nearGame].name}》`, 'prompt', () => enterGame(GAME[state.nearGame]));   // 站在門口一律先給「開始玩」，蜜蜂提示不能蓋掉
+  else if (state.nearGame && !passing) setHint('g:' + state.nearGame, isTouch ? `點這裡開始玩《${GAME[state.nearGame].name}》` : `按 Enter（或點這裡）開始玩《${GAME[state.nearGame].name}》`, 'prompt', () => enterGame(GAME[state.nearGame]));   // 站在門口一律先給「開始玩」，蜜蜂提示不能蓋掉
   else if (divers.some(d => d.on)) setHint('bees', isTouch ? '蜜蜂俯衝過來了！點這裡揮劍' : '蜜蜂俯衝過來了！按空白鍵（或點這裡）揮劍', 'prompt', swing);
   else if (ride.offer > 0 && !state.freeze) setHint('r:offer', isTouch ? '點這裡飛上去騎牠' : '按 Enter（或點這裡）飛上去騎牠', 'prompt', startRide);   // 點過巨獸：可以飛上去
   else if (carry.color !== null && catNear) setHint('feed', '點這裡餵花捲', 'prompt', feedCat);
+  else if (passing) setHint('default', DEFAULT_HINT);
   else if (dist(RAMP_PTS[0][0], RAMP_PTS[0][2]) < 1.6) setHint('board', isTouch ? '點這裡登船，開飛船繞島' : '按 Enter（或點這裡）登船，開飛船繞島', 'prompt', startFlight);
   else if (dist(PLACE.golf.door[0], PLACE.golf.door[1]) < 1.3) setHint('golf', isTouch ? '點這裡開始打高爾夫' : '按 Enter（或點這裡）開始打高爾夫', 'prompt', startGolf);
   else if (dist(PLACE.guard.door[0], PLACE.guard.door[1]) < 1.5) setHint('guard', isTouch ? '點這裡開始擋火' : '按 Enter（或點這裡）開始擋火', 'prompt', startGuard);
@@ -4589,24 +4686,38 @@ function closeGame() {
 $('#btn-back').addEventListener('click', closeGame);
 
 /* ---------- 導覽說明 ---------- */
-const INTRO = [
-  ['五個遊戲，一座島', '小蜜蜂、Blocks Pro、迷宮球各有一台大型機台，遊戲會從螢幕裡溢出來。點機台或清單看介紹，按「開始玩」就進遊戲。島上還有兩個小遊戲：在控制台幫島擋巨獸的火，或從碼頭一路打九洞，最後打進巨獸的嘴裡。島上住著柴犬阿滿、三花貓花捲、方塊小傢伙柑仔丁和幾隻寄居蟹，海裡有魚和海豚。'],
-  ['分身會替你走過去', isTouch ? '點地面，分身就走到那裡；也可以用左下角的搖桿。單指拖曳轉視角，雙指縮放。' : '點地面，分身就走到那裡；方向鍵或 WASD 也能走。拖曳轉視角，滾輪縮放。'],
+const INTRO = [   // 每頁三四行就好：第一次來的人一頁一頁點過去，讀不完的字等於沒寫
+  ['五個遊戲，一座島', '三台大型機台裝著小蜜蜂、Blocks Pro 和迷宮球，按「開始玩」就進遊戲。島上還有兩個小遊戲：在控制台幫島擋巨獸的火，或從碼頭一路打九洞。'],
+  ['分身會替你走過去', (isTouch ? '點地面，分身就走到那裡；也可以用左下角的搖桿。單指拖曳轉視角，雙指縮放。' : '點地面，分身就走到那裡；方向鍵或 WASD 也能走。拖曳轉視角，滾輪縮放。') + '柴犬阿滿、三花貓花捲和方塊小傢伙柑仔丁也住在島上，點牠們看看。'],
   ['島會記得你的紀錄', '成績越好，溢出來的越多：小蜜蜂分數越高，飛出機台的蜜蜂越多；Blocks 的方塊山跟著分數長高；迷宮球每通過一章，地上的迷宮就長大一圈。'],
   ['三把鑰匙', '銅鑰匙看小蜜蜂，玉鑰匙看 Blocks Pro，水晶鑰匙藏在島上的暗處。三把到齊，隱嶼之門就會出現。'],
   ['不玩遊戲也可以', '沙灘上有一張長椅，坐下來時間會過得比較快。每天有一瓶信漂上岸；天氣和月亮跟真的一樣。島上的小事都記在日誌裡，看到了就會打勾。'],
 ];
-let introStep = 0;
+let introStep = 0, introFit = 0;
+function fitIntro() {   // 每一頁一樣高：按鈕不會跟著字數上下跳，連點「下一步」才點得到
+  const p = $('#intro-body');
+  if (introFit === innerWidth) return;
+  introFit = innerWidth;
+  p.style.minHeight = '0px';
+  let hMax = 0;
+  for (const [, text] of INTRO) { p.textContent = text; hMax = Math.max(hMax, p.offsetHeight); }
+  p.style.minHeight = hMax + 'px';
+}
+addEventListener('resize', () => { introFit = 0; if (state.intro) showIntro(introStep); });
 function showIntro(step = 0) {
   introStep = step;
   state.intro = true;
-  const [title, text] = INTRO[step];
+  const [title, text] = INTRO[step], last = step === INTRO.length - 1;
+  $('#intro').hidden = false;
+  fitIntro();
   $('#intro-count').textContent = `WELCOME ASHORE / ${pad2(step + 1)}`;
   $('#intro-title').textContent = title;
   $('#intro-body').textContent = text;
   $('#intro-dots').innerHTML = INTRO.map((_, i) => `<i class="${i === step ? 'on' : ''}"></i>`).join('');
-  $('#intro-next').textContent = step === INTRO.length - 1 ? '開始探索' : '下一步 →';
-  $('#intro').hidden = false;
+  $('#intro-next').textContent = last ? '開始探索' : '下一步 →';
+  $('#intro-skip').hidden = last;   // 最後一頁不用「略過」，改成告訴你之後去哪裡再看一次
+  $('#intro-again').hidden = !last;
+  $('#intro-again').textContent = isMobile() ? '之後在清單最下面按「說明」，可以再看一次' : '之後按右上角的「?」，可以再看一次';
 }
 function closeIntro() {
   state.intro = false;
@@ -4673,6 +4784,7 @@ let down = null;
 renderer.domElement.addEventListener('pointerdown', e => {
   down = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
   dragging = true;
+  track = null;
   if (GF.phase) gfPointer('down', e);   // 高爾夫：往後拉瞄準
   else if (GD.phase) gdPointer('down', e);   // 擋火：拖曳移動罩子
   else if (flight.phase === 'pilot') Object.assign(steer, { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: 0, y: 0 });   // 開飛船：拖曳畫面轉向
@@ -4761,6 +4873,11 @@ addEventListener('keydown', e => {
     else if (k === 'f' && !e.repeat) rideStomp();
     else if (k === 'r' && !e.repeat) rideWorks();
     else if (k === 'c' && !e.repeat && ride.phase === 'ride') rideView();
+    return;
+  }
+  if (state.intro && !uiLock()) {   // 導覽：→ 或 Enter 下一頁、← 上一頁（Esc 在上面＝略過）；焦點在按鈕上時讓按鈕自己處理 Enter
+    if (k === 'arrowright' || (e.key === 'Enter' && !(e.target.closest && e.target.closest('button')))) { e.preventDefault(); if (introStep < INTRO.length - 1) showIntro(introStep + 1); else closeIntro(); }
+    else if (k === 'arrowleft' && introStep > 0) { e.preventDefault(); showIntro(introStep - 1); }
     return;
   }
   if (uiLock() || state.intro) return;
@@ -7406,6 +7523,7 @@ function greetLines() {
     const tip = wxWet(r.code) ? '出門記得帶傘。' : r.temp >= 33 ? '外面很熱，多喝水。' : r.temp <= 13 ? '外面冷，多穿一件。' : '';
     b.push(`台北現在 ${r.temp}°，${WX_NAME(r.code)}。${tip}`);
   }
+  if (!b.length) b.push(ls.get('sanasai_bottle_day') !== TODAY ? '今天的瓶中信漂上岸了，在沙灘上找找看。' : '又回來了，大家都還在。');   // 抓不到天氣、也沒別的事：別只丟一句「晚上好。」
   return [a, b.join('')];
 }
 let greeted = false;
@@ -9366,6 +9484,7 @@ function tick() {
   updateProximity();
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
+  declutterPins();
 }
 
 addEventListener('resize', () => {
@@ -9382,7 +9501,7 @@ addEventListener('resize', () => {
 /* ---------- 登島：一打開就是島，鏡頭從海上飛向島（碰一下就停），分身從飛船走上岸 ---------- */
 for (const id of [...GAMES.map(g => g.id), 'pier', 'beach', 'guard', 'golf']) {
   const P = PLACE[id];
-  const y = CAB[id] ? CAB[id].F.y + 6.0 : id === 'guard' ? 5.6 : 2.5;   // 擋火的控制台跟長椅很近：名牌抬高，手機上才不會跟「看海」疊在一起
+  const y = CAB[id] ? CAB[id].F.y + 6.0 : id === 'guard' ? 3.1 : 2.5;   // 擋火：名牌在全息圖上面
   addPin(id, `<span class="no">${P.no}</span>${esc(id === 'beach' ? '看海' : P.name)}`, P.color, [P.at[0], y, P.at[1]], () => selectPlace(id));
 }
 camera.fov = innerWidth / innerHeight < .85 ? 48 : 38;
